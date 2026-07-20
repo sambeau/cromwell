@@ -101,6 +101,7 @@ CREATE TABLE tasks (
   id          uuid PRIMARY KEY,
   feature_id  uuid NOT NULL REFERENCES features(id),
   position    integer NOT NULL,         -- order within the dev-plan
+  local_id    text,                     -- dev-plan-local id (e.g. 'T1'); stable re-decomposition key (DESIGN-005 §4); ships with the phase-2 migration
   title       text NOT NULL,
   description text NOT NULL DEFAULT '',
   state       task_state NOT NULL DEFAULT 'pending',
@@ -418,3 +419,8 @@ contract never changes.
   partial unique index over live states) and `queue_reason` (DESIGN-002 §6's
   "queued with a reason, visible in status" needs a column). Both were
   implied by DESIGN-002 but missing from this DDL.
+- **2026-07-20** (phase-2 planning): `tasks` gained `local_id`, the
+  dev-plan-local identifier that keeps re-decomposition stable across
+  revisions (DESIGN-005 §4, DP-3). `tasks` and `worktrees` themselves, and
+  `features.spec_stale`, ship in the phase-2 migration `0002` (they were
+  defined here but not created by phase 1's subset migration).
