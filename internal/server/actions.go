@@ -357,6 +357,9 @@ func (s *Server) reindexDocument(ctx context.Context, docID uuid.UUID) error {
 		if err := store.ReplaceSections(ctx, tx, doc.ID, content.Hash(raw), parsed.Sections); err != nil {
 			return err
 		}
+		if err := store.RefreshDocumentTitle(ctx, tx, doc.ID, parsed.FrontMatterString("title")); err != nil {
+			return err
+		}
 		return store.Audit(ctx, tx, "orchestrator", "document.indexed", "document", &doc.ID,
 			map[string]any{"sections": len(parsed.Sections)})
 	})

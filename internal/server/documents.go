@@ -173,6 +173,9 @@ func (s *Server) SubmitDoc(ctx context.Context, path, actor string) (*lifecycle.
 		if err := store.ReplaceSections(ctx, tx, doc.ID, content.Hash(raw), parsed.Sections); err != nil {
 			return err
 		}
+		if err := store.RefreshDocumentTitle(ctx, tx, doc.ID, parsed.FrontMatterString("title")); err != nil {
+			return err
+		}
 		return store.TransitionDocument(ctx, tx, doc, lifecycle.DocSubmit, actor, nil)
 	})
 	if err != nil {

@@ -179,7 +179,10 @@ func MarkDispatchSucceeded(ctx context.Context, tx pgx.Tx, id uuid.UUID, usage T
 	}
 	return Audit(ctx, tx, "orchestrator", "dispatch.succeeded", refType, &refID,
 		map[string]any{"dispatch_id": id.String(), "cost_usd": costUSD,
-			"input_tokens": usage.Input, "output_tokens": usage.Output})
+			"input_tokens": usage.Input, "output_tokens": usage.Output,
+			// The structured outcome rides along so `cromwell log` answers
+			// "what did the reviewer say" without a ledger query.
+			"outcome": outcome})
 }
 
 // MarkDispatchFailed records a failure; the caller decides on retry.

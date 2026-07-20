@@ -277,3 +277,14 @@ func ApprovedDocsOwnedBy(ctx context.Context, q Querier, ownerType string, owner
 	}
 	return out, rows.Err()
 }
+
+// RefreshDocumentTitle updates the display title from freshly parsed front
+// matter (a document registered from a template keeps its placeholder title
+// until the file gains a real one — found in the live smoke test).
+func RefreshDocumentTitle(ctx context.Context, tx pgx.Tx, id uuid.UUID, title string) error {
+	if title == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `UPDATE documents SET title = $2 WHERE id = $1 AND title <> $2`, id, title)
+	return err
+}

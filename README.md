@@ -4,10 +4,11 @@ A document-led, specification-centred workflow system that takes a software
 project from initial concept to shipped features — humans driving planning,
 AI agents driving development. Greenfield successor to kanbanzai.
 
-**Status:** phase-1 implementation — core complete and integration-tested
-against the CI suite (mock provider, plain Postgres); remaining for the
-SPEC-001 Definition of Done: the live smoke test against a real Anthropic
-key and a Supabase-hosted project, recorded in `docs/walkthrough.md`.
+**Status:** phase 1 complete. The vertical slice runs end to end against a
+Supabase-hosted project and a live provider API — see the session record in
+[walkthrough](docs/walkthrough.md). One Definition-of-Done item remains:
+running the automated suite against the Supabase local stack as well as
+plain Postgres (FR-1.3), a CI configuration task.
 
 Build: `go build ./cmd/cromwell` · Test: `CROMWELL_TEST_DATABASE_URL=<plain
 postgres url> go test -race ./...` · Start: `cromwell init` then
@@ -28,6 +29,8 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DESIGN-004](docs/design/DESIGN-004-config-compartment.md) | The `.cromwell/` compartment: config, roles, skills, templates, pack lock |
 | [SPEC-001](docs/specs/SPEC-001-phase-1-vertical-slice.md) | Phase 1: the vertical slice (**binding**) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
+| [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
+| [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What must be true before phase 2 starts |
 
 ## Phase plan
 
