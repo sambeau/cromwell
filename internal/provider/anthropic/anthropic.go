@@ -18,8 +18,15 @@ type Client struct {
 	c sdk.Client
 }
 
-func New(apiKey string) *Client {
-	return &Client{c: sdk.NewClient(option.WithAPIKey(apiKey))}
+// New builds a client for the Anthropic wire protocol. baseURL, when
+// non-empty, points at a compatible endpoint (e.g. DeepSeek's /anthropic
+// gateway) — one protocol implementation, many endpoints (D-2).
+func New(apiKey, baseURL string) *Client {
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+	return &Client{c: sdk.NewClient(opts...)}
 }
 
 func (a *Client) Complete(ctx context.Context, req provider.Request) (*provider.Response, error) {

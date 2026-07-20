@@ -80,8 +80,12 @@ type BudgetConfig struct {
 }
 
 type Provider struct {
-	APIKeyEnv string       `yaml:"api_key_env"`
-	Rate      RateConfig   `yaml:"rate"`
+	APIKeyEnv string     `yaml:"api_key_env"`
+	// BaseURL points the Anthropic wire protocol at a compatible endpoint
+	// (e.g. DeepSeek's https://api.deepseek.com/anthropic). Empty = the
+	// provider's default endpoint. Not a secret; lives in config.
+	BaseURL string     `yaml:"base_url"`
+	Rate    RateConfig `yaml:"rate"`
 }
 
 type RateConfig struct {

@@ -81,16 +81,17 @@ func (s *Server) providerFor(name string) (provider.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch name {
-	case "anthropic":
-		key, err := cfg.APIKey("anthropic")
-		if err != nil {
-			return nil, err
-		}
-		return anthropic.New(key), nil
-	default:
+	p, ok := cfg.Providers[name]
+	if !ok {
 		return nil, fmt.Errorf("unknown provider %q", name)
 	}
+	key, err := cfg.APIKey(name)
+	if err != nil {
+		return nil, err
+	}
+	// Phase 1 speaks one wire protocol (D-2): every configured provider is
+	// an Anthropic-API-compatible endpoint; base_url selects the host.
+	return anthropic.New(key, p.BaseURL), nil
 }
 
 // Run starts everything and blocks until ctx ends: boot recovery, the
