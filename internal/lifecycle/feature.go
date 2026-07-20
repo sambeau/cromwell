@@ -1,0 +1,65 @@
+package lifecycle
+
+// Feature lifecycle per DESIGN-003 §6. The full machine is implemented even
+// though phase 1 only drives idea → ready and abandon (SPEC-001 §2): the
+// early system is a true subset of the mature design, not a divergent
+// prototype.
+
+type FeatureState string
+
+const (
+	FeatIdea      FeatureState = "idea"
+	FeatReady     FeatureState = "ready"
+	FeatActive    FeatureState = "active"
+	FeatReview    FeatureState = "review"
+	FeatDone      FeatureState = "done"
+	FeatAbandoned FeatureState = "abandoned"
+)
+
+// Terminal reports whether the state is terminal (feeds gate G5).
+func (s FeatureState) Terminal() bool {
+	return s == FeatDone || s == FeatAbandoned
+}
+
+type FeatureEvent string
+
+const (
+	// FeatContractApproved fires automatically when G1 passes (DESIGN-003 §6).
+	FeatContractApproved FeatureEvent = "contract_approved"
+	// FeatStart is human-triggered by default (L-5); phase 2.
+	FeatStart FeatureEvent = "start"
+	// FeatTasksComplete fires when G2 passes; phase 2.
+	FeatTasksComplete FeatureEvent = "tasks_complete"
+	// FeatVerified fires when G3 passes (verification approved, branch merged); phase 2.
+	FeatVerified FeatureEvent = "verified"
+	// FeatAbandon is always human, always with a reason (DESIGN-003 §6).
+	FeatAbandon FeatureEvent = "abandon"
+)
+
+var featTransitions = map[FeatureState]map[FeatureEvent]FeatureState{
+	FeatIdea: {
+		FeatContractApproved: FeatReady,
+		FeatAbandon:          FeatAbandoned,
+	},
+	FeatReady: {
+		FeatStart:   FeatActive,
+		FeatAbandon: FeatAbandoned,
+	},
+	FeatActive: {
+		FeatTasksComplete: FeatReview,
+		FeatAbandon:       FeatAbandoned,
+	},
+	FeatReview: {
+		FeatVerified: FeatDone,
+		FeatAbandon:  FeatAbandoned,
+	},
+}
+
+// FeatureTransition returns the state event produces from state, or an
+// *IllegalTransitionError (same contract as DocumentTransition).
+func FeatureTransition(state FeatureState, event FeatureEvent) (FeatureState, error) {
+	if next, ok := featTransitions[state][event]; ok {
+		return next, nil
+	}
+	return state, &IllegalTransitionError{Entity: "feature", State: string(state), Event: string(event)}
+}

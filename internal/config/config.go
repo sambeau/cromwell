@@ -1,0 +1,231 @@
+// Package config loads the .cromwell/ compartment (DESIGN-004): project
+// config, roles, skills, template manifests, and the pack lock. Parsing is
+// strict — unknown keys are errors (F-1) — and every error names the file,
+// the field where possible, and the reason (DESIGN-004 §9). Secrets are
+// env-var names here, values in the environment (F-2). This package does no
+// I/O beyond reading the compartment and the named env vars.
+package config
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Error is a config-compartment error: deterministic, never retried;
+// dispatch-time occurrences raise `config-error` checkpoints (F-8).
+type Error struct {
+	File   string
+	Field  string // may be empty when the error is file-level
+	Reason string
+}
+
+func (e *Error) Error() string {
+	if e.Field == "" {
+		return fmt.Sprintf("%s: %s", e.File, e.Reason)
+	}
+	return fmt.Sprintf("%s: %s: %s", e.File, e.Field, e.Reason)
+}
+
+func errf(file, field, format string, args ...any) *Error {
+	return &Error{File: file, Field: field, Reason: fmt.Sprintf(format, args...)}
+}
+
+// strictUnmarshal decodes YAML rejecting unknown keys (F-1).
+func strictUnmarshal(file string, data []byte, out any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(out); err != nil {
+		return errf(file, "", "%v", err)
+	}
+	return nil
+}
+
+// Config is .cromwell/config.yaml (DESIGN-004 §4).
+type Config struct {
+	Version   int                 `yaml:"version"`
+	Database  DatabaseConfig      `yaml:"database"`
+	Server    ServerConfig        `yaml:"server"`
+	Budget    BudgetConfig        `yaml:"budget"`
+	Providers map[string]Provider `yaml:"providers"`
+	Models    map[string]Model    `yaml:"models"`
+	// Routing overrides the role's model per dispatch purpose (model only —
+	// identity, skill, and tools stay with the role).
+	Routing map[string]string `yaml:"routing"`
+	// Assignments maps non-document dispatch purposes to roles (F-4); empty
+	// in phase 1.
+	Assignments map[string]string  `yaml:"assignments"`
+	Dispatch    DispatchConfig     `yaml:"dispatch"`
+	Commands    map[string]Command `yaml:"commands"`
+}
+
+type DatabaseConfig struct {
+	URLEnv string `yaml:"url_env"`
+}
+
+type ServerConfig struct {
+	Socket           string `yaml:"socket"`
+	HTTP             string `yaml:"http"`
+	HeartbeatSeconds int    `yaml:"heartbeat_seconds"`
+}
+
+type BudgetConfig struct {
+	Period            string  `yaml:"period"` // monthly | weekly | total
+	CapUSD            float64 `yaml:"cap_usd"`
+	WarnFraction      float64 `yaml:"warn_fraction"`
+	PerDispatchCapUSD float64 `yaml:"per_dispatch_cap_usd"`
+}
+
+type Provider struct {
+	APIKeyEnv string       `yaml:"api_key_env"`
+	Rate      RateConfig   `yaml:"rate"`
+}
+
+type RateConfig struct {
+	RequestsPerMinute int `yaml:"requests_per_minute"`
+}
+
+type Model struct {
+	Provider     string       `yaml:"provider"`
+	PricePerMTok PricePerMTok `yaml:"price_per_mtok"`
+}
+
+// PricePerMTok is USD per million tokens (F-3); snapshotted into
+// dispatches.price_snapshot at claim time (O-4).
+type PricePerMTok struct {
+	Input      float64 `yaml:"input" json:"input"`
+	Output     float64 `yaml:"output" json:"output"`
+	CacheRead  float64 `yaml:"cache_read" json:"cache_read"`
+	CacheWrite float64 `yaml:"cache_write" json:"cache_write"`
+}
+
+type DispatchConfig struct {
+	Workers      int `yaml:"workers"`
+	MaxAttempts  int `yaml:"max_attempts"`
+	TurnCap      int `yaml:"turn_cap"`
+	StallSeconds int `yaml:"stall_seconds"`
+}
+
+// Command is a tool-host argv whitelist entry (phase 2; shape provisional
+// per DESIGN-004 §12).
+type Command struct {
+	Argv           []string `yaml:"argv"`
+	TimeoutSeconds int      `yaml:"timeout_seconds"`
+}
+
+const configFile = "config.yaml"
+
+// LoadConfig reads and validates .cromwell/config.yaml. Defaults are applied
+// for optional operational settings; structural fields are required.
+func LoadConfig(root string) (*Config, error) {
+	file := filepath.Join(root, configFile)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, errf(configFile, "", "cannot read: %v", err)
+	}
+	var c Config
+	if err := strictUnmarshal(configFile, data, &c); err != nil {
+		return nil, err
+	}
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (c *Config) validate() error {
+	var errs []error
+	add := func(field, format string, args ...any) {
+		errs = append(errs, errf(configFile, field, format, args...))
+	}
+
+	if c.Version != 1 {
+		add("version", "unsupported config format version %d (this build supports 1)", c.Version)
+	}
+	if c.Database.URLEnv == "" {
+		add("database.url_env", "required: name of the env var holding the Postgres URL")
+	}
+	if c.Server.Socket == "" {
+		c.Server.Socket = ".cromwell/run/cromwell.sock"
+	}
+	if c.Server.HeartbeatSeconds == 0 {
+		c.Server.HeartbeatSeconds = 30
+	}
+	switch c.Budget.Period {
+	case "monthly", "weekly", "total":
+	case "":
+		add("budget.period", "required: monthly | weekly | total")
+	default:
+		add("budget.period", "unknown period %q: monthly | weekly | total", c.Budget.Period)
+	}
+	if c.Budget.CapUSD <= 0 {
+		add("budget.cap_usd", "must be > 0")
+	}
+	if c.Budget.WarnFraction <= 0 || c.Budget.WarnFraction > 1 {
+		add("budget.warn_fraction", "must be in (0, 1]")
+	}
+	if c.Budget.PerDispatchCapUSD <= 0 {
+		add("budget.per_dispatch_cap_usd", "must be > 0")
+	}
+	if len(c.Models) == 0 {
+		add("models", "at least one model is required")
+	}
+	for name, m := range c.Models {
+		if _, ok := c.Providers[m.Provider]; !ok {
+			add("models."+name+".provider", "unknown provider %q", m.Provider)
+		}
+	}
+	for name, p := range c.Providers {
+		if p.APIKeyEnv == "" {
+			add("providers."+name+".api_key_env", "required")
+		}
+		if p.Rate.RequestsPerMinute <= 0 {
+			add("providers."+name+".rate.requests_per_minute", "must be > 0")
+		}
+	}
+	for purpose, model := range c.Routing {
+		if _, ok := c.Models[model]; !ok {
+			add("routing."+purpose, "unknown model %q", model)
+		}
+	}
+	if c.Dispatch.Workers == 0 {
+		c.Dispatch.Workers = 4
+	}
+	if c.Dispatch.MaxAttempts == 0 {
+		c.Dispatch.MaxAttempts = 3
+	}
+	if c.Dispatch.TurnCap == 0 {
+		c.Dispatch.TurnCap = 30
+	}
+	if c.Dispatch.StallSeconds == 0 {
+		c.Dispatch.StallSeconds = 120
+	}
+	return join(errs)
+}
+
+// DatabaseURL resolves the connection string from the environment (F-2).
+func (c *Config) DatabaseURL() (string, error) {
+	v := os.Getenv(c.Database.URLEnv)
+	if v == "" {
+		return "", errf(configFile, "database.url_env",
+			"environment variable %s is not set", c.Database.URLEnv)
+	}
+	return v, nil
+}
+
+// APIKey resolves a provider's API key from the environment (F-2).
+func (c *Config) APIKey(provider string) (string, error) {
+	p, ok := c.Providers[provider]
+	if !ok {
+		return "", errf(configFile, "providers", "unknown provider %q", provider)
+	}
+	v := os.Getenv(p.APIKeyEnv)
+	if v == "" {
+		return "", errf(configFile, "providers."+provider+".api_key_env",
+			"environment variable %s is not set", p.APIKeyEnv)
+	}
+	return v, nil
+}

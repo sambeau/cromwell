@@ -1,0 +1,201 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const validConfig = `version: 1
+database:
+  url_env: CROMWELL_DATABASE_URL
+budget:
+  period: monthly
+  cap_usd: 100.00
+  warn_fraction: 0.8
+  per_dispatch_cap_usd: 2.00
+providers:
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    rate:
+      requests_per_minute: 50
+models:
+  claude-sonnet-5:
+    provider: anthropic
+    price_per_mtok:
+      input: 3.00
+      output: 15.00
+      cache_read: 0.30
+      cache_write: 3.75
+`
+
+func write(t *testing.T, root, rel, content string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// validCompartment builds a minimal, fully consistent .cromwell/ directory.
+func validCompartment(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	write(t, root, "config.yaml", validConfig)
+	write(t, root, "roles/spec-reviewer.yaml", `model: claude-sonnet-5
+skill: review-spec
+identity: |
+  You are the specification reviewer.
+tools: []
+`)
+	write(t, root, "skills/review-spec/SKILL.md", `---
+description: Procedure for reviewing a specification
+---
+
+# Reviewing a specification
+
+Read the validation report first.
+`)
+	write(t, root, "templates/spec/manifest.yaml", `type: spec
+reviewer_role: spec-reviewer
+front_matter:
+  required: [title, type, owner]
+sections:
+  order: strict
+  required:
+    - heading: Overview
+    - heading: Acceptance criteria
+rules:
+  - kind: min_list_items
+    section: Acceptance criteria
+    min: 1
+`)
+	write(t, root, "templates/spec/template.md", "---\ntitle: \"{{title}}\"\n---\n")
+	write(t, root, "pack.lock.yaml", `pack_version: 0.1.0
+files:
+  - path: roles/spec-reviewer.yaml
+    shipped_sha256: abc
+`)
+	return root
+}
+
+var testRuleKinds = map[string]bool{"min_list_items": true}
+
+func TestLoadValidCompartment(t *testing.T) {
+	root := validCompartment(t)
+	c, err := Load(root, testRuleKinds)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if c.Config.Dispatch.Workers != 4 || c.Config.Server.HeartbeatSeconds != 30 {
+		t.Errorf("defaults not applied: %+v", c.Config.Dispatch)
+	}
+	if c.Roles["spec-reviewer"].Model != "claude-sonnet-5" {
+		t.Errorf("role not loaded: %+v", c.Roles)
+	}
+	if c.Skills["review-spec"].Description == "" || !strings.Contains(c.Skills["review-spec"].Body, "validation report") {
+		t.Errorf("skill not parsed: %+v", c.Skills["review-spec"])
+	}
+	if c.Manifests["spec"].ReviewerRole != "spec-reviewer" {
+		t.Errorf("manifest not loaded: %+v", c.Manifests)
+	}
+	if c.PackLock.PackVersion != "0.1.0" {
+		t.Errorf("pack lock not loaded: %+v", c.PackLock)
+	}
+}
+
+// F-1: unknown keys are errors, and the error names the file.
+func TestUnknownKeyRejected(t *testing.T) {
+	root := validCompartment(t)
+	write(t, root, "roles/spec-reviewer.yaml", "model: claude-sonnet-5\nidentity: x\nmodle_typo: oops\n")
+	_, err := Load(root, testRuleKinds)
+	if err == nil {
+		t.Fatal("unknown key should be an error")
+	}
+	if !strings.Contains(err.Error(), "spec-reviewer.yaml") {
+		t.Errorf("error should name the file: %v", err)
+	}
+}
+
+// DESIGN-004 §9: dangling cross-references are config errors naming file and field.
+func TestDanglingReferences(t *testing.T) {
+	root := validCompartment(t)
+	write(t, root, "roles/spec-reviewer.yaml", "model: no-such-model\nskill: no-such-skill\nidentity: x\n")
+	write(t, root, "templates/spec/manifest.yaml", "type: spec\nreviewer_role: no-such-role\n")
+	_, err := Load(root, testRuleKinds)
+	if err == nil {
+		t.Fatal("dangling refs should be errors")
+	}
+	for _, want := range []string{"no-such-model", "no-such-skill", "no-such-role"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q: %v", want, err)
+		}
+	}
+}
+
+func TestUnknownRuleKind(t *testing.T) {
+	root := validCompartment(t)
+	write(t, root, "templates/spec/manifest.yaml", `type: spec
+reviewer_role: spec-reviewer
+rules:
+  - kind: no_such_rule
+`)
+	_, err := Load(root, testRuleKinds)
+	if err == nil || !strings.Contains(err.Error(), "no_such_rule") {
+		t.Errorf("unknown rule kind should be an error naming the kind: %v", err)
+	}
+}
+
+func TestConfigFieldValidation(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "config.yaml", "version: 1\ndatabase:\n  url_env: X\nbudget:\n  period: fortnightly\n  cap_usd: 0\n  warn_fraction: 2\n  per_dispatch_cap_usd: 1\nproviders: {}\nmodels: {}\n")
+	_, err := LoadConfig(root)
+	if err == nil {
+		t.Fatal("invalid config should fail")
+	}
+	for _, want := range []string{"budget.period", "budget.cap_usd", "budget.warn_fraction", "models"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name field %q: %v", want, err)
+		}
+	}
+}
+
+// F-2: env-var indirection, and a clear message when the variable is unset.
+func TestEnvIndirection(t *testing.T) {
+	root := validCompartment(t)
+	c, err := LoadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CROMWELL_DATABASE_URL", "postgres://x")
+	url, err := c.DatabaseURL()
+	if err != nil || url != "postgres://x" {
+		t.Errorf("DatabaseURL = %q, %v", url, err)
+	}
+	os.Unsetenv("CROMWELL_DATABASE_URL")
+	if _, err := c.DatabaseURL(); err == nil || !strings.Contains(err.Error(), "CROMWELL_DATABASE_URL") {
+		t.Errorf("unset env should error naming the variable: %v", err)
+	}
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+	key, err := c.APIKey("anthropic")
+	if err != nil || key != "sk-test" {
+		t.Errorf("APIKey = %q, %v", key, err)
+	}
+}
+
+func TestSplitFrontMatter(t *testing.T) {
+	fm, body, err := SplitFrontMatter("---\na: 1\n---\nbody\n")
+	if err != nil || fm != "a: 1" || strings.TrimSpace(body) != "body" {
+		t.Errorf("got (%q, %q, %v)", fm, body, err)
+	}
+	if _, _, err := SplitFrontMatter("no front matter"); err == nil {
+		t.Error("missing front matter should error")
+	}
+	if _, _, err := SplitFrontMatter("---\na: 1\n"); err == nil {
+		t.Error("unterminated front matter should error")
+	}
+}
