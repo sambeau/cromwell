@@ -1,6 +1,6 @@
 # DESIGN-001: Data Model and Postgres Schema
 
-**Status:** Draft for review
+**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md))
 **Date:** 2026-07-02
 **Parent:** [vision-v1](../vision/vision-v1.md) §3 (Vocabulary), §5 (Sizing), §6 (Documents), §11 (Observability)
 **Depends on:** DEC-001 (Go), DEC-002 (Supabase-hosted Postgres)

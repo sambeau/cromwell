@@ -4,8 +4,9 @@ A document-led, specification-centred workflow system that takes a software
 project from initial concept to shipped features — humans driving planning,
 AI agents driving development. Greenfield successor to kanbanzai.
 
-**Status:** planning. No code yet; phase-1 implementation is specified and
-awaiting review.
+**Status:** phase-1 package approved
+([REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md), 2026-07-20).
+SPEC-001 is binding; implementation can start.
 
 ## Document map
 
@@ -20,7 +21,8 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DESIGN-002](docs/design/DESIGN-002-orchestrator.md) | The orchestrator: events, dispatch, tool host, governance |
 | [DESIGN-003](docs/design/DESIGN-003-document-lifecycle-and-gates.md) | Document lifecycle, feature lifecycle, gate catalogue |
 | [DESIGN-004](docs/design/DESIGN-004-config-compartment.md) | The `.cromwell/` compartment: config, roles, skills, templates, pack lock |
-| [SPEC-001](docs/specs/SPEC-001-phase-1-vertical-slice.md) | Phase 1: the vertical slice (binding, once approved) |
+| [SPEC-001](docs/specs/SPEC-001-phase-1-vertical-slice.md) | Phase 1: the vertical slice (**binding**) |
+| [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 
 ## Phase plan
 

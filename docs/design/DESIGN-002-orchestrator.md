@@ -1,6 +1,6 @@
 # DESIGN-002: The Orchestrator
 
-**Status:** Draft for review
+**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md))
 **Date:** 2026-07-02
 **Parent:** [vision-v1](../vision/vision-v1.md) §7 (Architecture), §8 (Orchestrator), §11 (Observability)
 **Depends on:** DESIGN-001 (schema), DEC-001 (Go), DEC-002 (Postgres/Supabase)
@@ -60,7 +60,10 @@ Postgres connection; it calls the server's HTTP API (unix socket locally). This
 makes the in-process event bus complete — nothing changes state behind the
 server's back except git commits, which the watcher covers. LISTEN/NOTIFY
 remains wired (DESIGN-001 §10) so a future multi-process deployment changes
-topology, not contracts.
+topology, not contracts. One exception: `cromwell init` (later also
+`upgrade`) applies schema migrations over a direct Postgres connection — it
+runs before any server exists, and touches only the schema and
+`schema_migrations`, never workflow state.
 
 ### Heartbeat duties (vision §8)
 

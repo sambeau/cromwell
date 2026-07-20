@@ -1,6 +1,6 @@
 # DESIGN-003: Document Lifecycle and Gates
 
-**Status:** Draft for review
+**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md))
 **Date:** 2026-07-02
 **Parent:** [vision-v1](../vision/vision-v1.md) §3, §4, §6, §9
 **Depends on:** DESIGN-001 (schema), DESIGN-002 (orchestrator)
@@ -91,11 +91,14 @@ Approved documents are never edited. To change one:
 
 1. `cromwell revise <doc>` creates a **successor**: a new document row
    (`draft`, `supersedes_id` → predecessor), and a working copy of the file
-   (same path convention with a version suffix until approval, when it takes
-   over the canonical path and the predecessor's file is archived under
-   `docs/_superseded/`).
+   (same path convention with a version suffix until approval).
 2. The successor goes through the normal lifecycle: validate → review →
-   approve. On approval, predecessor → `superseded` atomically.
+   approve. On approval, predecessor → `superseded` atomically, and the
+   lifecycle engine performs the repo file operations itself — successor
+   moved to the canonical path, predecessor's file archived under
+   `docs/_superseded/` — in a single server-authored commit, which the git
+   watcher re-indexes like any other. The states and the files change
+   together; no human file shuffling.
 3. **Impact on in-flight work:** if the revised document is a spec or dev-plan
    of a feature in `active` or `review`, the successor's *submission* (not
    approval) immediately:

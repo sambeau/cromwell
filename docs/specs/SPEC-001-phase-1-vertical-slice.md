@@ -1,6 +1,6 @@
 # SPEC-001: Phase 1 — The Vertical Slice
 
-**Status:** Draft for review
+**Status:** Approved and binding — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md))
 **Date:** 2026-07-02
 **Parent design:** DESIGN-001, DESIGN-002, DESIGN-003, DESIGN-004
 **Vision:** [vision-v1](../vision/vision-v1.md)
@@ -101,9 +101,10 @@ exact cost of the review.
   (TCP configurable).
   *AC:* `serve` starts against an initialised project; `status` over the socket
   returns server health, queue depth, and pending checkpoint count.
-- **FR-2.2** CLI subcommands are API clients only; the CLI never connects to
-  Postgres (DESIGN-002 O-1).
-  *AC:* code review + a test asserting the CLI binary path imports no
+- **FR-2.2** CLI subcommands are API clients only; apart from `init`'s
+  migration run (DESIGN-002 §3), the CLI never connects to Postgres
+  (DESIGN-002 O-1).
+  *AC:* code review + a test asserting the CLI client packages import no
   `store`/pgx packages; CLI against a stopped server fails with a clear
   "server not running" message.
 

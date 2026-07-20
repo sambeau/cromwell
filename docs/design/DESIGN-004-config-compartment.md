@@ -1,6 +1,6 @@
 # DESIGN-004: The `.cromwell/` Configuration Compartment
 
-**Status:** Draft for review
+**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md))
 **Date:** 2026-07-20
 **Parent:** [vision-v1](../vision/vision-v1.md) §7 (config compartment), §12 (Bootstrapping)
 **Depends on:** DEC-002 (connection config), DESIGN-002 (dispatch pipeline, tool host), DESIGN-003 (validation, reviewer binding)
