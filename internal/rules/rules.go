@@ -1,0 +1,347 @@
+// Package rules is the orchestrator's decision core: pure functions from
+// (event, snapshot of current state) to actions (DESIGN-002 §2). No I/O, no
+// clock, no store — the server fetches the snapshot, calls Decide, and
+// executes the returned actions, each one transactional with its audit rows
+// (O-3). Idempotency keys make replay after crash or duplicate events safe
+// (DESIGN-002 §8).
+package rules
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/google/uuid"
+
+	"cromwell/internal/bus"
+	"cromwell/internal/lifecycle"
+)
+
+// ---- Actions ----
+
+type Action interface{ ActionKind() string }
+
+// QueueReview queues a reviewer dispatch for a document in `reviewing`.
+type QueueReview struct {
+	DocID          uuid.UUID
+	DocType        string
+	IdempotencyKey string
+}
+
+func (QueueReview) ActionKind() string { return "queue_review" }
+
+// ApproveDocument executes the approve transition; the same transaction
+// supersedes the predecessor if this document revises one (DESIGN-003 §5)
+// and performs the repo file operations.
+type ApproveDocument struct {
+	DocID uuid.UUID
+	Actor string
+}
+
+func (ApproveDocument) ActionKind() string { return "approve_document" }
+
+// ReturnForChanges executes request_changes: document back to draft,
+// comments inserted for the author (DESIGN-003 §4).
+type ReturnForChanges struct {
+	DocID      uuid.UUID
+	Actor      string
+	DispatchID *uuid.UUID // set when the comments come from an agent-reviewer
+	Comments   []ReviewComment
+}
+
+func (ReturnForChanges) ActionKind() string { return "return_for_changes" }
+
+// RaiseCheckpoint creates a pending checkpoint (idempotent per kind+ref
+// while pending, FR-6.2).
+type RaiseCheckpoint struct {
+	CPKind   string
+	RefType  string
+	RefID    uuid.UUID
+	Question string
+	Context  map[string]any
+}
+
+func (RaiseCheckpoint) ActionKind() string { return "raise_checkpoint" }
+
+// EvaluateContractGate runs G1 for a feature and, on pass, fires
+// contract_approved (idea → ready). The gate.evaluated audit row precedes
+// the transition row in the same transaction (FR-3.2).
+type EvaluateContractGate struct {
+	FeatureID uuid.UUID
+}
+
+func (EvaluateContractGate) ActionKind() string { return "evaluate_contract_gate" }
+
+// ReindexDocument re-parses and re-indexes a registered document's file.
+type ReindexDocument struct {
+	DocID uuid.UUID
+}
+
+func (ReindexDocument) ActionKind() string { return "reindex_document" }
+
+// ArchiveInitiative archives after a G5 override was approved by a human.
+type ArchiveInitiative struct {
+	InitiativeID uuid.UUID
+	Reason       string
+	Actor        string
+}
+
+func (ArchiveInitiative) ActionKind() string { return "archive_initiative" }
+
+// RetryDispatch re-queues a failed dispatch after a human chose retry on a
+// dispatch-failure checkpoint.
+type RetryDispatch struct {
+	DispatchID uuid.UUID
+}
+
+func (RetryDispatch) ActionKind() string { return "retry_dispatch" }
+
+// CancelDispatch closes a failed dispatch for good (human declined retry) so
+// the retry sweep stops re-surfacing it.
+type CancelDispatch struct {
+	DispatchID uuid.UUID
+	Actor      string
+}
+
+func (CancelDispatch) ActionKind() string { return "cancel_dispatch" }
+
+// KickQueue re-runs the governor over queued dispatches (e.g. after a
+// budget checkpoint was answered).
+type KickQueue struct{}
+
+func (KickQueue) ActionKind() string { return "kick_queue" }
+
+// ---- Review outcome (the submit_review outcome tool's payload, O-2) ----
+
+type ReviewComment struct {
+	SectionRef string `json:"section_ref,omitempty"`
+	Body       string `json:"body"`
+}
+
+type ReviewOutcome struct {
+	Verdict   string          `json:"verdict"` // approve | request_changes | escalate
+	Comments  []ReviewComment `json:"comments,omitempty"`
+	Reasoning string          `json:"reasoning"`
+}
+
+func ParseReviewOutcome(raw json.RawMessage) (*ReviewOutcome, error) {
+	var o ReviewOutcome
+	if err := json.Unmarshal(raw, &o); err != nil {
+		return nil, fmt.Errorf("review outcome: %w", err)
+	}
+	switch o.Verdict {
+	case "approve", "request_changes", "escalate":
+	default:
+		return nil, fmt.Errorf("review outcome: unknown verdict %q", o.Verdict)
+	}
+	return &o, nil
+}
+
+// ReviewIdempotencyKey is the deterministic key preventing double dispatch
+// of the same review (DESIGN-002 §8).
+func ReviewIdempotencyKey(docID uuid.UUID, contentHash string) string {
+	return fmt.Sprintf("review:%s:%s", docID, contentHash)
+}
+
+// ---- Snapshot ----
+
+// DocSnap is the rule engine's view of a document row.
+type DocSnap struct {
+	ID          uuid.UUID
+	Type        string
+	State       lifecycle.DocumentState
+	ContentHash string
+	OwnerType   string
+	OwnerID     uuid.UUID
+	Path        string
+}
+
+// FeatureSnap is the rule engine's view of a feature row.
+type FeatureSnap struct {
+	ID    uuid.UUID
+	State lifecycle.FeatureState
+}
+
+// Snapshot carries exactly the state a rule may consult. The server
+// populates the fields relevant to the event; absent entities are nil.
+type Snapshot struct {
+	Doc          *DocSnap
+	OwnerFeature *FeatureSnap
+}
+
+// ---- Decide ----
+
+// Decide maps an event to follow-up actions. Unknown or irrelevant events
+// produce no actions — silence is a valid decision, never an error.
+func Decide(ev bus.Event, snap Snapshot) []Action {
+	switch e := ev.(type) {
+	case bus.DocumentTransitioned:
+		return decideDocumentTransition(e, snap)
+	case bus.DispatchSucceeded:
+		return decideDispatchSucceeded(e, snap)
+	case bus.DispatchExhausted:
+		return []Action{RaiseCheckpoint{
+			CPKind:   "dispatch-failure",
+			RefType:  e.RefType,
+			RefID:    e.RefID,
+			Question: fmt.Sprintf("Dispatch %s (%s) failed all attempts. Retry or cancel?", e.DispatchID, e.Purpose),
+			Context:  map[string]any{"dispatch_id": e.DispatchID.String(), "error": e.Error},
+		}}
+	case bus.DocumentFileChanged:
+		return decideFileChanged(e, snap)
+	case bus.CheckpointResponded:
+		return decideCheckpointResponded(e, snap)
+	}
+	return nil
+}
+
+func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Action {
+	switch e.To {
+	case lifecycle.DocReviewing:
+		if e.From != lifecycle.DocDraft || snap.Doc == nil {
+			return nil // escalate leaves state at reviewing; no new dispatch
+		}
+		return []Action{QueueReview{
+			DocID:          snap.Doc.ID,
+			DocType:        snap.Doc.Type,
+			IdempotencyKey: ReviewIdempotencyKey(snap.Doc.ID, snap.Doc.ContentHash),
+		}}
+	case lifecycle.DocApproved:
+		// A spec approval may unlock its feature's contract gate (G1).
+		if snap.Doc != nil && snap.Doc.Type == "spec" &&
+			snap.Doc.OwnerType == "feature" && snap.OwnerFeature != nil &&
+			snap.OwnerFeature.State == lifecycle.FeatIdea {
+			return []Action{EvaluateContractGate{FeatureID: snap.OwnerFeature.ID}}
+		}
+	}
+	return nil
+}
+
+func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
+	if e.RefType != "document" || snap.Doc == nil {
+		return nil
+	}
+	outcome, err := ParseReviewOutcome(e.Outcome)
+	if err != nil {
+		// A malformed outcome should have failed the dispatch before it
+		// succeeded; reaching here is a bug surfaced honestly.
+		return []Action{RaiseCheckpoint{
+			CPKind:   "dispatch-failure",
+			RefType:  e.RefType,
+			RefID:    e.RefID,
+			Question: "Reviewer returned an unparseable outcome. Retry or intervene?",
+			Context:  map[string]any{"dispatch_id": e.DispatchID.String(), "error": err.Error()},
+		}}
+	}
+	dispatchID := e.DispatchID
+	switch outcome.Verdict {
+	case "approve":
+		return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.Role}}
+	case "request_changes":
+		return []Action{ReturnForChanges{
+			DocID:      snap.Doc.ID,
+			Actor:      e.Role,
+			DispatchID: &dispatchID,
+			Comments:   outcome.Comments,
+		}}
+	case "escalate":
+		return []Action{RaiseCheckpoint{
+			CPKind:   "review-escalation",
+			RefType:  "document",
+			RefID:    snap.Doc.ID,
+			Question: fmt.Sprintf("Reviewer escalated %s. Approve or request changes?", snap.Doc.Path),
+			Context:  map[string]any{"reasoning": outcome.Reasoning, "dispatch_id": dispatchID.String()},
+		}}
+	}
+	return nil
+}
+
+func decideFileChanged(e bus.DocumentFileChanged, snap Snapshot) []Action {
+	if snap.Doc == nil {
+		return nil // unregistered path: not Cromwell's concern
+	}
+	if snap.Doc.State == lifecycle.DocApproved {
+		// Approved documents are immutable; the honest path is revision
+		// (DESIGN-003 §2). Do not reindex the drifted content.
+		return []Action{RaiseCheckpoint{
+			CPKind:   "document-integrity",
+			RefType:  "document",
+			RefID:    snap.Doc.ID,
+			Question: fmt.Sprintf("Approved document %s was modified on disk. Revert the file or create a revision.", snap.Doc.Path),
+			Context:  map[string]any{"commit": e.CommitHash},
+		}}
+	}
+	return []Action{ReindexDocument{DocID: snap.Doc.ID}}
+}
+
+// EscalationResponse is the payload of a review-escalation checkpoint
+// answer: decision approve | request_changes, with optional comments.
+type EscalationResponse struct {
+	Decision string          `json:"decision"`
+	Comments []ReviewComment `json:"comments,omitempty"`
+	Reason   string          `json:"reason,omitempty"`
+}
+
+// OverrideResponse is the payload of a gate-override checkpoint answer.
+type OverrideResponse struct {
+	Override bool   `json:"override"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// FailureResponse is the payload of a dispatch-failure checkpoint answer.
+type FailureResponse struct {
+	Retry bool `json:"retry"`
+}
+
+func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Action {
+	switch e.Kind {
+	case "review-escalation":
+		var r EscalationResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil || snap.Doc == nil {
+			return nil
+		}
+		switch r.Decision {
+		case "approve":
+			return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.RespondedBy}}
+		case "request_changes":
+			return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
+		}
+	case "gate-override":
+		var r OverrideResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil || !r.Override {
+			return nil
+		}
+		if e.RefType == "initiative" {
+			return []Action{ArchiveInitiative{InitiativeID: e.RefID, Reason: r.Reason, Actor: e.RespondedBy}}
+		}
+	case "dispatch-failure":
+		var r FailureResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil {
+			return nil
+		}
+		dispatchID := e.RefID // fall back: ref is the dispatch itself
+		if v, ok := contextDispatchID(e.Context); ok {
+			dispatchID = v
+		}
+		if r.Retry {
+			return []Action{RetryDispatch{DispatchID: dispatchID}}
+		}
+		return []Action{CancelDispatch{DispatchID: dispatchID, Actor: e.RespondedBy}}
+	case "budget":
+		return []Action{KickQueue{}}
+	}
+	return nil
+}
+
+func contextDispatchID(raw json.RawMessage) (uuid.UUID, bool) {
+	var m struct {
+		DispatchID string `json:"dispatch_id"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil || m.DispatchID == "" {
+		return uuid.UUID{}, false
+	}
+	id, err := uuid.Parse(m.DispatchID)
+	if err != nil {
+		return uuid.UUID{}, false
+	}
+	return id, true
+}
