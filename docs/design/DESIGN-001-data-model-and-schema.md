@@ -310,6 +310,8 @@ CREATE TABLE dispatches (
   ref_type           ref_type NOT NULL, -- owning entity for cost attribution
   ref_id             uuid NOT NULL,
   attempt            integer NOT NULL DEFAULT 1,
+  idempotency_key    text NOT NULL,     -- DESIGN-002 §8; unique among live dispatches (partial index)
+  queue_reason       text,              -- why the governor is holding it (DESIGN-002 §6)
   input_tokens       bigint,
   output_tokens      bigint,
   cache_read_tokens  bigint,
@@ -408,3 +410,11 @@ contract never changes.
   is written.
 - Whether `document_sections.role_class` classification runs on every index pass
   or lazily is a phase-2 orchestrator policy question, not a schema question.
+
+## 13. Revisions
+
+- **2026-07-20** (phase-1 implementation): `dispatches` gained
+  `idempotency_key` (DESIGN-002 §8's keys need a uniqueness surface — a
+  partial unique index over live states) and `queue_reason` (DESIGN-002 §6's
+  "queued with a reason, visible in status" needs a column). Both were
+  implied by DESIGN-002 but missing from this DDL.

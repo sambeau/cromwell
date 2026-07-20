@@ -87,41 +87,44 @@ type Dispatcher struct {
 	// MaxOutputTokens per model call.
 	MaxOutputTokens int
 
-	kick    chan struct{}
-	rate    map[string]*rateBucket
-	rateMu  sync.Mutex
-	workers chan struct{}
-	wg      sync.WaitGroup
-	started sync.Once
+	initOnce sync.Once
+	kick     chan struct{}
+	rate     map[string]*rateBucket
+	rateMu   sync.Mutex
+	workers  chan struct{}
+	wg       sync.WaitGroup
+	started  sync.Once
+}
+
+// ensureInit creates the fields touched from multiple goroutines (Kick is
+// called by HTTP handlers and workers). Config-dependent sizing happens in
+// defaults, on the Run goroutine only.
+func (dp *Dispatcher) ensureInit() {
+	dp.initOnce.Do(func() {
+		dp.kick = make(chan struct{}, 1)
+		dp.rate = map[string]*rateBucket{}
+		if dp.BackoffBase == 0 {
+			dp.BackoffBase = 2 * time.Second
+		}
+		if dp.MaxOutputTokens == 0 {
+			dp.MaxOutputTokens = 4096
+		}
+		if dp.Log == nil {
+			dp.Log = slog.Default()
+		}
+	})
 }
 
 func (dp *Dispatcher) defaults(cfg *config.Config) {
-	if dp.BackoffBase == 0 {
-		dp.BackoffBase = 2 * time.Second
-	}
-	if dp.MaxOutputTokens == 0 {
-		dp.MaxOutputTokens = 4096
-	}
-	if dp.kick == nil {
-		dp.kick = make(chan struct{}, 1)
-	}
-	if dp.rate == nil {
-		dp.rate = map[string]*rateBucket{}
-	}
 	if dp.workers == nil {
 		dp.workers = make(chan struct{}, cfg.Dispatch.Workers)
-	}
-	if dp.Log == nil {
-		dp.Log = slog.Default()
 	}
 }
 
 // Kick asks the dispatcher to re-scan the queue (after enqueue, checkpoint
 // answer, or budget change). Coalesces.
 func (dp *Dispatcher) Kick() {
-	if dp.kick == nil {
-		dp.kick = make(chan struct{}, 1)
-	}
+	dp.ensureInit()
 	select {
 	case dp.kick <- struct{}{}:
 	default:
@@ -131,6 +134,7 @@ func (dp *Dispatcher) Kick() {
 // Run consumes kicks until ctx ends, scanning the queue and starting
 // admitted dispatches on the worker pool.
 func (dp *Dispatcher) Run(ctx context.Context) {
+	dp.ensureInit()
 	cfg, err := dp.Config()
 	if err != nil {
 		// Boot-time config is validated by serve before Run; a failure here
@@ -151,6 +155,7 @@ func (dp *Dispatcher) Run(ctx context.Context) {
 }
 
 func (dp *Dispatcher) scan(ctx context.Context) {
+	dp.ensureInit()
 	cfg, err := dp.Config()
 	if err != nil {
 		dp.Log.Error("dispatcher: config", "err", err)
@@ -372,6 +377,7 @@ func (dp *Dispatcher) failPermanently(ctx context.Context, d *store.Dispatch, re
 // dispatches with attempts remaining once their backoff elapses; publish
 // exhaustion for the rest so the rule engine raises checkpoints.
 func (dp *Dispatcher) RetrySweep(ctx context.Context) {
+	dp.ensureInit()
 	cfg, err := dp.Config()
 	if err != nil {
 		return

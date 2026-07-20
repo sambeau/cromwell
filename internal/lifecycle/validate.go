@@ -93,7 +93,13 @@ func Validate(m *config.Manifest, raw string, resolves LinkChecker) Report {
 		}
 	}
 
-	// Check 4: no unresolved template placeholders.
+	// Check 4: no unresolved template placeholders — front matter included
+	// (the template ships placeholder titles and owners).
+	for _, field := range m.FrontMatter.Required {
+		if v := doc.FrontMatterString(field); strings.Contains(v, "{{") {
+			report.add("placeholders", "front-matter field %q contains an unresolved {{...}} placeholder", field)
+		}
+	}
 	for _, sec := range doc.Sections {
 		if i := strings.Index(sec.Content, "{{"); i >= 0 && strings.Contains(sec.Content[i:], "}}") {
 			report.add("placeholders", "section %q contains an unresolved {{...}} placeholder", sec.Heading)

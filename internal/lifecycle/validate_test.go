@@ -148,3 +148,11 @@ func TestLinkChecking(t *testing.T) {
 		t.Errorf("external/anchor links should not be checked: %+v", r.Issues)
 	}
 }
+
+func TestFrontMatterPlaceholders(t *testing.T) {
+	templated := strings.Replace(goodSpec, "title: Login form", `title: "{{feature name}}"`, 1)
+	r := Validate(specManifest(), templated, nil)
+	if r.Valid {
+		t.Fatal("front-matter placeholder should fail validation")
+	}
+}

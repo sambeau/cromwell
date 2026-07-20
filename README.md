@@ -4,9 +4,14 @@ A document-led, specification-centred workflow system that takes a software
 project from initial concept to shipped features — humans driving planning,
 AI agents driving development. Greenfield successor to kanbanzai.
 
-**Status:** phase-1 package approved
-([REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md), 2026-07-20).
-SPEC-001 is binding; implementation can start.
+**Status:** phase-1 implementation — core complete and integration-tested
+against the CI suite (mock provider, plain Postgres); remaining for the
+SPEC-001 Definition of Done: the live smoke test against a real Anthropic
+key and a Supabase-hosted project, recorded in `docs/walkthrough.md`.
+
+Build: `go build ./cmd/cromwell` · Test: `CROMWELL_TEST_DATABASE_URL=<plain
+postgres url> go test -race ./...` · Start: `cromwell init` then
+`cromwell serve` (needs `CROMWELL_DATABASE_URL`, `ANTHROPIC_API_KEY`).
 
 ## Document map
 

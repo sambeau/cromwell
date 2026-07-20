@@ -1,0 +1,17 @@
+type: spec
+reviewer_role: spec-reviewer
+front_matter:
+  required: [title, type, owner]
+sections:
+  order: strict
+  required:
+    - heading: Overview
+    - heading: Behaviour
+    - heading: Acceptance criteria
+  optional:
+    - heading: Out of scope
+    - heading: Open questions
+rules:
+  - kind: min_list_items
+    section: Acceptance criteria
+    min: 1
