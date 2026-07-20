@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"cromwell/internal/bus"
@@ -108,9 +109,11 @@ func (s *Server) Run(ctx context.Context) error {
 		s.Log.Error("boot gate reconciliation", "err", err)
 	}
 
-	go s.orchestrate(ctx)
-	go s.Dispatcher.Run(ctx)
-	go s.heartbeat(ctx)
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() { defer wg.Done(); s.orchestrate(ctx) }()
+	go func() { defer wg.Done(); s.Dispatcher.Run(ctx) }()
+	go func() { defer wg.Done(); s.heartbeat(ctx) }()
 	s.Dispatcher.Kick()
 
 	ln, err := s.listen()
@@ -128,6 +131,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		return err
 	}
+	// Drain: the orchestrator finishes its in-flight action (which may
+	// include a server-authored git commit) before we return.
+	wg.Wait()
 	return nil
 }
 

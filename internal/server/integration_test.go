@@ -83,8 +83,10 @@ func newHarness(t *testing.T) *harness {
 	srv.Dispatcher.Providers = func(string) (provider.Provider, error) { return mock, nil }
 	srv.Dispatcher.BackoffBase = time.Millisecond
 
-	go srv.orchestrate(runCtx)
-	go srv.Dispatcher.Run(runCtx)
+	orchDone := make(chan struct{})
+	dispDone := make(chan struct{})
+	go func() { defer close(orchDone); srv.orchestrate(runCtx) }()
+	go func() { defer close(dispDone); srv.Dispatcher.Run(runCtx) }()
 	srv.Dispatcher.Kick()
 
 	api := httptest.NewServer(srv.routes())
@@ -92,6 +94,10 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() {
 		api.Close()
 		cancel()
+		// Drain before TempDir removal: an in-flight action may be running
+		// a server-authored git commit inside the repo.
+		<-orchDone
+		<-dispDone
 		srv.Store.Close()
 	})
 	return h
