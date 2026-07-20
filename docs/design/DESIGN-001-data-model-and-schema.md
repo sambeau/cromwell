@@ -90,6 +90,7 @@ CREATE TABLE features (
   name          text NOT NULL,
   description   text NOT NULL DEFAULT '',
   state         feature_state NOT NULL DEFAULT 'idea',
+  spec_stale    boolean NOT NULL DEFAULT false,  -- set by revision-in-flight (DESIGN-003 §5); column ships with its phase-2 migration
   branch        text,                   -- git branch once active
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
@@ -160,9 +161,13 @@ CREATE TABLE documents (
   submitted_at  timestamptz,
   approved_at   timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
-  updated_at    timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (path) WHERE state <> 'superseded'
+  updated_at    timestamptz NOT NULL DEFAULT now()
 );
+
+-- one live document per path; a table constraint cannot carry a WHERE clause,
+-- so this is a partial unique index
+CREATE UNIQUE INDEX documents_live_path ON documents (path)
+  WHERE state <> 'superseded';
 ```
 
 Revision model: amending an approved document creates a **new document row**

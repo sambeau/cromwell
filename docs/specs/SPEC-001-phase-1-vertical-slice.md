@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Date:** 2026-07-02
-**Parent design:** DESIGN-001, DESIGN-002, DESIGN-003
+**Parent design:** DESIGN-001, DESIGN-002, DESIGN-003, DESIGN-004
 **Vision:** [vision-v1](../vision/vision-v1.md)
 
 ## 1. Goal
@@ -77,7 +77,8 @@ exact cost of the review.
 
 - **FR-1.1** `cromwell init` creates `.cromwell/` with the starter pack
   (config.yaml, `spec` template + validation manifest, `spec-reviewer` role,
-  review skill), configures the Postgres connection, applies all migrations,
+  review skill — file formats and contents per DESIGN-004), configures the
+  Postgres connection, applies all migrations,
   and installs the git post-commit hook.
   *AC:* running `init` in a fresh git repo, then `cromwell status`, reports a
   healthy install; all listed files exist; `schema_migrations` records the
@@ -128,11 +129,15 @@ exact cost of the review.
   section content.
 - **FR-4.2** A git commit touching a registered document re-indexes it
   (watcher → event → index pass); `content_hash` and `indexed_at` update.
-  *AC:* commit an edit, observe re-index within 5s of the hook firing.
+  *AC:* commit an edit, observe re-index within 5s of the hook firing; an
+  edit committed while the server is stopped is re-indexed by the boot
+  catch-up scan (DESIGN-002 §8) on the next start.
 - **FR-4.3** A commit modifying an **approved** document's file raises a
   `document-integrity` checkpoint (DESIGN-003 §2).
   *AC:* editing an approved spec's file and committing produces the checkpoint
-  with the offending commit hash in its context.
+  with the offending commit hash in its context; the same checkpoint is raised
+  by the boot catch-up scan when the edit was committed while the server was
+  stopped.
 - **FR-4.4** `cromwell revise <doc>` creates a successor draft with
   `supersedes_id` set; the successor's approval supersedes the predecessor
   atomically and re-points the canonical path.

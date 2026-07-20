@@ -48,7 +48,7 @@ effects.
 
 | Source | Mechanism | Events |
 |---|---|---|
-| Git watcher | post-commit hook pings server HTTP endpoint; watcher diffs the commit for document paths | `DocumentFileChanged` |
+| Git watcher | post-commit hook pings server HTTP endpoint; watcher diffs the commit for document paths; a boot-time catch-up scan covers commits made while the server was down (§8) | `DocumentFileChanged` |
 | Postgres | `LISTEN cromwell_events` | mirror of state transitions (safety net; primary is in-process) |
 | HTTP API | CLI and (later) web UI calls | `SubmitDocument`, `CheckpointResponded`, `ManualGo`, entity CRUD |
 | Heartbeat | ticker, every 30s | `Tick` |
@@ -178,8 +178,11 @@ resume behaviour.
   incremented). Exhaustion → `dispatch-failure` checkpoint.
 - **Crash recovery:** all durable state is in Postgres; the server is
   stateless-restartable. On boot: re-queue `running` dispatches without recent
-  heartbeats, replay pending checkpoints into the inbox, run a full gate
-  reconciliation pass, resume. In-flight provider calls at crash time are lost
+  heartbeats, replay pending checkpoints into the inbox, run the document
+  catch-up scan (re-hash every registered document's file; drift from
+  `content_hash` triggers a re-index, drift on an *approved* document raises
+  the `document-integrity` checkpoint — this covers commits made while the
+  server was down), run a full gate reconciliation pass, resume. In-flight provider calls at crash time are lost
   (their partial cost is unrecorded — accepted; the retry's cost is recorded).
 - **Idempotency:** rule-engine actions carry deterministic idempotency keys
   (e.g. `review:<document_id>:<content_hash>`) so replay after crash or
