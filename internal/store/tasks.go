@@ -20,23 +20,32 @@ type Task struct {
 	Description string
 	State       lifecycle.TaskState
 	DependsOn   []uuid.UUID
+	BaseCommit  string // branch HEAD when the task's work began (code-review diff base)
 	CreatedAt   time.Time
 }
 
-const taskCols = `id, feature_id, position, COALESCE(local_id, ''), title, description, state, depends_on, created_at`
+const taskCols = `id, feature_id, position, COALESCE(local_id, ''), title, description, state, depends_on, COALESCE(base_commit, ''), created_at`
 
 // taskColsT is the same column list qualified to the `t` alias, for queries
 // that join another table (avoids ambiguous `id`).
-const taskColsT = `t.id, t.feature_id, t.position, COALESCE(t.local_id, ''), t.title, t.description, t.state, t.depends_on, t.created_at`
+const taskColsT = `t.id, t.feature_id, t.position, COALESCE(t.local_id, ''), t.title, t.description, t.state, t.depends_on, COALESCE(t.base_commit, ''), t.created_at`
 
 func scanTask(row pgx.Row) (*Task, error) {
 	var t Task
 	err := row.Scan(&t.ID, &t.FeatureID, &t.Position, &t.LocalID, &t.Title,
-		&t.Description, &t.State, &t.DependsOn, &t.CreatedAt)
+		&t.Description, &t.State, &t.DependsOn, &t.BaseCommit, &t.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &t, err
+}
+
+// SetTaskBaseCommit records the branch HEAD at which a task's work begins,
+// once (the first implement dispatch); rework keeps the same base so review
+// sees the task's whole contribution (DESIGN-006 §5).
+func SetTaskBaseCommit(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, commit string) error {
+	_, err := tx.Exec(ctx, `UPDATE tasks SET base_commit = $2 WHERE id = $1 AND base_commit IS NULL`, taskID, commit)
+	return err
 }
 
 // CreateTask inserts a task (used by decomposition). depends_on is set in a

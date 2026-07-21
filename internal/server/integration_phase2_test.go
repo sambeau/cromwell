@@ -346,6 +346,39 @@ func TestDevPlanCycleRejected(t *testing.T) {
 	}
 }
 
+// TestParallelToolCalls is a regression test for the multi-tool-use turn:
+// a provider may return several tool_use blocks at once, and the loop must
+// answer each with a tool_result (a bug found by the live smoke test — the
+// loop previously answered only the first, making the next request a 400).
+func TestParallelToolCalls(t *testing.T) {
+	h := newHarness(t)
+	specPath := h.setupFeatureWithSpec()
+	h.approveDoc(specPath)
+	devPlan := h.addDevPlan(devPlanOneTask)
+	h.approveDoc(devPlan)
+	h.eventually("ready", func() bool { return h.featureState("auth/login") == lifecycle.FeatReady })
+
+	// The implementer writes two files in a single parallel-tool-call turn,
+	// then submits.
+	h.mock.RespondParallelToolUse([]struct{ Tool, InputJSON string }{
+		{"write_file", `{"path":"a.go","content":"package main\n"}`},
+		{"write_file", `{"path":"b.go","content":"package main\n\nfunc B() {}\n"}`},
+	}, provider.Usage{Input: 30, Output: 10})
+	h.mock.RespondOutcome("submit_implementation", `{"summary":"two files"}`, provider.Usage{Input: 10, Output: 5})
+	h.mock.RespondOutcome("submit_review", `{"verdict":"approve","reasoning":"ok"}`, provider.Usage{Input: 10, Output: 5})
+	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 10, Output: 5})
+
+	if code, out := h.call("POST", "/api/features/start", map[string]string{"path": "auth/login"}); code != 200 {
+		t.Fatalf("start: %d %v", code, out)
+	}
+	h.eventually("done with both parallel-written files", func() bool { return h.featureState("auth/login") == lifecycle.FeatDone })
+	for _, f := range []string{"a.go", "b.go"} {
+		if _, err := os.Stat(filepath.Join(h.root, f)); err != nil {
+			t.Errorf("%s (written in a parallel tool call) should be merged: %v", f, err)
+		}
+	}
+}
+
 // TestMergeConflict is FR-9.3: a branch that does not merge cleanly raises a
 // merge-conflict checkpoint; the feature stays in review, unmerged.
 func TestMergeConflict(t *testing.T) {

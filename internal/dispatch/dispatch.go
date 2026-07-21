@@ -380,8 +380,17 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 		}
 		total.Add(resp.Usage)
 
-		tu := resp.ToolUse()
-		if tu == nil {
+		// Collect every tool_use block in the turn. Providers may return
+		// parallel tool calls in one assistant message, and the API requires a
+		// tool_result for each — answering only the first (as an earlier
+		// version did) makes the next request malformed (400).
+		var toolUses []*provider.Block
+		for i := range resp.Blocks {
+			if resp.Blocks[i].Type == "tool_use" {
+				toolUses = append(toolUses, &resp.Blocks[i])
+			}
+		}
+		if len(toolUses) == 0 {
 			// No tool call this turn: nudge (free text carries no workflow
 			// effect, DESIGN-002 §4).
 			msgs = append(msgs,
@@ -390,33 +399,33 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 			continue
 		}
 
-		if tu.ToolName == plan.OutcomeTool {
-			if plan.ValidateOutcome != nil {
-				if verr := plan.ValidateOutcome(tu.ToolInput); verr != nil {
-					// Malformed payload: hand the error back so the model can
-					// self-correct within the dispatch (DESIGN-002 §4).
-					msgs = append(msgs,
-						provider.Message{Role: "assistant", Blocks: resp.Blocks},
-						provider.Message{Role: "user", Blocks: []provider.Block{{
+		// Produce exactly one tool_result per tool_use. A valid outcome-tool
+		// call completes the dispatch; an invalid one, or any other tool, is
+		// answered and the loop continues so the model can proceed.
+		results := make([]provider.Block, 0, len(toolUses))
+		for _, tu := range toolUses {
+			if tu.ToolName == plan.OutcomeTool {
+				if plan.ValidateOutcome != nil {
+					if verr := plan.ValidateOutcome(tu.ToolInput); verr != nil {
+						results = append(results, provider.Block{
 							Type: "tool_result", ToolUseID: tu.ToolUseID,
 							Result: "Invalid input: " + verr.Error(), IsError: true,
-						}}})
-					continue
+						})
+						continue
+					}
 				}
+				return tu.ToolInput, total, nil // dispatch complete
 			}
-			return tu.ToolInput, total, nil
+			result, isErr := dp.execTool(ctx, plan, tu)
+			seq++
+			dp.recordToolCall(ctx, d.ID, seq, tu.ToolName, len(tu.ToolInput), len(result), isErr)
+			results = append(results, provider.Block{
+				Type: "tool_result", ToolUseID: tu.ToolUseID, Result: result, IsError: isErr,
+			})
 		}
-
-		// A non-outcome tool call: execute through the tool host, record it in
-		// the ledger, feed the result back.
-		result, isErr := dp.execTool(ctx, plan, tu)
-		seq++
-		dp.recordToolCall(ctx, d.ID, seq, tu.ToolName, len(tu.ToolInput), len(result), isErr)
 		msgs = append(msgs,
 			provider.Message{Role: "assistant", Blocks: resp.Blocks},
-			provider.Message{Role: "user", Blocks: []provider.Block{{
-				Type: "tool_result", ToolUseID: tu.ToolUseID, Result: result, IsError: isErr,
-			}}})
+			provider.Message{Role: "user", Blocks: results})
 	}
 	return nil, total, fmt.Errorf("turn cap %d reached without %s", plan.TurnCap, plan.OutcomeTool)
 }

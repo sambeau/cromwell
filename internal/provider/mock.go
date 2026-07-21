@@ -51,6 +51,22 @@ func (m *Mock) RespondOutcome(tool, inputJSON string, usage Usage) *Mock {
 	})
 }
 
+// RespondParallelToolUse scripts one turn that calls several tools at once —
+// exercising the provider behaviour (parallel tool calls) that requires a
+// tool_result for every tool_use block.
+func (m *Mock) RespondParallelToolUse(calls []struct{ Tool, InputJSON string }, usage Usage) *Mock {
+	blocks := make([]Block, 0, len(calls))
+	for i, c := range calls {
+		blocks = append(blocks, Block{
+			Type:      "tool_use",
+			ToolUseID: fmt.Sprintf("toolu_par_%d_%d", len(m.steps)+1, i),
+			ToolName:  c.Tool,
+			ToolInput: []byte(c.InputJSON),
+		})
+	}
+	return m.Respond(Response{StopReason: "tool_use", Usage: usage, Blocks: blocks})
+}
+
 func (m *Mock) Complete(_ context.Context, req Request) (*Response, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

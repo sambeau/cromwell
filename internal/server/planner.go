@@ -140,7 +140,7 @@ func (s *Server) planCodeReview(ctx context.Context, d *store.Dispatch) (*dispat
 	}
 	task, err := store.GetTask(ctx, s.Store.Pool, d.RefID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("code-review plan: load task %s: %w", d.RefID, err)
 	}
 	role, skillBody, err := s.roleAndSkill(d.Role)
 	if err != nil {
@@ -152,9 +152,9 @@ func (s *Server) planCodeReview(ctx context.Context, d *store.Dispatch) (*dispat
 	}
 	tctx, err := s.toolContextForFeature(ctx, cfg, task.FeatureID.String(), task.ID.String(), role)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("code-review plan: tool context: %w", err)
 	}
-	diff := s.taskDiff(tctx.WorktreeRoot)
+	diff := s.taskDiff(tctx.WorktreeRoot, task.BaseCommit)
 
 	var b strings.Builder
 	b.WriteString("# Task under review\n\n")
@@ -260,13 +260,20 @@ func (s *Server) contractBodies(ctx context.Context, featureID uuid.UUID) (spec,
 	return spec, devPlan, nil
 }
 
-// taskDiff returns the diff of the most recent commit on the worktree branch
-// — the task's changes, since tasks serialise per feature (DESIGN-006 §5).
-func (s *Server) taskDiff(worktreeRoot string) string {
+// taskDiff returns the task's whole contribution: the diff from the branch
+// base recorded when the task's work began to the current HEAD. This spans
+// every implement dispatch for the task (rework included), so review never
+// misses a change introduced in an earlier commit (DESIGN-006 §5). Falls
+// back to the last commit if no base was recorded.
+func (s *Server) taskDiff(worktreeRoot, baseCommit string) string {
+	if baseCommit != "" {
+		if out, err := gitIn(worktreeRoot, "diff", baseCommit, "HEAD"); err == nil {
+			return out
+		}
+	}
 	if out, err := gitIn(worktreeRoot, "diff", "HEAD~1", "HEAD"); err == nil && strings.TrimSpace(out) != "" {
 		return out
 	}
-	// Root commit (first task): show the whole commit.
 	out, _ := gitIn(worktreeRoot, "show", "--format=", "HEAD")
 	return out
 }

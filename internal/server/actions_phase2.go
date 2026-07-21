@@ -152,12 +152,24 @@ func (s *Server) dispatchReadyTasks(ctx context.Context, featureID uuid.UUID) er
 	if err != nil {
 		return err
 	}
+	// The branch HEAD now becomes the base for any task starting its work, so
+	// code review later diffs the task's whole contribution (DESIGN-006 §5).
+	var head string
+	if wt, werr := store.LiveWorktreeForFeature(ctx, s.Store.Pool, featureID); werr == nil {
+		head, _ = gitIn(s.worktreeAbs(wt.Path), "rev-parse", "HEAD")
+		head = strings.TrimSpace(head)
+	}
 	for i := range tasks {
 		task := tasks[i]
 		err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			fresh, err := store.GetTask(ctx, tx, task.ID)
 			if err != nil {
 				return err
+			}
+			if head != "" {
+				if err := store.SetTaskBaseCommit(ctx, tx, task.ID, head); err != nil {
+					return err
+				}
 			}
 			// Move ready → active as we enqueue; the dispatch runs the work.
 			if err := store.TransitionTask(ctx, tx, fresh, lifecycle.TaskClaim, "orchestrator", nil); err != nil {
