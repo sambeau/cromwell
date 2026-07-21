@@ -305,7 +305,7 @@ which is what a smoke test is for.
 | # | Criterion | Status |
 |---|---|---|
 | 1 | All FR acceptance criteria pass in CI (mock provider) | ✅ `go test -race ./...` green; plain Postgres 16 |
-| 1b | …and in the Supabase local stack | ⬜ Outstanding — CI runs against plain Postgres; this session exercised Supabase-hosted Postgres manually |
+| 1b | …and in the Supabase local stack | ✅ Closed during phase 2: the full `go test -race ./...` suite runs green against the Supabase local-stack Postgres (isolated per-package test databases); a CI workflow (`.github/workflows/ci.yml`) runs it against plain Postgres on every push |
 | 2 | Live smoke test green against a Supabase-hosted project, audit trail and cost inspected by a human | ✅ This document |
 | 3 | `go vet ./...` and `go test -race ./...` clean | ✅ |
 | 4 | `docs/walkthrough.md` records the session | ✅ This document |
