@@ -141,6 +141,28 @@ func TestG1(t *testing.T) {
 	}
 }
 
+func TestG4(t *testing.T) {
+	cases := []struct {
+		resolved, done int
+		pass           bool
+	}{
+		{0, 0, false}, // empty milestone: nothing to lock
+		{3, 0, false}, // live but nothing finished
+		{3, 1, true},  // one member done: lockable (FR-5.2)
+		{1, 1, true},
+	}
+	for _, c := range cases {
+		got := G4(c.resolved, c.done)
+		if got.Pass != c.pass {
+			t.Errorf("G4(%d,%d).Pass = %v, want %v (reason %q)",
+				c.resolved, c.done, got.Pass, c.pass, got.Reason)
+		}
+		if got.Gate != GateG4 || got.Reason == "" {
+			t.Errorf("G4 result malformed: %+v", got)
+		}
+	}
+}
+
 func TestG5(t *testing.T) {
 	if r := G5(0); !r.Pass {
 		t.Errorf("G5(0) should pass: %+v", r)

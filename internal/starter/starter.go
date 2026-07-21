@@ -64,6 +64,7 @@ assignments:
   implement-task: implementer
   review-code: code-reviewer
   verify-feature: verifier
+  estimate: estimator
 
 # Tool-host command whitelist (DESIGN-006 §4.6). Edit these to your project's
 # build and test commands; implementers and the verifier may run only these.

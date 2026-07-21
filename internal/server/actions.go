@@ -167,6 +167,10 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 	if handled, err := s.executePhase2(ctx, action); handled {
 		return err
 	}
+	// Phase-3 planning actions.
+	if handled, err := s.executePhase3(ctx, action); handled {
+		return err
+	}
 	return fmt.Errorf("unknown action %T", action)
 }
 

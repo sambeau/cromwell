@@ -44,8 +44,19 @@ Usage:
   cromwell respond <id> <answer> [--reason r]  answer a checkpoint (approve | request_changes |
                                                override | deny | retry | cancel | proceed | continue | pause)
   cromwell log [--ref type:id] [--limit n]     audit stream
-  cromwell cost                                cost rollup
+  cromwell cost [--ref <entity|milestone|roadmap>]   cost rollup (per entity, or --months)
   cromwell search <query>                      full-text search
+
+  cromwell estimate [--ref <entity>]           roll-up: tokens, tier, unestimated work
+  cromwell estimate set <ref> <tokens> [--rationale r] [--cite-corpus]
+  cromwell estimate ai <ref>                   dispatch the estimator (considered/rough)
+  cromwell milestone create <name> [--target-date YYYY-MM-DD]
+  cromwell milestone add|remove <name> <member> [--reason r]   member: feature/initiative path or milestone
+  cromwell milestone lock <name>               gate G4; snapshots the leaf set
+  cromwell milestone list|show <name>
+  cromwell roadmap create <name>
+  cromwell roadmap add <roadmap> <milestone> [--position n]
+  cromwell roadmap show <name>
 `
 
 func main() {
@@ -139,7 +150,13 @@ func run(cmd string, args []string) error {
 	case "log":
 		return logCmd(c, args)
 	case "cost":
-		return costCmd(c)
+		return costCmd(c, args)
+	case "estimate":
+		return estimateCmd(c, args)
+	case "milestone":
+		return milestoneCmd(c, args)
+	case "roadmap":
+		return roadmapCmd(c, args)
 	case "search":
 		if len(args) < 1 {
 			return fmt.Errorf("usage: cromwell search <query>")
@@ -508,7 +525,39 @@ func logCmd(c *client.Client, args []string) error {
 	return nil
 }
 
-func costCmd(c *client.Client) error {
+func costCmd(c *client.Client, args []string) error {
+	fs := flag.NewFlagSet("cost", flag.ContinueOnError)
+	ref := fs.String("ref", "", "roll cost up for an entity, milestone, or roadmap")
+	months := fs.Bool("months", false, "roll cost up per calendar month")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *months {
+		var rows []struct {
+			Month   string  `json:"Month"`
+			CostUSD float64 `json:"CostUSD"`
+			Count   int     `json:"Count"`
+		}
+		if err := c.Call("GET", "/api/cost/months", nil, &rows); err != nil {
+			return err
+		}
+		for _, m := range rows {
+			fmt.Printf("%s  dispatches=%d  $%.4f\n", m.Month, m.Count, m.CostUSD)
+		}
+		return nil
+	}
+	if *ref != "" {
+		var out struct {
+			Ref     string  `json:"ref"`
+			Kind    string  `json:"kind"`
+			CostUSD float64 `json:"cost_usd"`
+		}
+		if err := c.Call("GET", "/api/cost/rollup?ref="+url.QueryEscape(*ref), nil, &out); err != nil {
+			return err
+		}
+		fmt.Printf("%-10s %s  $%.4f\n", out.Kind, out.Ref, out.CostUSD)
+		return nil
+	}
 	var out struct {
 		TotalUSD float64 `json:"total_usd"`
 		ByEntity []struct {
@@ -528,6 +577,276 @@ func costCmd(c *client.Client) error {
 	}
 	fmt.Printf("total: $%.4f\n", out.TotalUSD)
 	return nil
+}
+
+// estimateCmd handles `estimate`, `estimate set`, and `estimate ai`.
+func estimateCmd(c *client.Client, args []string) error {
+	if len(args) >= 1 && (args[0] == "set" || args[0] == "ai") {
+		return estimateWriteCmd(c, args)
+	}
+	fs := flag.NewFlagSet("estimate", flag.ContinueOnError)
+	ref := fs.String("ref", "", "entity to roll up (feature/initiative path, or <feature>#<task>)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *ref == "" {
+		return fmt.Errorf("usage: cromwell estimate --ref <entity>")
+	}
+	var e estimateView
+	if err := c.Call("GET", "/api/estimate?ref="+url.QueryEscape(*ref), nil, &e); err != nil {
+		return err
+	}
+	printEstimate(*ref, e)
+	return nil
+}
+
+type estimateView struct {
+	RefType      string `json:"ref_type"`
+	Tokens       int64  `json:"tokens"`
+	Tier         string `json:"tier"`
+	Estimated    bool   `json:"estimated"`
+	Decomposed   bool   `json:"decomposed"`
+	Complete     bool   `json:"complete"`
+	ActualTokens int64  `json:"actual_tokens"`
+	Delta        int64  `json:"delta"`
+	Unestimated  []struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	} `json:"unestimated"`
+	History []struct {
+		Tokens    int64  `json:"tokens"`
+		Tier      string `json:"tier"`
+		Rationale string `json:"rationale"`
+		CreatedAt string `json:"created_at"`
+	} `json:"history"`
+}
+
+func printEstimate(ref string, e estimateView) {
+	if !e.Estimated {
+		fmt.Printf("%s (%s): unestimated\n", ref, e.RefType)
+	} else {
+		tokens := fmt.Sprintf("%d", e.Tokens)
+		if !e.Complete {
+			tokens += " + ?" // unestimated work remains
+		}
+		how := e.Tier
+		if e.Decomposed {
+			how += ", decomposed"
+		}
+		fmt.Printf("%s (%s): %s tokens [%s]\n", ref, e.RefType, tokens, how)
+		if e.ActualTokens > 0 {
+			fmt.Printf("  actual: %d tokens (delta %+d)\n", e.ActualTokens, e.Delta)
+		}
+	}
+	if len(e.Unestimated) > 0 {
+		fmt.Println("  unestimated:")
+		for _, u := range e.Unestimated {
+			fmt.Printf("    ? %s %s\n", u.Type, u.Name)
+		}
+	}
+	if len(e.History) > 1 {
+		fmt.Println("  history (current first):")
+		for i, h := range e.History {
+			marker := " "
+			if i == 0 {
+				marker = "*"
+			}
+			fmt.Printf("    %s %d tokens [%s] %s\n", marker, h.Tokens, h.Tier, h.CreatedAt)
+		}
+	}
+}
+
+func estimateWriteCmd(c *client.Client, args []string) error {
+	sub := args[0]
+	rest := args[1:]
+	switch sub {
+	case "set":
+		if len(rest) < 2 {
+			return fmt.Errorf("usage: cromwell estimate set <ref> <tokens> [--rationale r] [--cite-corpus]")
+		}
+		ref := rest[0]
+		var tokens int64
+		if _, err := fmt.Sscan(rest[1], &tokens); err != nil {
+			return fmt.Errorf("tokens must be a number: %w", err)
+		}
+		fs := flag.NewFlagSet("estimate set", flag.ContinueOnError)
+		rationale := fs.String("rationale", "", "why this estimate")
+		cite := fs.Bool("cite-corpus", false, "this estimate cites corpus reference points (considered tier)")
+		if err := fs.Parse(rest[2:]); err != nil {
+			return err
+		}
+		var out map[string]any
+		if err := c.Call("POST", "/api/estimate/set", map[string]any{
+			"ref": ref, "tokens": tokens, "rationale": *rationale, "cite_corpus": *cite,
+		}, &out); err != nil {
+			return err
+		}
+		fmt.Printf("estimate recorded: %s = %v tokens [%v]\n", ref, out["tokens"], out["tier"])
+		return nil
+	case "ai":
+		if len(rest) < 1 {
+			return fmt.Errorf("usage: cromwell estimate ai <ref>")
+		}
+		var out map[string]any
+		if err := c.Call("POST", "/api/estimate/ai", map[string]string{"ref": rest[0]}, &out); err != nil {
+			return err
+		}
+		fmt.Printf("estimator dispatched for %s (watch `cromwell log`; the estimate lands on completion)\n", rest[0])
+		return nil
+	}
+	return fmt.Errorf("unknown estimate subcommand %q", sub)
+}
+
+func milestoneCmd(c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: cromwell milestone create|add|remove|lock|list|show ...")
+	}
+	sub := args[0]
+	rest := args[1:]
+	switch sub {
+	case "create":
+		if len(rest) < 1 {
+			return fmt.Errorf("usage: cromwell milestone create <name> [--target-date YYYY-MM-DD]")
+		}
+		fs := flag.NewFlagSet("milestone create", flag.ContinueOnError)
+		target := fs.String("target-date", "", "target date YYYY-MM-DD")
+		if err := fs.Parse(rest[1:]); err != nil {
+			return err
+		}
+		var out map[string]any
+		if err := c.Call("POST", "/api/milestones", map[string]string{
+			"name": rest[0], "target_date": *target,
+		}, &out); err != nil {
+			return err
+		}
+		fmt.Printf("milestone %q created (open)\n", rest[0])
+		return nil
+	case "add", "remove":
+		if len(rest) < 2 {
+			return fmt.Errorf("usage: cromwell milestone %s <name> <member> [--reason r]", sub)
+		}
+		fs := flag.NewFlagSet("milestone member", flag.ContinueOnError)
+		reason := fs.String("reason", "", "reason (required to remove — the descope record)")
+		if err := fs.Parse(rest[2:]); err != nil {
+			return err
+		}
+		var out map[string]any
+		if err := c.Call("POST", "/api/milestones/members", map[string]string{
+			"milestone": rest[0], "ref": rest[1], "action": sub, "reason": *reason,
+		}, &out); err != nil {
+			return err
+		}
+		fmt.Printf("%s: %s %s\n", rest[0], sub, rest[1])
+		return nil
+	case "lock":
+		if len(rest) < 1 {
+			return fmt.Errorf("usage: cromwell milestone lock <name>")
+		}
+		var out map[string]any
+		err := c.Call("POST", "/api/milestones/lock", map[string]string{"milestone": rest[0]}, &out)
+		if err != nil {
+			var se *client.StatusError
+			if ok := errorsAs(err, &se); ok && se.Code == 409 {
+				fmt.Printf("refused by G4: %v\n", out["reason"])
+				return nil
+			}
+			return err
+		}
+		fmt.Printf("milestone %q locked — %v\n", rest[0], out["reason"])
+		return nil
+	case "list":
+		var ms []struct {
+			Name  string `json:"Name"`
+			State string `json:"State"`
+		}
+		if err := c.Call("GET", "/api/milestones", nil, &ms); err != nil {
+			return err
+		}
+		for _, m := range ms {
+			fmt.Printf("%-10s %s\n", m.State, m.Name)
+		}
+		return nil
+	case "show":
+		if len(rest) < 1 {
+			return fmt.Errorf("usage: cromwell milestone show <name>")
+		}
+		var out struct {
+			Milestone struct {
+				Name  string `json:"Name"`
+				State string `json:"State"`
+			} `json:"milestone"`
+			Progress struct {
+				Total int `json:"total"`
+				Done  int `json:"done"`
+			} `json:"progress"`
+			CostUSD float64 `json:"cost_usd"`
+		}
+		if err := c.Call("GET", "/api/milestone?ref="+url.QueryEscape(rest[0]), nil, &out); err != nil {
+			return err
+		}
+		fmt.Printf("%s [%s]  %d/%d done  $%.4f\n", out.Milestone.Name, out.Milestone.State,
+			out.Progress.Done, out.Progress.Total, out.CostUSD)
+		return nil
+	}
+	return fmt.Errorf("unknown milestone subcommand %q", sub)
+}
+
+func roadmapCmd(c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: cromwell roadmap create|add|show ...")
+	}
+	sub := args[0]
+	rest := args[1:]
+	switch sub {
+	case "create":
+		if len(rest) < 1 {
+			return fmt.Errorf("usage: cromwell roadmap create <name>")
+		}
+		var out map[string]any
+		if err := c.Call("POST", "/api/roadmaps", map[string]string{"name": rest[0]}, &out); err != nil {
+			return err
+		}
+		fmt.Printf("roadmap %q created\n", rest[0])
+		return nil
+	case "add":
+		if len(rest) < 2 {
+			return fmt.Errorf("usage: cromwell roadmap add <roadmap> <milestone> [--position n]")
+		}
+		fs := flag.NewFlagSet("roadmap add", flag.ContinueOnError)
+		position := fs.Int("position", 0, "order position")
+		if err := fs.Parse(rest[2:]); err != nil {
+			return err
+		}
+		var out map[string]any
+		if err := c.Call("POST", "/api/roadmaps/entries", map[string]any{
+			"roadmap": rest[0], "milestone": rest[1], "position": *position,
+		}, &out); err != nil {
+			return err
+		}
+		fmt.Printf("%s: %s at position %d\n", rest[0], rest[1], *position)
+		return nil
+	case "show":
+		if len(rest) < 1 {
+			return fmt.Errorf("usage: cromwell roadmap show <name>")
+		}
+		var out struct {
+			Roadmap string `json:"roadmap"`
+			Entries []struct {
+				Position  int    `json:"position"`
+				Milestone string `json:"milestone"`
+				State     string `json:"state"`
+			} `json:"entries"`
+		}
+		if err := c.Call("GET", "/api/roadmap?ref="+url.QueryEscape(rest[0]), nil, &out); err != nil {
+			return err
+		}
+		fmt.Printf("roadmap %s:\n", out.Roadmap)
+		for _, e := range out.Entries {
+			fmt.Printf("  %d. %-20s [%s]\n", e.Position, e.Milestone, e.State)
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown roadmap subcommand %q", sub)
 }
 
 func splitParent(path string) (parent, last string) {

@@ -66,6 +66,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/cost", s.handleCost)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("POST /api/hook/post-commit", s.handlePostCommit)
+	s.routesPhase3(mux)
 	return mux
 }
 
@@ -107,9 +108,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateInitiative(w http.ResponseWriter, r *http.Request) {
 	req, ok := decode[struct {
-		ParentPath string `json:"parent_path"`
-		Slug       string `json:"slug"`
-		Name       string `json:"name"`
+		ParentPath  string `json:"parent_path"`
+		Slug        string `json:"slug"`
+		Name        string `json:"name"`
 		Description string `json:"description"`
 	}](w, r)
 	if !ok {

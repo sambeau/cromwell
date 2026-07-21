@@ -5,7 +5,7 @@ import "fmt"
 // Gates are named, pure functions over current state (DESIGN-003 §8). Every
 // evaluation is audited by the caller as `gate.evaluated` with the returned
 // reason. Phase 1 shipped G1 and G5 (SPEC-001 §2); phase 2 adds G2 (tasks
-// complete) and G3 (verified). G4 (milestone-lockable) arrives with phase 3.
+// complete) and G3 (verified); phase 3 adds G4 (milestone-lockable).
 
 type Gate string
 
@@ -13,6 +13,7 @@ const (
 	GateG1 Gate = "G1" // contract-approved: guards feature idea → ready
 	GateG2 Gate = "G2" // tasks-complete: guards feature active → review
 	GateG3 Gate = "G3" // verified: guards feature review → done
+	GateG4 Gate = "G4" // milestone-lockable: guards milestone open → locked
 	GateG5 Gate = "G5" // initiative-archivable
 )
 
@@ -70,6 +71,23 @@ func G3(verificationApproved, branchMerged bool) GateResult {
 		return GateResult{Gate: GateG3, Pass: false, Reason: "branch not merged"}
 	}
 	return GateResult{Gate: GateG3, Pass: true, Reason: "verified and merged"}
+}
+
+// G4 — milestone-lockable. Guards milestone open → locked: at least one
+// resolved member is done (DESIGN-003 §8). A milestone with nothing finished
+// has shipped nothing, so there is nothing honest to snapshot (FR-5.2). The
+// resolvedMembers count feeds the reason so an empty milestone reads
+// differently from a live-but-unfinished one.
+func G4(resolvedMembers, doneMembers int) GateResult {
+	switch {
+	case resolvedMembers == 0:
+		return GateResult{Gate: GateG4, Pass: false, Reason: "milestone has no resolved members"}
+	case doneMembers == 0:
+		return GateResult{Gate: GateG4, Pass: false,
+			Reason: fmt.Sprintf("no member done yet (%d resolved, none complete)", resolvedMembers)}
+	}
+	return GateResult{Gate: GateG4, Pass: true,
+		Reason: fmt.Sprintf("%d of %d resolved member(s) done", doneMembers, resolvedMembers)}
 }
 
 // G5 — initiative-archivable: no non-terminal features in the subtree.

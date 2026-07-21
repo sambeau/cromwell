@@ -46,6 +46,20 @@ func VerificationOutcomeTool() provider.ToolDef {
 	}
 }
 
+// EstimateOutcomeTool completes an estimate dispatch (SPEC-003 FR-4). The
+// agent returns a token count and its reasoning; the system assigns the
+// confidence tier from the corpus evidence, so the tool takes no tier.
+func EstimateOutcomeTool() provider.ToolDef {
+	return provider.ToolDef{
+		Name:        "submit_estimate",
+		Description: "Submit your token estimate for this work. Give the number of tokens you expect the work to consume and your reasoning, citing any reference points you were shown. This completes the estimate — call it exactly once.",
+		InputSchema: obj(map[string]any{
+			"tokens":    map[string]any{"type": "integer", "description": "Estimated tokens the work will consume (a positive whole number)"},
+			"rationale": str("Your reasoning, citing the reference points you used, if any"),
+		}, "tokens", "rationale"),
+	}
+}
+
 // fileTools and commandTool are the worktree tool definitions.
 func toolDef(name string) (provider.ToolDef, bool) {
 	switch name {

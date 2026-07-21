@@ -80,6 +80,13 @@ func GetTask(ctx context.Context, q Querier, id uuid.UUID) (*Task, error) {
 	return scanTask(q.QueryRow(ctx, `SELECT `+taskCols+` FROM tasks WHERE id = $1`, id))
 }
 
+// TaskByLocalID resolves a dev-plan-local id (e.g. "T1") within a feature,
+// ignoring abandoned tasks (the live id, matching the unique index).
+func TaskByLocalID(ctx context.Context, q Querier, featureID uuid.UUID, localID string) (*Task, error) {
+	return scanTask(q.QueryRow(ctx, `SELECT `+taskCols+` FROM tasks
+		WHERE feature_id = $1 AND local_id = $2 AND state <> 'abandoned'`, featureID, localID))
+}
+
 // TasksForFeature returns the feature's tasks in position order.
 func TasksForFeature(ctx context.Context, q Querier, featureID uuid.UUID) ([]Task, error) {
 	rows, err := q.Query(ctx, `SELECT `+taskCols+` FROM tasks WHERE feature_id = $1 ORDER BY position`, featureID)

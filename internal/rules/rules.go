@@ -146,14 +146,14 @@ func ReviewIdempotencyKey(docID uuid.UUID, contentHash string) string {
 
 // DocSnap is the rule engine's view of a document row.
 type DocSnap struct {
-	ID           uuid.UUID
-	Type         string
-	State        lifecycle.DocumentState
-	ContentHash  string
-	OwnerType    string
-	OwnerID      uuid.UUID
-	Path         string
-	IsSuccessor  bool // supersedes_id is set — this doc is a revision (DESIGN-005 §6)
+	ID          uuid.UUID
+	Type        string
+	State       lifecycle.DocumentState
+	ContentHash string
+	OwnerType   string
+	OwnerID     uuid.UUID
+	Path        string
+	IsSuccessor bool // supersedes_id is set — this doc is a revision (DESIGN-005 §6)
 }
 
 // FeatureSnap is the rule engine's view of a feature row.
@@ -255,6 +255,9 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 	// Phase-2 execution purposes (implement-task, review-code, verify-feature)
 	// route first; a document review falls through to the phase-1 path.
 	if actions, handled := decideDispatchSucceededPhase2(e.Purpose, e.DispatchID, e.Role, e.Outcome, snap); handled {
+		return actions
+	}
+	if actions, handled := decideDispatchSucceededPhase3(e); handled {
 		return actions
 	}
 	if e.RefType != "document" || snap.Doc == nil {

@@ -29,6 +29,8 @@ func (s *Server) Plan(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, e
 		return s.planCodeReview(ctx, d)
 	case "verify-feature":
 		return s.planVerify(ctx, d)
+	case "estimate":
+		return s.planEstimate(ctx, d)
 	default:
 		// review-spec, review-dev-plan: read-only document review (phase 1).
 		system, user, turnCap, err := s.buildReview(ctx, d)
@@ -54,6 +56,88 @@ func validateReview(raw json.RawMessage) error {
 func validateVerification(raw json.RawMessage) error {
 	_, err := rules.ParseVerificationOutcome(raw)
 	return err
+}
+
+func validateEstimate(raw json.RawMessage) error {
+	_, err := rules.ParseEstimateOutcome(raw)
+	return err
+}
+
+// planEstimate builds an estimate plan (FR-4.1): the entity's description and
+// the corpus reference points retrieved by full-text similarity, offered to
+// the estimator role. Read-only — no worktree, one outcome tool. The corpus is
+// retrieved here so the estimator sees real prior (estimate, actual) pairs; the
+// tier the resulting row gets is assigned when the outcome lands (recordAIEstimate).
+func (s *Server) planEstimate(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, error) {
+	cfg, err := s.freshConfig()
+	if err != nil {
+		return nil, err
+	}
+	name, description, err := s.entityDescription(ctx, d.RefType, d.RefID)
+	if err != nil {
+		return nil, err
+	}
+	role, skillBody, err := s.roleAndSkill(d.Role)
+	if err != nil {
+		return nil, err
+	}
+	corpus, err := store.RetrieveCorpus(ctx, s.Store.Pool, description, 5)
+	if err != nil {
+		return nil, err
+	}
+
+	var b strings.Builder
+	b.WriteString("# Work to estimate\n\n")
+	fmt.Fprintf(&b, "%s (%s)\n\n%s\n", name, d.RefType, description)
+	if len(corpus) == 0 {
+		b.WriteString("\n# Reference points\n\nNone: no similar completed work is in the calibration corpus yet. Estimate from judgement.\n")
+	} else {
+		b.WriteString("\n# Reference points from completed work (description → estimate vs actual)\n\n")
+		for _, c := range corpus {
+			fmt.Fprintf(&b, "- %s: estimated %d tokens (%s), actually consumed %d tokens\n  %s\n",
+				c.Name, c.EstimateTokens, c.EstimateTier, c.ActualTokens, firstLine(c.Description))
+		}
+		b.WriteString("\nUse these as calibration anchors: prefer them over raw intuition where the work is similar.\n")
+	}
+	b.WriteString("\n# Your task\n\nEstimate the tokens this work will consume, then call submit_estimate with the number and your reasoning. Cite the reference points you leaned on.\n")
+
+	turnCap := cfg.Dispatch.TurnCap
+	if role.Limits != nil && role.Limits.TurnCap > 0 {
+		turnCap = role.Limits.TurnCap
+	}
+	return &dispatch.Plan{
+		System: identityWithSkill(role.Identity, skillBody), User: b.String(), TurnCap: turnCap,
+		Tools:           []provider.ToolDef{dispatch.EstimateOutcomeTool()},
+		OutcomeTool:     "submit_estimate",
+		ValidateOutcome: validateEstimate,
+	}, nil
+}
+
+// entityDescription returns a feature's or task's display name and description
+// for estimation and corpus retrieval.
+func (s *Server) entityDescription(ctx context.Context, refType string, refID uuid.UUID) (name, description string, err error) {
+	switch refType {
+	case "feature":
+		f, err := store.GetFeature(ctx, s.Store.Pool, refID)
+		if err != nil {
+			return "", "", err
+		}
+		return f.Name, f.Description, nil
+	case "task":
+		t, err := store.GetTask(ctx, s.Store.Pool, refID)
+		if err != nil {
+			return "", "", err
+		}
+		return t.Title, t.Description, nil
+	}
+	return "", "", fmt.Errorf("estimate: unsupported ref_type %q", refType)
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // toolContextForFeature builds the worktree-scoped ToolContext for a
