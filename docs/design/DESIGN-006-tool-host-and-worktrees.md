@@ -1,6 +1,6 @@
 # DESIGN-006: The Tool Host, Worktrees, and Implementation Dispatch
 
-**Status:** Draft for review
+**Status:** Approved — 2026-07-21 ([REVIEW-002](../reviews/REVIEW-002-phase-2-package.md)); SD-1 (graph-project deferral) accepted by Sam
 **Date:** 2026-07-20
 **Parent:** [vision-v1](../vision/vision-v1.md) §8 (tool surface); [DESIGN-002](DESIGN-002-orchestrator.md) §4–5 (dispatch, tool host sketch)
 **Depends on:** DESIGN-002 (dispatch pipeline), DESIGN-005 (tasks), DESIGN-004 (role tool profiles, `commands:`)

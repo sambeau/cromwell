@@ -1,6 +1,6 @@
 # DESIGN-005: Dev-plans, Tasks, and Decomposition
 
-**Status:** Draft for review
+**Status:** Approved — 2026-07-21 ([REVIEW-002](../reviews/REVIEW-002-phase-2-package.md))
 **Date:** 2026-07-20
 **Parent:** [vision-v1](../vision/vision-v1.md) §3, §4; [DESIGN-003](DESIGN-003-document-lifecycle-and-gates.md) §5 (revision), §6 (feature lifecycle), §8 (gates)
 **Depends on:** DESIGN-001 (schema), DESIGN-003 (lifecycle), DESIGN-004 (compartment)

@@ -1,6 +1,6 @@
 # SPEC-002: Phase 2 — The Implementation Loop
 
-**Status:** Draft for review
+**Status:** Approved and binding — 2026-07-21 ([REVIEW-002](../reviews/REVIEW-002-phase-2-package.md))
 **Date:** 2026-07-20
 **Parent design:** DESIGN-005 (dev-plans, tasks, decomposition), DESIGN-006 (tool host, worktrees, dispatch); builds on DESIGN-001/002/003/004
 **Vision:** [vision-v1](../vision/vision-v1.md) §4, §8, §9

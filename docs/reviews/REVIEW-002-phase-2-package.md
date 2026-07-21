@@ -1,7 +1,7 @@
 # REVIEW-002: Consistency Review of the Phase-2 Planning Package
 
-**Status:** Complete — verdict **ready for human approval** (fixes applied in this pass)
-**Date:** 2026-07-20
+**Status:** Complete — **approved by Sam 2026-07-21, as scoped (SD-1 accepted)**
+**Date:** 2026-07-20 (review); 2026-07-21 (approval)
 **Reviewer:** Claude (Fable 5), authoring review — the human approval gate is Sam's, below
 **Scope:** DESIGN-005, DESIGN-006, SPEC-002, against the approved phase-1 package
 **Not in scope:** re-approving DESIGN-001/002/003/004 or SPEC-001 (already approved; touched only by the recorded revision in §3)
