@@ -31,16 +31,18 @@ Usage:
   cromwell initiative archive <path>           archive (gate G5; may raise a checkpoint)
   cromwell feature add <init-path>/<slug> --name <n>
   cromwell feature abandon <path> --reason <r>
+  cromwell feature start <path>                begin work (creates a worktree, dispatches tasks)
+  cromwell task list <feature-path>            show a feature's tasks and states
 
-  cromwell doc add <file> --type spec --owner <feature-path>|project|<init-path>
+  cromwell doc add <file> --type spec|dev_plan --owner <feature-path>|project|<init-path>
   cromwell doc comments <file>                 show the comment thread
   cromwell validate <file>                     run validation without submitting
   cromwell submit <file>                       validate + enter review
   cromwell revise <file>                       create a revision draft of an approved doc
 
   cromwell inbox                               pending checkpoints
-  cromwell respond <id> <answer> [--reason r]  answer a checkpoint
-                                               (approve | request_changes | override | deny | retry | cancel | proceed)
+  cromwell respond <id> <answer> [--reason r]  answer a checkpoint (approve | request_changes |
+                                               override | deny | retry | cancel | proceed | continue | pause)
   cromwell log [--ref type:id] [--limit n]     audit stream
   cromwell cost                                cost rollup
   cromwell search <query>                      full-text search
@@ -112,6 +114,8 @@ func run(cmd string, args []string) error {
 		return initiativeCmd(c, args)
 	case "feature":
 		return featureCmd(c, args)
+	case "task":
+		return taskCmd(c, args)
 	case "doc":
 		return docCmd(c, args)
 	case "validate":
@@ -272,8 +276,42 @@ func featureCmd(c *client.Client, args []string) error {
 		}
 		fmt.Printf("feature %s abandoned\n", path)
 		return nil
+	case "start":
+		var out map[string]any
+		if err := c.Call("POST", "/api/features/start", map[string]string{"path": path}, &out); err != nil {
+			return err
+		}
+		fmt.Printf("feature %s started (active); worktree created, tasks dispatching\n", path)
+		return nil
 	}
 	return fmt.Errorf("unknown feature subcommand %q", sub)
+}
+
+func taskCmd(c *client.Client, args []string) error {
+	if len(args) < 2 || args[0] != "list" {
+		return fmt.Errorf("usage: cromwell task list <feature-path>")
+	}
+	var tasks []struct {
+		LocalID   string `json:"LocalID"`
+		Title     string `json:"Title"`
+		State     string `json:"State"`
+		DependsOn []any  `json:"DependsOn"`
+	}
+	if err := c.Call("GET", "/api/tasks?path="+args[1], nil, &tasks); err != nil {
+		return err
+	}
+	if len(tasks) == 0 {
+		fmt.Println("no tasks (approve a dev-plan to decompose)")
+		return nil
+	}
+	for _, t := range tasks {
+		deps := ""
+		if len(t.DependsOn) > 0 {
+			deps = fmt.Sprintf("  (deps: %d)", len(t.DependsOn))
+		}
+		fmt.Printf("%-4s %-10s %s%s\n", t.LocalID, t.State, t.Title, deps)
+	}
+	return nil
 }
 
 func docCmd(c *client.Client, args []string) error {
@@ -421,6 +459,10 @@ func respondCmd(c *client.Client, args []string) error {
 		response["retry"] = false
 	case "proceed":
 		response["proceed"] = true
+	case "continue":
+		response["continue"] = true
+	case "pause":
+		response["continue"] = false
 	default:
 		response["answer"] = answer
 	}

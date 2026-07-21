@@ -58,6 +58,24 @@ models:
       output: 5.00
       cache_read: 0.10
       cache_write: 1.25
+
+# Non-document dispatch purposes bind to roles here (DESIGN-004 §5 F-4).
+assignments:
+  implement-task: implementer
+  review-code: code-reviewer
+  verify-feature: verifier
+
+# Tool-host command whitelist (DESIGN-006 §4.6). Edit these to your project's
+# build and test commands; implementers and the verifier may run only these.
+commands:
+  build:
+    argv: ["true"]
+    timeout_seconds: 300
+    output_cap_bytes: 65536
+  run_tests:
+    argv: ["true"]
+    timeout_seconds: 600
+    output_cap_bytes: 65536
 `
 
 const hookScript = `#!/bin/sh
@@ -125,7 +143,10 @@ func Init(ctx context.Context, repoRoot, executable string) error {
 	// pack-tracked — F-7), .gitignore for runtime files, the lock itself.
 	writes := map[string]string{
 		"config.yaml": generatedConfig,
-		".gitignore":  "run/\n",
+		// run/ holds the socket; worktrees/ holds linked worktrees — neither
+		// belongs in git, and worktrees must be ignored so server-authored
+		// commits never sweep worktree files into the main tree (DESIGN-006 §3).
+		".gitignore": "run/\nworktrees/\n",
 	}
 	lockBytes, err := lock.Marshal()
 	if err != nil {

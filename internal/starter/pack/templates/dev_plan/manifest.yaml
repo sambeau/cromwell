@@ -1,0 +1,15 @@
+type: dev_plan
+reviewer_role: dev-plan-reviewer
+front_matter:
+  required: [title, type, owner]
+sections:
+  order: strict
+  required:
+    - heading: Approach
+    - heading: Tasks
+  optional:
+    - heading: Risks
+rules:
+  - kind: table_parses
+    section: Tasks
+    columns: [id, title, depends_on, description]

@@ -199,3 +199,26 @@ func TestSplitFrontMatter(t *testing.T) {
 		t.Error("unterminated front matter should error")
 	}
 }
+
+// FR-6.1: an unknown tool in a role profile is a config error.
+func TestUnknownToolRejected(t *testing.T) {
+	root := validCompartment(t)
+	write(t, root, "roles/spec-reviewer.yaml", "model: claude-sonnet-5\nskill: review-spec\nidentity: x\ntools: [read_file, teleport]\n")
+	_, err := Load(root, testRuleKinds)
+	if err == nil || !strings.Contains(err.Error(), "teleport") {
+		t.Errorf("unknown tool should error naming it: %v", err)
+	}
+}
+
+// FR-1.4: a role bound to a read-only purpose may not declare a mutating tool.
+func TestVerifierCannotMutate(t *testing.T) {
+	root := validCompartment(t)
+	// Add a verifier role with edit_file and bind it to verify-feature.
+	write(t, root, "roles/verifier.yaml", "model: claude-sonnet-5\nidentity: verify\ntools: [read_file, edit_file]\n")
+	base, _ := os.ReadFile(filepath.Join(root, "config.yaml"))
+	write(t, root, "config.yaml", string(base)+"\nassignments:\n  verify-feature: verifier\n")
+	_, err := Load(root, testRuleKinds)
+	if err == nil || !strings.Contains(err.Error(), "edit_file") || !strings.Contains(err.Error(), "verifier.yaml") {
+		t.Errorf("verifier with a mutating tool should error naming file and tool: %v", err)
+	}
+}

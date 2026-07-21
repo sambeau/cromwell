@@ -17,6 +17,28 @@ func join(errs []error) error {
 	return errors.Join(errs...)
 }
 
+// KnownTools is the set of tool names a role profile may declare (the source
+// of truth is DESIGN-006 §4.4; the names are the contract). An unknown tool
+// in a profile is a config error (FR-6.1). search_graph is named-but-
+// deferred (SD-1): declaring it is an error until the integration lands.
+func KnownTools() map[string]bool {
+	return map[string]bool{
+		"read_file": true, "list_files": true,
+		"edit_file": true, "write_file": true, "run_command": true,
+	}
+}
+
+// MutatingTools is the subset that writes to the worktree. Roles bound to
+// read-only purposes (verification, review) must declare none (DESIGN-006
+// §4.4, FR-1.4).
+func MutatingTools() map[string]bool {
+	return map[string]bool{"edit_file": true, "write_file": true}
+}
+
+// readOnlyPurposes are dispatch purposes whose role must not mutate the
+// worktree.
+var readOnlyPurposes = []string{"review-code", "verify-feature"}
+
 // Role is roles/<name>.yaml (DESIGN-004 §5). The filename is the role name
 // (F-9). The outcome tool is part of the dispatch purpose, defined in code —
 // never listed in Tools (F-5).
@@ -264,6 +286,7 @@ func Load(root string, knownRuleKinds map[string]bool) (*Compartment, error) {
 	}
 
 	// Cross-file references (DESIGN-004 §9).
+	knownTools, mutating := KnownTools(), MutatingTools()
 	if cfg != nil {
 		for name, r := range c.Roles {
 			rel := filepath.Join("roles", name+".yaml")
@@ -275,10 +298,29 @@ func Load(root string, knownRuleKinds map[string]bool) (*Compartment, error) {
 					errs = append(errs, errf(rel, "skill", "unknown skill %q (no skills/%s/SKILL.md)", r.Skill, r.Skill))
 				}
 			}
+			// Every declared tool must be a known tool (FR-6.1).
+			for _, tool := range r.Tools {
+				if !knownTools[tool] {
+					errs = append(errs, errf(rel, "tools", "unknown tool %q", tool))
+				}
+			}
 		}
 		for purpose, role := range cfg.Assignments {
-			if _, ok := c.Roles[role]; !ok {
+			r, ok := c.Roles[role]
+			if !ok {
 				errs = append(errs, errf(configFile, "assignments."+purpose, "unknown role %q", role))
+				continue
+			}
+			// A role bound to a read-only purpose must not mutate the
+			// worktree (FR-1.4): a verifier or code-reviewer with edit_file
+			// is a config error naming the role file.
+			if isReadOnlyPurpose(purpose) {
+				for _, tool := range r.Tools {
+					if mutating[tool] {
+						errs = append(errs, errf(filepath.Join("roles", role+".yaml"),
+							"tools", "role is bound to read-only purpose %q but declares mutating tool %q", purpose, tool))
+					}
+				}
 			}
 		}
 	}
@@ -324,4 +366,13 @@ func listSubdirs(root, sub string) []string {
 		}
 	}
 	return names
+}
+
+func isReadOnlyPurpose(purpose string) bool {
+	for _, p := range readOnlyPurposes {
+		if p == purpose {
+			return true
+		}
+	}
+	return false
 }
