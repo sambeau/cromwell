@@ -4,11 +4,13 @@ A document-led, specification-centred workflow system that takes a software
 project from initial concept to shipped features — humans driving planning,
 AI agents driving development. Greenfield successor to kanbanzai.
 
-**Status:** phase 1 complete. The vertical slice runs end to end against a
-Supabase-hosted project and a live provider API — see the session record in
-[walkthrough](docs/walkthrough.md). One Definition-of-Done item remains:
-running the automated suite against the Supabase local stack as well as
-plain Postgres (FR-1.3), a CI configuration task.
+**Status:** phases 1 and 2 complete. The implementation loop runs end to end
+against a Supabase-hosted project and a live provider: an approved spec and
+dev-plan decompose into tasks that agents implement, code-review, verify, and
+merge to `main` — with humans gating only on escalation. Session records:
+[phase-1 walkthrough](docs/walkthrough.md), [phase-2 walkthrough](docs/walkthrough-phase-2.md).
+The full `go test -race ./...` suite is green on plain Postgres and the
+Supabase local stack.
 
 Build: `go build ./cmd/cromwell` · Test: `CROMWELL_TEST_DATABASE_URL=<plain
 postgres url> go test -race ./...` · Start: `cromwell init` then
@@ -34,20 +36,26 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
-| [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What must be true before phase 2 starts |
+| [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
+| [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
+| [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |
 
 ## Phase plan
 
-- **Phase 1 — the vertical slice** (SPEC-001): `cromwell init`, server + CLI,
-  initiatives/features, document lifecycle with validation and a real
-  agent-reviewer over the Anthropic API, escalation inbox, complete audit and
-  cost ledger. Proves the three load-bearing claims: code orchestrator,
+- **Phase 1 — the vertical slice** (SPEC-001) ✅ **delivered**: `cromwell
+  init`, server + CLI, initiatives/features, document lifecycle with
+  validation and a real agent-reviewer, escalation inbox, complete audit and
+  cost ledger. Proved the three load-bearing claims: code orchestrator,
   escalation-only human gates, ledger-by-construction.
-- **Phase 2 — implementation loop**: tasks and dev-plans (full gate G1),
-  implementer dispatch with worktrees and the tool host, close-out
-  verification (G3), embeddings and semantic retrieval.
-- **Phase 3 — command centre**: web UI, MCP facet, milestones, roadmaps,
-  estimates and calibration, defects, checklists.
+- **Phase 2 — the implementation loop** (SPEC-002) ✅ **delivered**: dev-plans
+  with validated task tables, decomposition, full gate G1, the tool host
+  (jailed, hash-anchored, whitelisted commands), implementer dispatch in
+  per-feature worktrees, code review of diffs, close-out verification (G3),
+  and merge — a task carried from approved contract to merged code by agents.
+  Semantic retrieval and the graph-project integration are deferred (see the
+  phase-3 entry criteria).
+- **Phase 3 — command centre** (next): web UI, MCP facet, milestones,
+  roadmaps, estimates and calibration, defects, checklists.
 
 ## Design notes
 
