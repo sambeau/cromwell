@@ -14,7 +14,6 @@ import (
 	"cromwell/internal/bus"
 	"cromwell/internal/config"
 	"cromwell/internal/content"
-	"cromwell/internal/dispatch"
 	"cromwell/internal/lifecycle"
 	"cromwell/internal/store"
 )
@@ -294,11 +293,11 @@ func (s *Server) git(args ...string) (string, error) {
 	return string(out), err
 }
 
-// ---- Prompt builder (dispatch.PromptBuilder) ----
+// ---- Document-review prompt assembly (reused by the planner) ----
 
-// BuildReview assembles the reviewer prompt per FR-5.3, reading role, skill,
-// and manifest fresh (O-6).
-func (s *Server) BuildReview(ctx context.Context, d *store.Dispatch) (string, string, int, error) {
+// buildReview assembles the spec/dev-plan reviewer prompt per FR-5.3,
+// reading role, skill, and manifest fresh (O-6).
+func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, string, int, error) {
 	cfg, err := s.freshConfig()
 	if err != nil {
 		return "", "", 0, err
@@ -404,5 +403,3 @@ func (s *Server) BuildReview(ctx context.Context, d *store.Dispatch) (string, st
 	}
 	return system, user, turnCap, nil
 }
-
-var _ dispatch.PromptBuilder = (*Server)(nil)

@@ -65,7 +65,8 @@ func New(ctx context.Context, repoRoot string, log *slog.Logger) (*Server, error
 		Store:     st,
 		Bus:       s.Bus,
 		Config:    s.freshConfig,
-		Builder:   s,
+		Planner:   s,
+		Tools:     s,
 		Providers: s.providerFor,
 		Log:       log,
 	}
@@ -104,6 +105,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.Dispatcher.StallSweep(ctx)
 	if err := s.CatchUpScan(ctx); err != nil {
 		s.Log.Error("boot catch-up scan", "err", err)
+	}
+	if err := s.ReconcileWorktrees(ctx); err != nil {
+		s.Log.Error("boot worktree reconciliation", "err", err)
 	}
 	if err := s.ReconcileGates(ctx); err != nil {
 		s.Log.Error("boot gate reconciliation", "err", err)
@@ -183,6 +187,7 @@ func (s *Server) heartbeat(ctx context.Context) {
 		case <-t.C:
 			s.Dispatcher.StallSweep(ctx)
 			s.Dispatcher.RetrySweep(ctx)
+			s.GCWorktrees(ctx)
 			s.Dispatcher.Kick()
 		}
 	}

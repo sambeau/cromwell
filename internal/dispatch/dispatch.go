@@ -13,13 +13,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"cromwell/internal/bus"
 	"cromwell/internal/config"
 	"cromwell/internal/provider"
-	"cromwell/internal/rules"
 	"cromwell/internal/store"
+	"cromwell/internal/toolhost"
 )
 
 // ReviewOutcomeTool is the reviewer's single outcome tool (O-2). Every
@@ -64,10 +65,34 @@ func Cost(u provider.Usage, p config.PricePerMTok) float64 {
 		float64(u.CacheWrite)*p.CacheWrite/mtok
 }
 
-// PromptBuilder assembles the prompt for a claimed dispatch. Implemented by
-// the server (it owns store queries and fresh config reads, O-6).
-type PromptBuilder interface {
-	BuildReview(ctx context.Context, d *store.Dispatch) (system, user string, turnCap int, err error)
+// Plan is everything a claimed dispatch needs to run: the assembled prompt,
+// the tools offered (role profile + the one outcome tool), the name of that
+// outcome tool, an optional per-purpose outcome validator (for in-dispatch
+// self-correction, DESIGN-002 §4), and — for mutating purposes — the tool
+// host context. Read-only document reviews carry a nil ToolCtx.
+type Plan struct {
+	System         string
+	User           string
+	TurnCap        int
+	Tools          []provider.ToolDef
+	OutcomeTool    string
+	ValidateOutcome func(json.RawMessage) error
+	ToolCtx        *toolhost.Context
+}
+
+// Planner assembles a dispatch's plan. Implemented by the server (it owns
+// store queries and fresh config reads, O-6). One method for all purposes:
+// the server switches on d.Purpose (DESIGN-006 §4.1 — one loop, many tools).
+type Planner interface {
+	Plan(ctx context.Context, d *store.Dispatch) (*Plan, error)
+}
+
+// ToolExecutor runs a non-outcome tool call in the worktree and returns the
+// result to feed back to the agent. isErr marks a tool-level failure (a bad
+// path, a drifted anchor, a failing command) — returned to the agent, not a
+// dispatch failure (DESIGN-006 §4).
+type ToolExecutor interface {
+	Execute(ctx context.Context, tctx *toolhost.Context, name string, input json.RawMessage) (result string, isErr bool)
 }
 
 // ProviderFactory returns the provider client for a model's provider name.
@@ -77,7 +102,8 @@ type Dispatcher struct {
 	Store     *store.Store
 	Bus       *bus.Bus
 	Config    func() (*config.Config, error) // fresh read per use (O-6)
-	Builder   PromptBuilder
+	Planner   Planner
+	Tools     ToolExecutor
 	Providers ProviderFactory
 	Log       *slog.Logger
 
@@ -181,10 +207,14 @@ func (dp *Dispatcher) scan(ctx context.Context) {
 	}
 }
 
+// isMutating reports whether a dispatch purpose writes to a worktree — the
+// governor serialises these per feature (check 3, DESIGN-006 §5). Reviews
+// and verification are read-only and exempt (O-5).
+func isMutating(purpose string) bool { return purpose == "implement-task" }
+
 // admit runs governor checks in order (DESIGN-002 §6): budget, provider
-// rate, worker cap (feature serialisation arrives with mutating dispatches
-// in phase 2 — reviews are read-only and exempt). On approval it claims the
-// dispatch and starts a worker.
+// rate, feature serialisation (mutating dispatches only, check 3), worker
+// cap. On approval it claims the dispatch and starts a worker.
 func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Dispatch) (bool, string, error) {
 	model, ok := cfg.Models[d.Model]
 	if !ok {
@@ -215,12 +245,25 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 		})
 	}
 
-	// 2. Provider rate limit.
+	// 2. Feature serialisation (check 3): at most one mutating dispatch per
+	// feature at a time, so two implementers never share a worktree
+	// (DESIGN-006 §5). Read-only dispatches are exempt.
+	if isMutating(d.Purpose) {
+		busy, err := store.MutatingDispatchActiveForTask(ctx, dp.Store.Pool, d.RefID, d.ID)
+		if err != nil {
+			return false, "", err
+		}
+		if busy {
+			return false, "feature-serialisation", nil
+		}
+	}
+
+	// 3. Provider rate limit.
 	if !dp.takeToken(model.Provider, cfg.Providers[model.Provider].Rate.RequestsPerMinute) {
 		return false, "rate-limit", nil
 	}
 
-	// 3. Worker cap.
+	// 4. Worker cap.
 	select {
 	case dp.workers <- struct{}{}:
 	default:
@@ -249,9 +292,11 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 	return true, "", nil
 }
 
-// runOne executes one claimed dispatch attempt end to end.
+// runOne executes one claimed dispatch attempt end to end. The outcome is a
+// raw JSON payload from the outcome tool; the rule engine parses it per
+// purpose (DESIGN-006 §4.1).
 func (dp *Dispatcher) runOne(ctx context.Context, d *store.Dispatch, price config.PricePerMTok) {
-	outcome, usage, runErr := dp.runReviewLoop(ctx, d)
+	outcome, usage, runErr := dp.runLoop(ctx, d)
 	cost := Cost(usage, price)
 
 	if runErr != nil {
@@ -265,12 +310,11 @@ func (dp *Dispatcher) runOne(ctx context.Context, d *store.Dispatch, price confi
 		return
 	}
 
-	raw, _ := json.Marshal(outcome)
 	err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		return store.MarkDispatchSucceeded(ctx, tx, d.ID, store.TokenUsage{
 			Input: usage.Input, Output: usage.Output,
 			CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
-		}, cost, outcome)
+		}, cost, json.RawMessage(outcome))
 	})
 	if err != nil {
 		dp.Log.Error("dispatcher: record success", "dispatch", d.ID, "err", err)
@@ -278,16 +322,19 @@ func (dp *Dispatcher) runOne(ctx context.Context, d *store.Dispatch, price confi
 	}
 	dp.Bus.Publish(bus.DispatchSucceeded{
 		DispatchID: d.ID, Purpose: d.Purpose, Role: d.Role,
-		RefType: d.RefType, RefID: d.RefID, Outcome: raw,
+		RefType: d.RefType, RefID: d.RefID, Outcome: outcome,
 	})
 }
 
-// runReviewLoop drives the agent until it calls submit_review, nudging when
-// it stops without doing so, up to the turn cap.
-func (dp *Dispatcher) runReviewLoop(ctx context.Context, d *store.Dispatch) (*rules.ReviewOutcome, provider.Usage, error) {
+// runLoop is the generalised agent loop (DESIGN-006 §4.1): offer the plan's
+// tools, execute non-outcome tool calls through the tool host and feed the
+// results back, and complete when the outcome tool is called. Phase 1's
+// single-tool review is the degenerate case (a plan with only the outcome
+// tool and a nil ToolCtx).
+func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawMessage, provider.Usage, error) {
 	var total provider.Usage
 
-	system, user, turnCap, err := dp.Builder.BuildReview(ctx, d)
+	plan, err := dp.Planner.Plan(ctx, d)
 	if err != nil {
 		return nil, total, err
 	}
@@ -304,42 +351,79 @@ func (dp *Dispatcher) runReviewLoop(ctx context.Context, d *store.Dispatch) (*ru
 		return nil, total, err
 	}
 
-	msgs := []provider.Message{provider.UserText(user)}
-	for turn := 0; turn < turnCap; turn++ {
+	msgs := []provider.Message{provider.UserText(plan.User)}
+	seq := 0
+	for turn := 0; turn < plan.TurnCap; turn++ {
 		_ = dp.Store.Heartbeat(ctx, d.ID)
 
 		resp, err := dp.completeWithRetry(ctx, prov, provider.Request{
-			Model: d.Model, System: system, MaxTokens: dp.MaxOutputTokens,
-			Messages: msgs, Tools: []provider.ToolDef{ReviewOutcomeTool()},
+			Model: d.Model, System: plan.System, MaxTokens: dp.MaxOutputTokens,
+			Messages: msgs, Tools: plan.Tools,
 		})
 		if err != nil {
 			return nil, total, err
 		}
 		total.Add(resp.Usage)
 
-		if tu := resp.ToolUse(); tu != nil && tu.ToolName == "submit_review" {
-			outcome, perr := rules.ParseReviewOutcome(tu.ToolInput)
-			if perr == nil {
-				return outcome, total, nil
-			}
-			// Malformed payload: hand the error back as a tool result so the
-			// model can correct itself.
+		tu := resp.ToolUse()
+		if tu == nil {
+			// No tool call this turn: nudge (free text carries no workflow
+			// effect, DESIGN-002 §4).
 			msgs = append(msgs,
 				provider.Message{Role: "assistant", Blocks: resp.Blocks},
-				provider.Message{Role: "user", Blocks: []provider.Block{{
-					Type: "tool_result", ToolUseID: tu.ToolUseID,
-					Result: "Invalid input: " + perr.Error(), IsError: true,
-				}}})
+				provider.UserText("Call a tool to proceed; finish by calling "+plan.OutcomeTool+"."))
 			continue
 		}
 
-		// No outcome call this turn: nudge (free text carries no workflow
-		// effect, DESIGN-002 §4).
+		if tu.ToolName == plan.OutcomeTool {
+			if plan.ValidateOutcome != nil {
+				if verr := plan.ValidateOutcome(tu.ToolInput); verr != nil {
+					// Malformed payload: hand the error back so the model can
+					// self-correct within the dispatch (DESIGN-002 §4).
+					msgs = append(msgs,
+						provider.Message{Role: "assistant", Blocks: resp.Blocks},
+						provider.Message{Role: "user", Blocks: []provider.Block{{
+							Type: "tool_result", ToolUseID: tu.ToolUseID,
+							Result: "Invalid input: " + verr.Error(), IsError: true,
+						}}})
+					continue
+				}
+			}
+			return tu.ToolInput, total, nil
+		}
+
+		// A non-outcome tool call: execute through the tool host, record it in
+		// the ledger, feed the result back.
+		result, isErr := dp.execTool(ctx, plan, tu)
+		seq++
+		dp.recordToolCall(ctx, d.ID, seq, tu.ToolName, len(tu.ToolInput), len(result), isErr)
 		msgs = append(msgs,
 			provider.Message{Role: "assistant", Blocks: resp.Blocks},
-			provider.UserText("Complete the review now by calling submit_review with your verdict."))
+			provider.Message{Role: "user", Blocks: []provider.Block{{
+				Type: "tool_result", ToolUseID: tu.ToolUseID, Result: result, IsError: isErr,
+			}}})
 	}
-	return nil, total, fmt.Errorf("turn cap %d reached without submit_review", turnCap)
+	return nil, total, fmt.Errorf("turn cap %d reached without %s", plan.TurnCap, plan.OutcomeTool)
+}
+
+// execTool runs one non-outcome tool call, enforcing the profile as
+// defence in depth (the model was only offered profile tools, but the host
+// rejects out-of-profile calls too — DESIGN-006 §4.1, FR-6.1).
+func (dp *Dispatcher) execTool(ctx context.Context, plan *Plan, tu *provider.Block) (string, bool) {
+	if plan.ToolCtx == nil || !plan.ToolCtx.InProfile(tu.ToolName) {
+		return fmt.Sprintf("tool %q is not available to this role", tu.ToolName), true
+	}
+	return dp.Tools.Execute(ctx, plan.ToolCtx, tu.ToolName, tu.ToolInput)
+}
+
+func (dp *Dispatcher) recordToolCall(ctx context.Context, dispatchID uuid.UUID, seq int, tool string, argBytes, resultBytes int, isErr bool) {
+	status := "ok"
+	if isErr {
+		status = "error"
+	}
+	if err := dp.Store.RecordToolCall(ctx, dispatchID, seq, tool, argBytes, resultBytes, 0, status); err != nil {
+		dp.Log.Error("tool-call ledger", "dispatch", dispatchID, "err", err)
+	}
 }
 
 // completeWithRetry retries transient provider errors with exponential

@@ -345,3 +345,39 @@ func MarkDispatchCancelled(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor s
 	return Audit(ctx, tx, actor, "dispatch.cancelled", refType, &refID,
 		map[string]any{"dispatch_id": id.String()})
 }
+
+// RecordToolCall appends a tool_calls ledger row (DESIGN-001 §8, FR-6.5).
+func (s *Store) RecordToolCall(ctx context.Context, dispatchID uuid.UUID, seq int, tool string, argBytes, resultBytes, latencyMs int, status string) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO tool_calls (id, dispatch_id, seq, tool, arg_bytes, result_bytes, latency_ms, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		NewID(), dispatchID, seq, tool, argBytes, resultBytes, latencyMs, status)
+	return err
+}
+
+// MutatingDispatchActiveForTask reports whether another implement-task
+// dispatch is queued/running for a task of the same feature as taskID —
+// governor check 3 (DESIGN-006 §5). excludeID is the candidate dispatch.
+func MutatingDispatchActiveForTask(ctx context.Context, q Querier, taskID, excludeID uuid.UUID) (bool, error) {
+	var exists bool
+	err := q.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM dispatches d
+			JOIN tasks t ON t.id = d.ref_id AND d.ref_type = 'task'
+			WHERE d.purpose = 'implement-task'
+			  AND d.state = 'running'
+			  AND d.id <> $2
+			  AND t.feature_id = (SELECT feature_id FROM tasks WHERE id = $1)
+		)`, taskID, excludeID).Scan(&exists)
+	return exists, err
+}
+
+// CountDispatchesForRef counts all dispatches (any state) for an entity and
+// purpose — the re-dispatch index for idempotency keys (DESIGN-006 §7).
+func CountDispatchesForRef(ctx context.Context, q Querier, refType string, refID uuid.UUID, purpose string) (int, error) {
+	var n int
+	err := q.QueryRow(ctx,
+		`SELECT count(*) FROM dispatches WHERE ref_type = $1 AND ref_id = $2 AND purpose = $3`,
+		refType, refID, purpose).Scan(&n)
+	return n, err
+}

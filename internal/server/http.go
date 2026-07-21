@@ -52,7 +52,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/initiatives/archive", s.handleArchiveInitiative)
 	mux.HandleFunc("POST /api/features", s.handleCreateFeature)
 	mux.HandleFunc("POST /api/features/abandon", s.handleAbandonFeature)
+	mux.HandleFunc("POST /api/features/start", s.handleStartFeature)
 	mux.HandleFunc("GET /api/features", s.handleGetFeature)
+	mux.HandleFunc("GET /api/tasks", s.handleListTasks)
 	mux.HandleFunc("POST /api/docs", s.handleRegisterDoc)
 	mux.HandleFunc("POST /api/docs/validate", s.handleValidate)
 	mux.HandleFunc("POST /api/docs/submit", s.handleSubmit)
@@ -219,6 +221,38 @@ func (s *Server) handleGetFeature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, f)
+}
+
+// handleStartFeature transitions ready → active and creates the worktree
+// (FR-5.1); starting work is a deliberate resource commitment (L-5).
+func (s *Server) handleStartFeature(w http.ResponseWriter, r *http.Request) {
+	req, ok := decode[struct {
+		Path string `json:"path"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	f, err := s.StartFeature(r.Context(), req.Path, actor(r))
+	if err != nil {
+		writeErr(w, 409, err)
+		return
+	}
+	writeJSON(w, 200, f)
+}
+
+func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	f, err := s.featureByPath(ctx, r.URL.Query().Get("path"))
+	if err != nil {
+		writeErr(w, 404, err)
+		return
+	}
+	tasks, err := store.TasksForFeature(ctx, s.Store.Pool, f.ID)
+	if err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, tasks)
 }
 
 func (s *Server) handleAbandonFeature(w http.ResponseWriter, r *http.Request) {

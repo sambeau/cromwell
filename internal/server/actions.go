@@ -54,12 +54,34 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		return nil
 	}
 
+	loadTask := func(id uuid.UUID) error {
+		t, err := store.GetTask(ctx, s.Store.Pool, id)
+		if err != nil {
+			return err
+		}
+		snap.Task = &rules.TaskSnap{ID: t.ID, FeatureID: t.FeatureID, State: t.State}
+		return nil
+	}
+	loadFeature := func(id uuid.UUID) error {
+		f, err := store.GetFeature(ctx, s.Store.Pool, id)
+		if err != nil {
+			return err
+		}
+		snap.RefFeature = &rules.FeatureSnap{ID: f.ID, State: f.State}
+		return nil
+	}
+
 	switch e := ev.(type) {
 	case bus.DocumentTransitioned:
 		return snap, ignoreNotFound(loadDoc(e.DocID))
 	case bus.DispatchSucceeded:
-		if e.RefType == "document" {
+		switch e.RefType {
+		case "document":
 			return snap, ignoreNotFound(loadDoc(e.RefID))
+		case "task":
+			return snap, ignoreNotFound(loadTask(e.RefID))
+		case "feature":
+			return snap, ignoreNotFound(loadFeature(e.RefID))
 		}
 	case bus.DocumentFileChanged:
 		doc, err := store.LiveDocumentByPath(ctx, s.Store.Pool, e.Path)
@@ -71,8 +93,13 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		}
 		snap.Doc = docSnap(doc)
 	case bus.CheckpointResponded:
-		if e.RefType == "document" {
+		switch e.RefType {
+		case "document":
 			return snap, ignoreNotFound(loadDoc(e.RefID))
+		case "task":
+			return snap, ignoreNotFound(loadTask(e.RefID))
+		case "feature":
+			return snap, ignoreNotFound(loadFeature(e.RefID))
 		}
 	}
 	return snap, nil
@@ -89,6 +116,7 @@ func docSnap(d *store.Document) *rules.DocSnap {
 	snap := &rules.DocSnap{
 		ID: d.ID, Type: d.Type, State: d.State,
 		ContentHash: d.ContentHash, OwnerType: d.OwnerType, Path: d.Path,
+		IsSuccessor: d.SupersedesID != nil,
 	}
 	if d.OwnerID != nil {
 		snap.OwnerID = *d.OwnerID
@@ -134,6 +162,10 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 	case rules.KickQueue:
 		s.Dispatcher.Kick()
 		return nil
+	}
+	// Phase-2 implementation-loop actions.
+	if handled, err := s.executePhase2(ctx, action); handled {
+		return err
 	}
 	return fmt.Errorf("unknown action %T", action)
 }

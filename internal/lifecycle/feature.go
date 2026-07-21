@@ -32,6 +32,9 @@ const (
 	FeatTasksComplete FeatureEvent = "tasks_complete"
 	// FeatVerified fires when G3 passes (verification approved, branch merged); phase 2.
 	FeatVerified FeatureEvent = "verified"
+	// FeatRework fires when verification requests changes: the feature returns
+	// to active to address unmet criteria (DESIGN-006 §6).
+	FeatRework FeatureEvent = "rework"
 	// FeatAbandon is always human, always with a reason (DESIGN-003 §6).
 	FeatAbandon FeatureEvent = "abandon"
 )
@@ -51,6 +54,7 @@ var featTransitions = map[FeatureState]map[FeatureEvent]FeatureState{
 	},
 	FeatReview: {
 		FeatVerified: FeatDone,
+		FeatRework:   FeatActive, // verification requested changes (DESIGN-006 §6)
 		FeatAbandon:  FeatAbandoned,
 	},
 }

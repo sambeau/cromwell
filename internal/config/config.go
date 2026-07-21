@@ -113,11 +113,12 @@ type DispatchConfig struct {
 	StallSeconds int `yaml:"stall_seconds"`
 }
 
-// Command is a tool-host argv whitelist entry (phase 2; shape provisional
-// per DESIGN-004 §12).
+// Command is a tool-host argv whitelist entry (DESIGN-004 §4, DESIGN-006
+// §4.6): a fixed argv template, a timeout, and an output cap.
 type Command struct {
 	Argv           []string `yaml:"argv"`
 	TimeoutSeconds int      `yaml:"timeout_seconds"`
+	OutputCapBytes int      `yaml:"output_cap_bytes"`
 }
 
 const configFile = "config.yaml"
