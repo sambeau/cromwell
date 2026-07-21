@@ -25,6 +25,10 @@ type Task struct {
 
 const taskCols = `id, feature_id, position, COALESCE(local_id, ''), title, description, state, depends_on, created_at`
 
+// taskColsT is the same column list qualified to the `t` alias, for queries
+// that join another table (avoids ambiguous `id`).
+const taskColsT = `t.id, t.feature_id, t.position, COALESCE(t.local_id, ''), t.title, t.description, t.state, t.depends_on, t.created_at`
+
 func scanTask(row pgx.Row) (*Task, error) {
 	var t Task
 	err := row.Scan(&t.ID, &t.FeatureID, &t.Position, &t.LocalID, &t.Title,
@@ -156,7 +160,7 @@ func ReadyDependents(ctx context.Context, q Querier, featureID, justDone uuid.UU
 // eligible for implementer dispatch (DESIGN-005 §5).
 func (s *Store) DispatchableTasks(ctx context.Context, featureID uuid.UUID) ([]Task, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT `+taskCols+` FROM tasks t
+		SELECT `+taskColsT+` FROM tasks t
 		JOIN features f ON f.id = t.feature_id
 		WHERE t.feature_id = $1 AND t.state = 'ready'
 		  AND f.state = 'active' AND NOT f.spec_stale

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -115,6 +116,7 @@ type Dispatcher struct {
 
 	initOnce sync.Once
 	kick     chan struct{}
+	kickGen  atomic.Int64
 	rate     map[string]*rateBucket
 	rateMu   sync.Mutex
 	workers  chan struct{}
@@ -148,9 +150,14 @@ func (dp *Dispatcher) defaults(cfg *config.Config) {
 }
 
 // Kick asks the dispatcher to re-scan the queue (after enqueue, checkpoint
-// answer, or budget change). Coalesces.
+// answer, or budget change). Kicks coalesce into a single pending signal, but
+// the generation counter ensures a Kick issued after a commit always causes a
+// scan that observes it: the Run loop re-scans while the generation keeps
+// changing, so a Kick can never be lost to coalescing (which previously let a
+// just-enqueued dispatch sit until the heartbeat).
 func (dp *Dispatcher) Kick() {
 	dp.ensureInit()
+	dp.kickGen.Add(1)
 	select {
 	case dp.kick <- struct{}{}:
 	default:
@@ -175,7 +182,15 @@ func (dp *Dispatcher) Run(ctx context.Context) {
 			dp.wg.Wait()
 			return
 		case <-dp.kick:
-			dp.scan(ctx)
+			// Re-scan while new Kicks arrive during a scan, so a dispatch
+			// enqueued just before its Kick is never missed.
+			for {
+				start := dp.kickGen.Load()
+				dp.scan(ctx)
+				if dp.kickGen.Load() == start {
+					break
+				}
+			}
 		}
 	}
 }

@@ -353,8 +353,16 @@ func (s *Server) evaluateContractGate(ctx context.Context, featureID uuid.UUID) 
 	if err == nil {
 		specApproved = spec.State == lifecycle.DocApproved
 	}
-	// Phase 1: dev-plan not required (D-1); phase 2 flips the flag.
-	g := lifecycle.G1(specApproved, false, false)
+	devPlanApproved := false
+	devPlan, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "dev_plan", "feature", f.ID)
+	if err != nil && err != store.ErrNotFound {
+		return err
+	}
+	if err == nil {
+		devPlanApproved = devPlan.State == lifecycle.DocApproved
+	}
+	// Phase 2: the contract is spec AND dev-plan (FR-2.1, DESIGN-005 §3).
+	g := lifecycle.G1(specApproved, true, devPlanApproved)
 
 	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.Audit(ctx, tx, "orchestrator", "gate.evaluated", "feature", &f.ID,

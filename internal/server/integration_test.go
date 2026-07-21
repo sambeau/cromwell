@@ -228,9 +228,12 @@ func (h *harness) featureState(path string) lifecycle.FeatureState {
 	return f.State
 }
 
-// TestApprovePathEndToEnd is the vertical slice: submit → validate →
-// agent-review approve → G1 → feature ready, with the complete audit
-// sequence and exact cost (FR-5.4, FR-7.1, FR-7.2, FR-3.2).
+// TestApprovePathEndToEnd is the spec-review slice: submit → validate →
+// agent-review approve → G1 evaluated, with the complete audit sequence and
+// exact cost (FR-5.4, FR-7.1, FR-7.2). Under the phase-2 two-part contract
+// (FR-2.1) the spec alone does not advance the feature — G1 holds at idea
+// until the dev-plan is also approved (see TestFullImplementationLoop for the
+// full contract path).
 func TestApprovePathEndToEnd(t *testing.T) {
 	h := newHarness(t)
 	specPath := h.setupFeatureWithSpec()
@@ -244,9 +247,21 @@ func TestApprovePathEndToEnd(t *testing.T) {
 		t.Fatalf("submit: %d %v", code, out)
 	}
 
-	h.eventually("feature ready", func() bool { return h.featureState("auth/login") == lifecycle.FeatReady })
+	h.eventually("G1 evaluated", func() bool {
+		events, _ := h.srv.Store.AuditTail(context.Background(), "", nil, 100)
+		for _, e := range events {
+			if e.Kind == "gate.evaluated" {
+				return true
+			}
+		}
+		return false
+	})
 	if got := h.docState(specPath); got != lifecycle.DocApproved {
 		t.Errorf("doc state = %s, want approved", got)
+	}
+	// Spec approved but dev-plan absent: G1 fails, feature stays idea (FR-2.1).
+	if got := h.featureState("auth/login"); got != lifecycle.FeatIdea {
+		t.Errorf("feature state = %s, want idea (dev-plan not yet approved)", got)
 	}
 
 	// FR-7.1: the complete audit sequence, no gaps.
@@ -263,7 +278,7 @@ func TestApprovePathEndToEnd(t *testing.T) {
 		"document.validated", "document.transition", // submit
 		"dispatch.queued", "dispatch.running", "dispatch.succeeded",
 		"document.transition", // approve
-		"gate.evaluated", "feature.transition",
+		"gate.evaluated",      // G1 evaluated (fails: dev-plan absent), no feature transition
 	}
 	if fmt.Sprint(kinds) != fmt.Sprint(want) {
 		t.Errorf("audit sequence:\n got %v\nwant %v", kinds, want)
@@ -405,8 +420,10 @@ func TestEscalatePath(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("respond: %d", code)
 	}
+	// The human's approve advances the spec; the feature stays idea until the
+	// dev-plan half of the contract is also approved (FR-2.1).
 	h.eventually("approved after human answer", func() bool {
-		return h.docState(specPath) == lifecycle.DocApproved && h.featureState("auth/login") == lifecycle.FeatReady
+		return h.docState(specPath) == lifecycle.DocApproved && h.featureState("auth/login") == lifecycle.FeatIdea
 	})
 }
 

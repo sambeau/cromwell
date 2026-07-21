@@ -187,3 +187,63 @@ func TestWorktreeAndSpecStale(t *testing.T) {
 		t.Error("removed worktree should not be live")
 	}
 }
+
+// TestGovernorSerialisationQuery is FR-7.2 at the store level: a running
+// implement-task dispatch blocks another implement dispatch for a task of the
+// same feature, but not for a different feature (governor check 3).
+func TestGovernorSerialisationQuery(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	fid := seedFeature(t, s)
+
+	var t1, t2 *Task
+	if err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		var err error
+		t1, err = CreateTask(ctx, tx, fid, 0, "T1", "a", "", "orchestrator")
+		if err != nil {
+			return err
+		}
+		t2, err = CreateTask(ctx, tx, fid, 1, "T2", "b", "", "orchestrator")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run an implement dispatch for T1.
+	if err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		d, err := EnqueueDispatch(ctx, tx, "implement-task", "implementer", "m", "task", t1.ID, "impl:t1:0")
+		if err != nil {
+			return err
+		}
+		_, err = MarkDispatchRunning(ctx, tx, d.ID, nil)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// T2 (same feature) is blocked.
+	busy, err := MutatingDispatchActiveForTask(ctx, s.Pool, t2.ID, uuid.New())
+	if err != nil || !busy {
+		t.Errorf("T2 should be blocked by T1's running dispatch: busy=%v err=%v", busy, err)
+	}
+
+	// A task of a different feature is not blocked.
+	var t3 *Task
+	if err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		in, err := CreateInitiative(ctx, tx, nil, "other", "Other", "", "sam")
+		if err != nil {
+			return err
+		}
+		f, err := CreateFeature(ctx, tx, in.ID, "thing", "Thing", "", "sam")
+		if err != nil {
+			return err
+		}
+		t3, err = CreateTask(ctx, tx, f.ID, 0, "T1", "c", "", "orchestrator")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if busy, _ := MutatingDispatchActiveForTask(ctx, s.Pool, t3.ID, uuid.New()); busy {
+		t.Error("a different feature's task must not be blocked")
+	}
+}

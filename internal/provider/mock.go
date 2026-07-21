@@ -29,6 +29,13 @@ func (m *Mock) Fail(err error) *Mock {
 	return m
 }
 
+// RespondToolUse scripts one turn that calls the named tool with the given
+// JSON input — used to drive multi-turn tool sequences (read/edit/command)
+// as well as the final outcome tool.
+func (m *Mock) RespondToolUse(tool, inputJSON string, usage Usage) *Mock {
+	return m.RespondOutcome(tool, inputJSON, usage)
+}
+
 // RespondOutcome scripts a response that calls the named outcome tool with
 // the given JSON input — the common case for reviewer tests.
 func (m *Mock) RespondOutcome(tool, inputJSON string, usage Usage) *Mock {
@@ -57,4 +64,11 @@ func (m *Mock) Complete(_ context.Context, req Request) (*Response, error) {
 		return nil, step.err
 	}
 	return step.resp, nil
+}
+
+// Remaining reports how many scripted steps are unconsumed (test diagnostics).
+func (m *Mock) Remaining() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.steps)
 }

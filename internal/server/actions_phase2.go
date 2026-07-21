@@ -137,20 +137,16 @@ func (s *Server) decomposeDevPlan(ctx context.Context, featureID, devPlanID uuid
 }
 
 // dispatchReadyTasks enqueues an implement-task dispatch for each
-// dispatchable task; the governor serialises them per feature (DESIGN-006 §5).
+// dispatchable (ready) task, moving it ready → active in the same
+// transaction; the governor serialises them per feature (DESIGN-006 §5).
 func (s *Server) dispatchReadyTasks(ctx context.Context, featureID uuid.UUID) error {
 	cfg, err := s.freshConfig()
 	if err != nil {
 		return s.configErrorCheckpoint(ctx, "feature", featureID, err)
 	}
-	role, ok := cfg.Assignments["implement-task"]
-	if !ok {
+	if _, ok := cfg.Assignments["implement-task"]; !ok {
 		return s.configErrorCheckpoint(ctx, "feature", featureID,
 			fmt.Errorf("config.yaml assignments has no implement-task role"))
-	}
-	model, err := s.modelForPurpose(cfg, "implement-task", role)
-	if err != nil {
-		return s.configErrorCheckpoint(ctx, "feature", featureID, err)
 	}
 	tasks, err := s.Store.DispatchableTasks(ctx, featureID)
 	if err != nil {
@@ -158,11 +154,6 @@ func (s *Server) dispatchReadyTasks(ctx context.Context, featureID uuid.UUID) er
 	}
 	for i := range tasks {
 		task := tasks[i]
-		n, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "task", task.ID, "implement-task")
-		if err != nil {
-			return err
-		}
-		key := rules.ImplementIdempotencyKey(task.ID, n)
 		err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			fresh, err := store.GetTask(ctx, tx, task.ID)
 			if err != nil {
@@ -172,8 +163,7 @@ func (s *Server) dispatchReadyTasks(ctx context.Context, featureID uuid.UUID) er
 			if err := store.TransitionTask(ctx, tx, fresh, lifecycle.TaskClaim, "orchestrator", nil); err != nil {
 				return err
 			}
-			_, err = store.EnqueueDispatch(ctx, tx, "implement-task", role, model, "task", task.ID, key)
-			return err
+			return s.enqueueImplementTx(ctx, tx, cfg, task.ID)
 		})
 		if err != nil {
 			return err
@@ -183,6 +173,26 @@ func (s *Server) dispatchReadyTasks(ctx context.Context, featureID uuid.UUID) er
 		s.Dispatcher.Kick()
 	}
 	return nil
+}
+
+// enqueueImplementTx enqueues an implement-task dispatch for a task within
+// the caller's transaction, computing the re-dispatch idempotency key from
+// how many implement dispatches the task already has (DESIGN-006 §7). The
+// task's state transition (ready → active on first dispatch, or already
+// active on a code-review rework) is the caller's responsibility.
+func (s *Server) enqueueImplementTx(ctx context.Context, tx pgx.Tx, cfg *config.Config, taskID uuid.UUID) error {
+	role := cfg.Assignments["implement-task"]
+	model, err := s.modelForPurpose(cfg, "implement-task", role)
+	if err != nil {
+		return err
+	}
+	n, err := store.CountDispatchesForRef(ctx, tx, "task", taskID, "implement-task")
+	if err != nil {
+		return err
+	}
+	key := rules.ImplementIdempotencyKey(taskID, n)
+	_, err = store.EnqueueDispatch(ctx, tx, "implement-task", role, model, "task", taskID, key)
+	return err
 }
 
 // completeImplementation commits the implementer's worktree changes to the
@@ -223,7 +233,7 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 	head, _ := gitIn(root, "rev-parse", "HEAD")
 	key := rules.CodeReviewIdempotencyKey(taskID, strings.TrimSpace(head))
 
-	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionTask(ctx, tx, task, lifecycle.TaskImplemented, "orchestrator",
 			map[string]any{"summary": summary}); err != nil {
 			return err
@@ -231,6 +241,10 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 		_, err := store.EnqueueDispatch(ctx, tx, "review-code", reviewerRole, model, "task", taskID, key)
 		return err
 	})
+	if err == nil {
+		s.Dispatcher.Kick()
+	}
+	return err
 }
 
 // approveTaskCode records a code-review approval: task → done, readiness
@@ -341,22 +355,30 @@ func (s *Server) returnTaskCode(ctx context.Context, a rules.ReturnTaskCode) err
 	if err != nil {
 		return err
 	}
+	cfg, err := s.freshConfig()
+	if err != nil {
+		return s.configErrorCheckpoint(ctx, "task", a.TaskID, err)
+	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		// review → active, then re-dispatch the implementer against the same
+		// worktree — the diff is amended, not restarted (DESIGN-006 §5).
 		if err := store.TransitionTask(ctx, tx, task, lifecycle.TaskRequestChanges, a.Actor,
 			map[string]any{"comments": len(a.Comments)}); err != nil {
 			return err
 		}
-		// Code-review comments are recorded on the feature's dev-plan thread
-		// via audit; task-scoped comment storage is a phase-3 nicety. Record
-		// them in the audit payload so they are not lost.
-		return store.Audit(ctx, tx, a.Actor, "task.review_comments", "task", &a.TaskID,
-			map[string]any{"comments": a.Comments})
+		// Code-review comments are recorded in the audit payload (task-scoped
+		// comment storage is a phase-3 nicety) so they are not lost.
+		if err := store.Audit(ctx, tx, a.Actor, "task.review_comments", "task", &a.TaskID,
+			map[string]any{"comments": a.Comments}); err != nil {
+			return err
+		}
+		return s.enqueueImplementTx(ctx, tx, cfg, a.TaskID)
 	})
 	if err != nil {
 		return err
 	}
-	// Re-dispatch the implementer against the same worktree.
-	return s.dispatchReadyTasks(ctx, task.FeatureID)
+	s.Dispatcher.Kick()
+	return nil
 }
 
 // mergeFeature records a verification approval (G3): merge the branch, feature
