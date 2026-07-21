@@ -136,11 +136,14 @@ type SectionRef struct {
 
 // Rule references a registered rule kind (F-6); the registry lives in the
 // validation engine, and Load verifies kinds against the set the caller
-// passes in.
+// passes in. Fields beyond kind/section are per-kind: min for
+// min_list_items, columns for table_parses (documentary — the columns are
+// fixed by the rule).
 type Rule struct {
-	Kind    string `yaml:"kind"`
-	Section string `yaml:"section"`
-	Min     int    `yaml:"min"`
+	Kind    string   `yaml:"kind"`
+	Section string   `yaml:"section"`
+	Min     int      `yaml:"min"`
+	Columns []string `yaml:"columns"`
 }
 
 // LoadManifest reads templates/<docType>/manifest.yaml fresh (O-6).

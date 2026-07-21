@@ -37,10 +37,10 @@ func (r *Report) add(check, format string, args ...any) {
 type LinkChecker func(target string) bool
 
 // RuleKinds is the registry of manifest rule kinds (DESIGN-004 §7, F-6).
-// Phase 1 ships min_list_items; phase 2 adds table_parses. New kinds are
+// Phase 1 shipped min_list_items; phase 2 adds table_parses. New kinds are
 // added here and listed in DESIGN-004.
 func RuleKinds() map[string]bool {
-	return map[string]bool{"min_list_items": true}
+	return map[string]bool{"min_list_items": true, "table_parses": true}
 }
 
 // Validate runs the full check suite for a document of the manifest's type.
@@ -123,6 +123,17 @@ func Validate(m *config.Manifest, raw string, resolves LinkChecker) Report {
 			if n := countListItems(sec.Content); n < rule.Min {
 				report.add("rule:min_list_items",
 					"section %q has %d list item(s), needs at least %d", rule.Section, n, rule.Min)
+			}
+		case "table_parses":
+			// The dev-plan's task table must be present, well-formed, and
+			// acyclic before review (DESIGN-005 §2, FR-1.2).
+			sec := doc.SectionByHeading(rule.Section)
+			if sec == nil {
+				report.add("rule:table_parses", "section %q is missing", rule.Section)
+				continue
+			}
+			if _, err := ParseTaskTable(sec.Content); err != nil {
+				report.add("rule:table_parses", "%v", err)
 			}
 		default:
 			// Unknown kinds are caught at config load (DESIGN-004 §9);
