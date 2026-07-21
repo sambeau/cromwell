@@ -1,13 +1,13 @@
 # Phase-3 Session Record — Sizing, Calibration, and Milestones
 
-**Status:** Implementation complete, tested, and CLI-smoke-verified; the
-live-provider smoke (SPEC-003 DoD 2) is the remaining human step, specified in
-§5 below.
+**Status:** Complete — satisfies SPEC-003 Definition of Done items 1–5,
+including the live-provider smoke (§5).
 **Date:** 2026-07-21
-**Operator:** Sam (implementation by Claude on Sam's behalf)
-**Test database:** dedicated dev Postgres (`cromwell-pg-dev`, port 54329)
-**Provider (automated tests):** the scriptable `Mock` — the AI estimator runs
-through the real dispatch loop against it.
+**Operator:** Sam (commands run by Claude on Sam's behalf)
+**Automated-test database:** dedicated dev Postgres (`cromwell-pg-dev`, 54329)
+**Live-smoke database:** Supabase-hosted Postgres (session pooler, eu-central-1)
+**Live-smoke provider:** DeepSeek via its Anthropic-compatible gateway, model
+`deepseek-v4-flash`, for all six roles.
 
 This records the phase-3 build: the planning-and-tracking engine SPEC-003
 scoped as the command centre's first slice. It measures and plans honestly —
@@ -122,26 +122,82 @@ milestone membership, the G4 gate both ways, the atomic
 `gate.evaluated`→`milestone.locked` audit pair (NFR-5), post-lock freeze, and
 roadmap ordering — all through the real binary, no provider needed.
 
-## 5. Live smoke to run (SPEC-003 DoD 2)
+## 5. Live smoke — the real run (SPEC-003 DoD 2)
 
-The one thing an automated/mock run cannot prove is a **real provider** pricing
-a real estimate and the actual landing beside it. To close DoD 2, run against a
-Supabase-hosted project with the DeepSeek gateway (as phase 2 did), and a human
-inspects the ledger and calibration:
+Against a Supabase-hosted project with the DeepSeek gateway (all six roles on
+`deepseek-v4-flash`), the full flow ran end to end. Everything below is real:
+a real database, a real provider, real agent-written code, and real
+calibration against real actuals.
 
-1. Scratch project → `cromwell init` (Supabase session-pooler URL; short
-   `server.socket`, e.g. `/tmp/cromwell.sock`, for the macOS 104-byte limit).
-   `config.yaml`: point `assignments.estimate` at `estimator` (shipped) and
-   route it at `deepseek-v4-flash`.
-2. Create a feature; `cromwell estimate ai <feature>` — the estimator prices
-   it. With an empty corpus this lands `rough`.
-3. Carry a small feature to `done` (the phase-2 loop), so its
-   `(description, estimate, actual)` enters the corpus.
-4. `cromwell estimate ai <similar-feature>` — confirm it now cites the
-   completed one and lands `considered`; `cromwell estimate --ref <feature>`
-   shows estimate vs actual and the delta.
-5. Group the features into a milestone, lock after one ships, read the honest
-   snapshot; inspect `cromwell cost --ref <milestone>` and the audit log.
+**A feature carried to `done` by agents.** A minimal feature — a `greet.py`
+returning the exact string `Welcome to Cromwell` — went the whole phase-2 loop
+live: spec reviewed and approved (`$0.00036`), dev-plan reviewed and approved
+(`$0.00052`), decomposed to one task, implemented (`$0.00129`,
+agent-authored `greet.py`), code-reviewed and approved (`$0.00088`), verified
+against all three acceptance criteria with evidence (`$0.00195`), and merged.
+It reached `done` with real dispatches in the ledger.
 
-Record the transcript, ledger, and calibration here to complete DoD 2/4, as
-[walkthrough-phase-2.md](walkthrough-phase-2.md) did for phase 2.
+**Sizing is honest, and actuals feed calibration** — the headline result:
+
+```
+# Estimate the completed feature. The corpus has no similar prior work yet.
+$ cromwell estimate ai p3/welcome        # estimator, live DeepSeek
+$ cromwell estimate --ref p3/welcome
+p3/welcome (feature): 800 tokens [rough]
+  actual: 46263 tokens (delta +45463)
+```
+
+The estimator, shown an empty corpus, reasoned from judgement to **800 tokens
+(`rough`)** — "no reference points exist in the corpus … a floor-level
+estimate." The real work consumed **46,263 tokens**. The `rough` tier was
+honest about its own weakness, and the actual landed beside it with the delta
+laid bare (`+45,463`). That `(description, 800, 46263)` tuple is now the
+corpus.
+
+```
+# A structurally identical feature. The corpus now holds `welcome`.
+$ cromwell estimate ai p3/farewell       # estimator, live DeepSeek
+$ cromwell estimate --ref p3/farewell
+p3/farewell (feature): 46263 tokens [considered]
+```
+
+Given the completed neighbour, the estimator returned **46,263 tokens
+(`considered`)**, its rationale citing it directly: *"Anchored on the 'Welcome
+greeting' reference point (actual: 46,263 tokens) … the original estimate of
+800 tokens was a severe undercount."* A single completed feature moved a naive
+`rough` guess to a `considered` estimate two orders of magnitude closer to the
+truth. This is the vision's calibration claim, proven: rough numbers sharpen
+against actuals.
+
+**Milestones lock honestly.**
+
+```
+$ cromwell milestone create p3-v1 --target-date 2026-09-30
+$ cromwell milestone add p3-v1 p3          # initiative → welcome (done) + farewell (idea)
+$ cromwell milestone show p3-v1
+p3-v1 [open]  1/2 done  $0.0051
+$ cromwell milestone lock p3-v1
+milestone "p3-v1" locked — 1 of 2 resolved member(s) done   # G4
+$ cromwell milestone show p3-v1
+p3-v1 [locked]  1/2 done  $0.0051                            # frozen snapshot
+```
+
+Adding the initiative pulled in both features transitively; G4 allowed the
+lock once `welcome` had shipped; the snapshot froze the leaf set. The
+gate.evaluated (G4 pass) and milestone.locked rows are one atomic pair in the
+audit log.
+
+**Cost roll-ups, extended.**
+
+```
+$ cromwell cost --ref p3            # initiative, transitive
+initiative p3  $0.0051
+$ cromwell cost --ref p3-v1         # milestone, over resolved members
+milestone  p3-v1  $0.0051
+$ cromwell cost --months
+2026-07  dispatches=14  $0.0103     # aggregates this run + the leftover phase-2 smoke
+```
+
+The whole phase-3 live run — the feature loop plus both estimator dispatches —
+was **7 costed dispatches for `$0.00601`**. Honest sizing, honest calibration,
+honest milestones, for six-tenths of a cent.
