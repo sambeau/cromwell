@@ -33,9 +33,10 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DESIGN-006](docs/design/DESIGN-006-tool-host-and-worktrees.md) | Phase 2: the tool host, worktrees, implementer/verifier dispatch, merge |
 | [SPEC-001](docs/specs/SPEC-001-phase-1-vertical-slice.md) | Phase 1: the vertical slice (**binding**) |
 | [SPEC-002](docs/specs/SPEC-002-phase-2-implementation-loop.md) | Phase 2: the implementation loop (**binding**) |
-| [SPEC-003](docs/specs/SPEC-003-phase-3-planning-and-tracking.md) | Phase 3 (first slice): sizing, calibration, milestones (draft, awaiting review) |
+| [SPEC-003](docs/specs/SPEC-003-phase-3-planning-and-tracking.md) | Phase 3 (first slice): sizing, calibration, milestones (**binding**) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
+| [REVIEW-003](docs/reviews/REVIEW-003-phase-3-planning-package.md) | Consistency review + approval of SPEC-003 |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |

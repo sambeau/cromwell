@@ -1,6 +1,6 @@
 # SPEC-003: Phase 3 — Sizing, Calibration, and Milestones
 
-**Status:** Draft for review
+**Status:** Approved and binding — 2026-07-21 ([REVIEW-003](../reviews/REVIEW-003-phase-3-planning-package.md))
 **Date:** 2026-07-21
 **Parent design:** DESIGN-001 §5–7 (estimates, milestones, calibration schema), DESIGN-003 §8 (gate G4); builds on DESIGN-002 (dispatch), DESIGN-004 (compartment)
 **Vision:** [vision-v1](../vision/vision-v1.md) §4 (milestones, roadmaps), §5 (sizing and cost)
@@ -110,12 +110,13 @@ work completes.
 - **SD-1: The `considered` tier retrieves without embeddings.** Vision §5's
   calibration retrieves nearest neighbours by description-embedding
   similarity, but embeddings are deferred (phase-2 SD-4). In this slice the
-  corpus is retrieved by the existing Postgres full-text search over stored
-  entity descriptions plus tag overlap — no new embedding infrastructure. The
-  corpus (description, estimate, actual) is recorded in full regardless, so
-  embedding-based retrieval is a later *retrieval-mechanism* swap, not a data
-  migration. All three tiers are real in this slice; embeddings sharpen the
-  `considered` tier later.
+  corpus is retrieved by Postgres full-text search over stored entity
+  descriptions (features/tasks carry a `description`; they have no tags, so
+  tag overlap is not part of entity retrieval — it is a documents concern) —
+  no new embedding infrastructure. The corpus (description, estimate, actual)
+  is recorded in full regardless, so embedding-based retrieval is a later
+  *retrieval-mechanism* swap, not a data migration. All three tiers are real
+  in this slice; embeddings sharpen the `considered` tier later.
 - **SD-2: Milestone members are initiatives, features, and nested milestones
   only.** Checklists (a valid member type per vision §4) are deferred with
   jobs/checklists; the schema's `milestone_members.member_type` already
@@ -174,7 +175,7 @@ work completes.
   estimate vs actual, and the delta.
 - **FR-3.2** The corpus is retrievable by similarity for the `considered`
   tier: given a description, return the nearest prior (description, estimate,
-  actual) rows by full-text + tag overlap (SD-1).
+  actual) rows by full-text rank over entity descriptions (SD-1).
   *AC:* estimating a new feature whose description shares terms with a
   completed one retrieves that completed one as a reference point.
 
