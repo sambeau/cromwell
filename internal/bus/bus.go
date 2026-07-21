@@ -83,6 +83,15 @@ type SubmitRequested struct {
 
 func (SubmitRequested) EventKind() string { return "document.submit_requested" }
 
+// FeatureStarted fires when a feature transitions ready → active and its
+// worktree exists; the rule engine dispatches its initially-ready tasks
+// (DESIGN-006 §5).
+type FeatureStarted struct {
+	FeatureID uuid.UUID
+}
+
+func (FeatureStarted) EventKind() string { return "feature.started" }
+
 // Tick is the heartbeat (DESIGN-002 §3): stall detection, retry sweep, GC,
 // reconciliation. Handled by the server's heartbeat duties, not the rule
 // engine.

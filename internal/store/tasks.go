@@ -1,0 +1,205 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"cromwell/internal/lifecycle"
+)
+
+type Task struct {
+	ID          uuid.UUID
+	FeatureID   uuid.UUID
+	Position    int
+	LocalID     string
+	Title       string
+	Description string
+	State       lifecycle.TaskState
+	DependsOn   []uuid.UUID
+	CreatedAt   time.Time
+}
+
+const taskCols = `id, feature_id, position, COALESCE(local_id, ''), title, description, state, depends_on, created_at`
+
+func scanTask(row pgx.Row) (*Task, error) {
+	var t Task
+	err := row.Scan(&t.ID, &t.FeatureID, &t.Position, &t.LocalID, &t.Title,
+		&t.Description, &t.State, &t.DependsOn, &t.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &t, err
+}
+
+// CreateTask inserts a task (used by decomposition). depends_on is set in a
+// second pass once all sibling ids are known (DESIGN-005 §4).
+func CreateTask(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, position int, localID, title, description string, actor string) (*Task, error) {
+	t := &Task{ID: NewID(), FeatureID: featureID, Position: position, LocalID: localID,
+		Title: title, Description: description, State: lifecycle.TaskPending, DependsOn: []uuid.UUID{}}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO tasks (id, feature_id, position, local_id, title, description)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		t.ID, featureID, position, nullable(localID), title, description)
+	if err != nil {
+		return nil, err
+	}
+	if err := Audit(ctx, tx, actor, "task.created", "task", &t.ID,
+		map[string]any{"feature_id": featureID.String(), "local_id": localID, "title": title}); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// SetTaskDependencies sets the resolved depends_on UUIDs for a task.
+func SetTaskDependencies(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, deps []uuid.UUID) error {
+	if deps == nil {
+		deps = []uuid.UUID{}
+	}
+	_, err := tx.Exec(ctx, `UPDATE tasks SET depends_on = $2 WHERE id = $1`, taskID, deps)
+	return err
+}
+
+func GetTask(ctx context.Context, q Querier, id uuid.UUID) (*Task, error) {
+	return scanTask(q.QueryRow(ctx, `SELECT `+taskCols+` FROM tasks WHERE id = $1`, id))
+}
+
+// TasksForFeature returns the feature's tasks in position order.
+func TasksForFeature(ctx context.Context, q Querier, featureID uuid.UUID) ([]Task, error) {
+	rows, err := q.Query(ctx, `SELECT `+taskCols+` FROM tasks WHERE feature_id = $1 ORDER BY position`, featureID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *t)
+	}
+	return out, rows.Err()
+}
+
+// TransitionTask applies a task lifecycle event, audit row in the same
+// transaction. The lifecycle engine is the sole authority on legality.
+func TransitionTask(ctx context.Context, tx pgx.Tx, t *Task, event lifecycle.TaskEvent, actor string, payload map[string]any) error {
+	next, err := lifecycle.TaskTransition(t.State, event)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = $2 WHERE id = $1`, t.ID, next); err != nil {
+		return err
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["from"] = string(t.State)
+	payload["to"] = string(next)
+	payload["event"] = string(event)
+	if err := Audit(ctx, tx, actor, "task.transition", "task", &t.ID, payload); err != nil {
+		return err
+	}
+	t.State = next
+	return nil
+}
+
+// DeleteTask removes a not-yet-started task during re-decomposition
+// (DESIGN-005 §4); callers guarantee the task is pending/ready.
+func DeleteTask(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM tasks WHERE id = $1`, id); err != nil {
+		return err
+	}
+	return Audit(ctx, tx, actor, "task.deleted", "task", &id, map[string]any{})
+}
+
+// UpdateTaskFields refreshes title/description/position during
+// re-decomposition of a still-pending task.
+func UpdateTaskFields(ctx context.Context, tx pgx.Tx, id uuid.UUID, position int, title, description string) error {
+	_, err := tx.Exec(ctx, `UPDATE tasks SET position = $2, title = $3, description = $4 WHERE id = $1`,
+		id, position, title, description)
+	return err
+}
+
+// ReadyDependents returns pending tasks in the feature that list justDone in
+// their depends_on and whose every dependency is now done — the tasks that
+// become ready when justDone completes (DESIGN-005 §5).
+func ReadyDependents(ctx context.Context, q Querier, featureID, justDone uuid.UUID) ([]Task, error) {
+	rows, err := q.Query(ctx, `
+		SELECT `+taskCols+` FROM tasks t
+		WHERE t.feature_id = $1 AND t.state = 'pending' AND $2 = ANY(t.depends_on)
+		  AND NOT EXISTS (
+			SELECT 1 FROM unnest(t.depends_on) dep
+			JOIN tasks d ON d.id = dep
+			WHERE d.state <> 'done'
+		  )`, featureID, justDone)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *t)
+	}
+	return out, rows.Err()
+}
+
+// DispatchableTasks returns ready tasks of an active, non-stale feature
+// eligible for implementer dispatch (DESIGN-005 §5).
+func (s *Store) DispatchableTasks(ctx context.Context, featureID uuid.UUID) ([]Task, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+taskCols+` FROM tasks t
+		JOIN features f ON f.id = t.feature_id
+		WHERE t.feature_id = $1 AND t.state = 'ready'
+		  AND f.state = 'active' AND NOT f.spec_stale
+		ORDER BY t.position`, featureID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *t)
+	}
+	return out, rows.Err()
+}
+
+// TaskCounts returns (total, done, terminal) for a feature — the inputs to
+// gate G2.
+func TaskCounts(ctx context.Context, q Querier, featureID uuid.UUID) (total, done, terminal int, err error) {
+	err = q.QueryRow(ctx, `
+		SELECT count(*),
+		       count(*) FILTER (WHERE state = 'done'),
+		       count(*) FILTER (WHERE state IN ('done','abandoned'))
+		FROM tasks WHERE feature_id = $1`, featureID).Scan(&total, &done, &terminal)
+	return
+}
+
+// ExistingTasksForPlan returns the feature's tasks as decomposition inputs
+// (local_id + state), for reconciliation.
+func ExistingTasksForPlan(ctx context.Context, q Querier, featureID uuid.UUID) ([]lifecycle.ExistingTask, error) {
+	tasks, err := TasksForFeature(ctx, q, featureID)
+	if err != nil {
+		return nil, err
+	}
+	var out []lifecycle.ExistingTask
+	for _, t := range tasks {
+		if t.LocalID == "" {
+			continue
+		}
+		out = append(out, lifecycle.ExistingTask{LocalID: t.LocalID, State: t.State})
+	}
+	return out, nil
+}

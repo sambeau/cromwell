@@ -146,13 +146,14 @@ func ReviewIdempotencyKey(docID uuid.UUID, contentHash string) string {
 
 // DocSnap is the rule engine's view of a document row.
 type DocSnap struct {
-	ID          uuid.UUID
-	Type        string
-	State       lifecycle.DocumentState
-	ContentHash string
-	OwnerType   string
-	OwnerID     uuid.UUID
-	Path        string
+	ID           uuid.UUID
+	Type         string
+	State        lifecycle.DocumentState
+	ContentHash  string
+	OwnerType    string
+	OwnerID      uuid.UUID
+	Path         string
+	IsSuccessor  bool // supersedes_id is set — this doc is a revision (DESIGN-005 §6)
 }
 
 // FeatureSnap is the rule engine's view of a feature row.
@@ -165,7 +166,9 @@ type FeatureSnap struct {
 // populates the fields relevant to the event; absent entities are nil.
 type Snapshot struct {
 	Doc          *DocSnap
-	OwnerFeature *FeatureSnap
+	OwnerFeature *FeatureSnap // the feature owning Doc (document events)
+	Task         *TaskSnap    // the task the event refs (implement/review-code)
+	RefFeature   *FeatureSnap // the feature the event refs (verify, feature-started)
 }
 
 // ---- Decide ----
@@ -190,6 +193,8 @@ func Decide(ev bus.Event, snap Snapshot) []Action {
 		return decideFileChanged(e, snap)
 	case bus.CheckpointResponded:
 		return decideCheckpointResponded(e, snap)
+	case bus.FeatureStarted:
+		return []Action{DispatchReadyTasks{FeatureID: e.FeatureID}}
 	}
 	return nil
 }
@@ -200,23 +205,58 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 		if e.From != lifecycle.DocDraft || snap.Doc == nil {
 			return nil // escalate leaves state at reviewing; no new dispatch
 		}
-		return []Action{QueueReview{
+		var actions []Action
+		// A successor spec/dev-plan submitted for a feature already in flight
+		// blocks new work and asks the human what a mid-flight revision means
+		// (DESIGN-005 §6, FR-10.1). This is in addition to queuing its review.
+		if snap.Doc.IsSuccessor && snap.Doc.OwnerType == "feature" && snap.OwnerFeature != nil &&
+			(snap.OwnerFeature.State == lifecycle.FeatActive || snap.OwnerFeature.State == lifecycle.FeatReview) &&
+			(snap.Doc.Type == "spec" || snap.Doc.Type == "dev_plan") {
+			actions = append(actions, MarkRevisionInFlight{
+				FeatureID: snap.OwnerFeature.ID, DocID: snap.Doc.ID, DocType: snap.Doc.Type,
+			})
+		}
+		actions = append(actions, QueueReview{
 			DocID:          snap.Doc.ID,
 			DocType:        snap.Doc.Type,
 			IdempotencyKey: ReviewIdempotencyKey(snap.Doc.ID, snap.Doc.ContentHash),
-		}}
+		})
+		return actions
+
 	case lifecycle.DocApproved:
-		// A spec approval may unlock its feature's contract gate (G1).
-		if snap.Doc != nil && snap.Doc.Type == "spec" &&
-			snap.Doc.OwnerType == "feature" && snap.OwnerFeature != nil &&
-			snap.OwnerFeature.State == lifecycle.FeatIdea {
-			return []Action{EvaluateContractGate{FeatureID: snap.OwnerFeature.ID}}
+		if snap.Doc == nil || snap.Doc.OwnerType != "feature" || snap.OwnerFeature == nil {
+			return nil
+		}
+		f := snap.OwnerFeature
+		// Contract documents approved while the feature is still forming:
+		// a dev-plan decomposes into tasks (before G1), and both spec and
+		// dev-plan approvals re-evaluate the now-two-part contract gate.
+		if f.State == lifecycle.FeatIdea && (snap.Doc.Type == "spec" || snap.Doc.Type == "dev_plan") {
+			var actions []Action
+			if snap.Doc.Type == "dev_plan" {
+				actions = append(actions, DecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID})
+			}
+			actions = append(actions, EvaluateContractGate{FeatureID: f.ID})
+			return actions
+		}
+		// A revised contract document approved for an in-flight feature:
+		// re-decompose (dev-plan) so the task set matches the new plan
+		// (DESIGN-005 §4, FR-10.2). spec_stale is cleared when the human
+		// resolves the revision-in-flight checkpoint.
+		if snap.Doc.IsSuccessor && snap.Doc.Type == "dev_plan" &&
+			(f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview) {
+			return []Action{ReDecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID}}
 		}
 	}
 	return nil
 }
 
 func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
+	// Phase-2 execution purposes (implement-task, review-code, verify-feature)
+	// route first; a document review falls through to the phase-1 path.
+	if actions, handled := decideDispatchSucceededPhase2(e.Purpose, e.DispatchID, e.Role, e.Outcome, snap); handled {
+		return actions
+	}
 	if e.RefType != "document" || snap.Doc == nil {
 		return nil
 	}
@@ -292,19 +332,62 @@ type FailureResponse struct {
 	Retry bool `json:"retry"`
 }
 
+// RevisionResponse is the payload of a revision-in-flight checkpoint answer:
+// continue applies the revision to later work; pause leaves the feature
+// blocked (DESIGN-005 §6).
+type RevisionResponse struct {
+	Continue bool `json:"continue"`
+}
+
 func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Action {
 	switch e.Kind {
 	case "review-escalation":
 		var r EscalationResponse
-		if err := json.Unmarshal(e.Response, &r); err != nil || snap.Doc == nil {
+		if err := json.Unmarshal(e.Response, &r); err != nil {
+			return nil
+		}
+		// A review escalation refs either a document (spec/dev-plan review)
+		// or a task (code review); the human's decision maps to the matching
+		// approve/request_changes action.
+		switch e.RefType {
+		case "document":
+			if snap.Doc == nil {
+				return nil
+			}
+			switch r.Decision {
+			case "approve":
+				return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.RespondedBy}}
+			case "request_changes":
+				return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
+			}
+		case "task":
+			if snap.Task == nil {
+				return nil
+			}
+			switch r.Decision {
+			case "approve":
+				return []Action{ApproveTaskCode{TaskID: snap.Task.ID, Actor: e.RespondedBy}}
+			case "request_changes":
+				return []Action{ReturnTaskCode{TaskID: snap.Task.ID, Actor: e.RespondedBy, Comments: r.Comments}}
+			}
+		}
+	case "verification-escalation":
+		var r EscalationResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil || snap.RefFeature == nil {
 			return nil
 		}
 		switch r.Decision {
 		case "approve":
-			return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.RespondedBy}}
+			return []Action{MergeFeature{FeatureID: snap.RefFeature.ID, Actor: e.RespondedBy}}
 		case "request_changes":
-			return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
+			return []Action{ReturnFeatureForCriteria{FeatureID: snap.RefFeature.ID, Actor: e.RespondedBy}}
 		}
+	case "revision-in-flight":
+		var r RevisionResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil {
+			return nil
+		}
+		return []Action{ClearSpecStale{FeatureID: e.RefID, Continue: r.Continue}}
 	case "gate-override":
 		var r OverrideResponse
 		if err := json.Unmarshal(e.Response, &r); err != nil || !r.Override {
