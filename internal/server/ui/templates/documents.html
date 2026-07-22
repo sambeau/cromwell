@@ -20,7 +20,15 @@
 
 
 {{define "page-document"}}{{template "pagetop" .}}
-{{with .Data}}
+<div id="document-body">
+  {{template "frag-document" .Data}}
+</div>
+{{template "pagebottom" .}}{{end}}
+
+
+{{define "frag-document"}}
+{{if .Notice}}<div class="banner ok">{{.Notice}}</div>{{end}}
+{{if .Error}}<div class="banner err">{{.Error}}</div>{{end}}
 <div class="doc-head">
   <a href="/ui/documents" class="back">← Documents</a>
   <h1>{{if .Document.Title}}{{.Document.Title}}{{else}}{{.Document.Path}}{{end}}</h1>
@@ -29,6 +37,22 @@
     <span class="tier tier-{{.Document.State}}">{{.Document.State}}</span>
     <span class="muted">{{.Document.Path}}</span>
   </div>
+  {{if .ReviewCheckpointID}}
+  <div class="review-actions">
+    <span class="muted">This review is escalated for your decision.</span>
+    <form hx-post="/ui/document/review" hx-target="#document-body" hx-swap="innerHTML" class="inline">
+      <input type="hidden" name="path" value="{{.Document.Path}}">
+      <input type="hidden" name="decision" value="approve">
+      <button type="submit">Approve</button>
+    </form>
+    <form hx-post="/ui/document/review" hx-target="#document-body" hx-swap="innerHTML" class="inline reqchg">
+      <input type="hidden" name="path" value="{{.Document.Path}}">
+      <input type="hidden" name="decision" value="request_changes">
+      <input type="text" name="reason" placeholder="reason" class="reason">
+      <button type="submit" class="ghost">Request changes</button>
+    </form>
+  </div>
+  {{end}}
 </div>
 <div class="doc-cols">
   <article class="doc-body">{{.Body}}</article>
@@ -48,4 +72,3 @@
   </aside>
 </div>
 {{end}}
-{{template "pagebottom" .}}{{end}}

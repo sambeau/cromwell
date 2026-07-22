@@ -148,6 +148,17 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	// method the CLI uses and returns the refreshed fragment.
 	mux.HandleFunc("POST /ui/estimate/set", s.handleUIEstimateSet)
 	mux.HandleFunc("POST /ui/estimate/ai", s.handleUIEstimateAI)
+	mux.HandleFunc("POST /ui/milestone/create", s.handleUIMilestoneCreate)
+	mux.HandleFunc("POST /ui/milestone/member", s.handleUIMilestoneMember)
+	mux.HandleFunc("POST /ui/milestone/lock", s.handleUIMilestoneLock)
+	mux.HandleFunc("POST /ui/roadmap/create", s.handleUIRoadmapCreate)
+	mux.HandleFunc("POST /ui/roadmap/entry", s.handleUIRoadmapEntry)
+	mux.HandleFunc("POST /ui/initiative/create", s.handleUIInitiativeCreate)
+	mux.HandleFunc("POST /ui/initiative/archive", s.handleUIInitiativeArchive)
+	mux.HandleFunc("POST /ui/feature/create", s.handleUIFeatureCreate)
+	mux.HandleFunc("POST /ui/feature/start", s.handleUIFeatureStart)
+	mux.HandleFunc("POST /ui/feature/abandon", s.handleUIFeatureAbandon)
+	mux.HandleFunc("POST /ui/document/review", s.handleUIDocumentReview)
 }
 
 // --- Dashboard ---

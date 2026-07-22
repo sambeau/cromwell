@@ -274,6 +274,100 @@ func TestUIEstimateMutation(t *testing.T) {
 	mustContain(t, "initiative rejected", initErr, "features and tasks only")
 }
 
+// TestUIPlanningMutations covers FR-2/3/4: milestones, roadmaps, and the tree
+// lifecycle driven from the UI, each landing on the same service path as the
+// CLI, with G4 surfaced inline (no checkpoint) and required-reason enforced.
+func TestUIPlanningMutations(t *testing.T) {
+	h := newHarness(t)
+	h.setupFeatureWithSpec() // auth/login
+
+	// Tree: create initiative + feature via the UI.
+	_, b := h.postForm("/ui/initiative/create", map[string]string{"slug": "billing", "name": "Billing"})
+	mustContain(t, "initiative created", b, "initiative created")
+	mustContain(t, "tree has billing", b, "billing")
+	_, b = h.postForm("/ui/feature/create", map[string]string{"initiative_path": "billing", "slug": "invoices", "name": "Invoices"})
+	mustContain(t, "feature created", b, "feature created")
+	mustContain(t, "tree has invoices", b, "invoices")
+
+	// Milestone: create, add a member, then a blocked G4 lock (no done members)
+	// surfaces inline as G4 — no checkpoint, exactly the CLI's 409 path.
+	h.postForm("/ui/milestone/create", map[string]string{"name": "v1"})
+	_, b = h.postForm("/ui/milestone/member", map[string]string{"milestone": "v1", "ref": "auth/login", "action": "add"})
+	mustContain(t, "member added", b, "added to milestone v1")
+	_, b = h.postForm("/ui/milestone/lock", map[string]string{"milestone": "v1"})
+	mustContain(t, "G4 blocked inline", b, "G4")
+	if strings.Contains(b, "locked: v1") {
+		t.Error("milestone must not lock with an unfinished member (L-6)")
+	}
+
+	// Roadmap: create + place the milestone.
+	h.postForm("/ui/roadmap/create", map[string]string{"name": "2026"})
+	_, b = h.postForm("/ui/roadmap/entry", map[string]string{"roadmap": "2026", "milestone": "v1", "position": "0"})
+	mustContain(t, "roadmap entry placed", b, "roadmap 2026")
+
+	// Abandon requires a reason (DESIGN-003 §6).
+	_, b = h.postForm("/ui/feature/abandon", map[string]string{"path": "billing/invoices"})
+	mustContain(t, "abandon needs reason", b, "requires a reason")
+	_, b = h.postForm("/ui/feature/abandon", map[string]string{"path": "billing/invoices", "reason": "descoped"})
+	mustContain(t, "feature abandoned", b, "feature abandoned")
+}
+
+// TestUIArchiveRaisesCheckpoint covers FR-4.3: a G5-blocked archive raises a
+// gate-override checkpoint to the inbox rather than forcing the archive (L-6).
+func TestUIArchiveRaisesCheckpoint(t *testing.T) {
+	h := newHarness(t)
+	h.setupFeatureWithSpec() // auth/login — a non-terminal feature under auth
+
+	_, b := h.postForm("/ui/initiative/archive", map[string]string{"path": "auth", "reason": "x"})
+	mustContain(t, "G5 block message", b, "blocked by G5")
+	mustContain(t, "routed to inbox", b, "inbox")
+
+	// The checkpoint is now pending, and the UI badge counts it.
+	_, badge := h.getUI("/ui/frag/inbox-badge")
+	if strings.TrimSpace(badge) != "1" {
+		t.Errorf("inbox badge = %q, want 1 after G5 block", strings.TrimSpace(badge))
+	}
+	// The initiative is not archived (no override answered yet).
+	in, err := h.srv.Store.InitiativeBySlugPath(context.Background(), []string{"auth"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Archived {
+		t.Error("initiative archived without an answered override (L-6 violated)")
+	}
+}
+
+// TestUIDocumentReview covers FR-5: approving an escalated review from the
+// document view drives the same CheckpointResponded path as the inbox, and the
+// document advances.
+func TestUIDocumentReview(t *testing.T) {
+	h := newHarness(t)
+	specPath := h.setupFeatureWithSpec()
+
+	h.mock.RespondOutcome("submit_review",
+		`{"verdict":"escalate","reasoning":"a product decision"}`,
+		provider.Usage{Input: 800, Output: 120})
+	h.call("POST", "/api/docs/submit", map[string]string{"path": specPath})
+
+	// The document view offers the review controls once it is human-gated.
+	h.eventually("review controls on the document view", func() bool {
+		_, body := h.getUI("/ui/document?path=" + specPath)
+		return strings.Contains(body, "escalated for your decision")
+	})
+
+	// Approve from the document view.
+	code, after := h.postForm("/ui/document/review", map[string]string{"path": specPath, "decision": "approve"})
+	if code != 200 {
+		t.Fatalf("document review: %d\n%s", code, after)
+	}
+	mustContain(t, "approve notice", after, "review approved")
+
+	// The same audited outcome as the inbox respond: the document advances.
+	h.eventually("doc approved after document-view review", func() bool {
+		return h.docState(specPath) == lifecycle.DocApproved
+	})
+}
+
 // TestUIServesStaticAssets confirms the vendored HTMX + SSE assets are embedded
 // and served (DESIGN-007 CC-1).
 func TestUIServesStaticAssets(t *testing.T) {

@@ -71,6 +71,7 @@
 <details class="actions" open>
   <summary>Actions</summary>
   <div class="action-forms">
+
     <form class="action" hx-post="/ui/estimate/set" hx-target="#planning-body" hx-swap="innerHTML">
       <h3>Set estimate</h3>
       <input type="text" name="ref" placeholder="ref (auth/login)" required>
@@ -79,11 +80,85 @@
       <label class="chk"><input type="checkbox" name="cite_corpus" value="1"> cites corpus (considered)</label>
       <button type="submit">Set</button>
     </form>
+
     <form class="action" hx-post="/ui/estimate/ai" hx-target="#planning-body" hx-swap="innerHTML">
       <h3>AI estimate</h3>
       <input type="text" name="ref" placeholder="ref (auth/login)" required>
       <button type="submit">Dispatch estimator</button>
     </form>
+
+    <form class="action" hx-post="/ui/initiative/create" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>New initiative</h3>
+      <input type="text" name="slug" placeholder="slug" required>
+      <input type="text" name="name" placeholder="name" required>
+      <input type="text" name="parent_path" placeholder="parent path (optional)">
+      <button type="submit">Create</button>
+    </form>
+
+    <form class="action" hx-post="/ui/feature/create" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>New feature</h3>
+      <input type="text" name="initiative_path" placeholder="initiative (auth)" required>
+      <input type="text" name="slug" placeholder="slug" required>
+      <input type="text" name="name" placeholder="name" required>
+      <button type="submit">Create</button>
+    </form>
+
+    <form class="action" hx-post="/ui/feature/start" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>Start feature</h3>
+      <input type="text" name="path" placeholder="feature (auth/login)" required>
+      <button type="submit">Start</button>
+    </form>
+
+    <form class="action" hx-post="/ui/feature/abandon" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>Abandon feature</h3>
+      <input type="text" name="path" placeholder="feature (auth/login)" required>
+      <input type="text" name="reason" placeholder="reason (required)" required>
+      <button type="submit">Abandon</button>
+    </form>
+
+    <form class="action" hx-post="/ui/initiative/archive" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>Archive initiative</h3>
+      <input type="text" name="path" placeholder="initiative (auth)" required>
+      <input type="text" name="reason" placeholder="reason (optional)">
+      <button type="submit">Archive</button>
+    </form>
+
+    <form class="action" hx-post="/ui/milestone/create" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>New milestone</h3>
+      <input type="text" name="name" placeholder="name" required>
+      <input type="date" name="target_date">
+      <button type="submit">Create</button>
+    </form>
+
+    <form class="action" hx-post="/ui/milestone/member" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>Milestone member</h3>
+      <input type="text" name="milestone" placeholder="milestone name" required>
+      <input type="text" name="ref" placeholder="feature/initiative/milestone" required>
+      <select name="action"><option value="add">add</option><option value="remove">descope</option></select>
+      <input type="text" name="reason" placeholder="descope reason (optional)">
+      <button type="submit">Apply</button>
+    </form>
+
+    <form class="action" hx-post="/ui/milestone/lock" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>Lock milestone (G4)</h3>
+      <input type="text" name="milestone" placeholder="milestone name" required>
+      <button type="submit">Lock</button>
+    </form>
+
+    <form class="action" hx-post="/ui/roadmap/create" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>New roadmap</h3>
+      <input type="text" name="name" placeholder="name" required>
+      <button type="submit">Create</button>
+    </form>
+
+    <form class="action" hx-post="/ui/roadmap/entry" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>Roadmap entry</h3>
+      <input type="text" name="roadmap" placeholder="roadmap name" required>
+      <input type="text" name="milestone" placeholder="milestone name" required>
+      <input type="number" name="position" placeholder="position" value="0">
+      <button type="submit">Place</button>
+    </form>
+
   </div>
 </details>
 {{end}}

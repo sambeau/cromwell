@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"cromwell/internal/bus"
 	"cromwell/internal/config"
 	"cromwell/internal/sizing"
@@ -197,16 +199,23 @@ func (s *Server) roadmapViews(ctx context.Context) ([]roadmapView, error) {
 
 // docPageData is a single document with its rendered body and comment thread
 // (FR-5.1). The body is read from the working tree (git) and rendered read-only;
-// there is no edit control (CC-5).
+// there is no edit control (CC-5). ReviewCheckpointID is set when the document's
+// review is human-gated (an open review-escalation checkpoint refs it), which is
+// when — and only when — the review controls appear (SPEC-006 FR-5.1, SD-4).
 type docPageData struct {
-	Document store.Document
-	Body     template.HTML
-	Comments []store.Comment
+	Document           store.Document
+	Body               template.HTML
+	Comments           []store.Comment
+	ReviewCheckpointID *uuid.UUID
+	Notice             string
+	Error              string
 }
 
 func (s *Server) documentView(r *http.Request) (*docPageData, error) {
-	ctx := r.Context()
-	path := r.URL.Query().Get("path")
+	return s.documentViewByPath(r.Context(), r.URL.Query().Get("path"), "", "")
+}
+
+func (s *Server) documentViewByPath(ctx context.Context, path, notice, errMsg string) (*docPageData, error) {
 	doc, err := store.LiveDocumentByPath(ctx, s.Store.Pool, path)
 	if err != nil {
 		return nil, err
@@ -227,11 +236,35 @@ func (s *Server) documentView(r *http.Request) (*docPageData, error) {
 	} else {
 		body = "_The document file could not be read from the working tree._"
 	}
-	return &docPageData{
+	page := &docPageData{
 		Document: *doc,
 		Body:     renderMarkdown(body),
 		Comments: comments,
-	}, nil
+		Notice:   notice,
+		Error:    errMsg,
+	}
+	// Is this document's review human-gated? If an open review-escalation
+	// checkpoint refs it, the review controls appear (SD-4).
+	if cp, err := s.openReviewCheckpoint(ctx, doc.ID); err == nil && cp != nil {
+		page.ReviewCheckpointID = &cp.ID
+	}
+	return page, nil
+}
+
+// openReviewCheckpoint returns the pending review-escalation checkpoint that
+// refs a document, if any — a filter over PendingCheckpoints, not a new read.
+func (s *Server) openReviewCheckpoint(ctx context.Context, docID uuid.UUID) (*store.Checkpoint, error) {
+	pending, err := s.Store.PendingCheckpoints(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range pending {
+		cp := pending[i]
+		if cp.Kind == "review-escalation" && cp.RefType == "document" && cp.RefID == docID {
+			return &cp, nil
+		}
+	}
+	return nil, nil
 }
 
 // --- Cost ---

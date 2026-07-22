@@ -90,6 +90,9 @@ func TestUITemplatesParseAndRender(t *testing.T) {
 		{"frag-planning", planningPage{View: planning, Error: "no such ref"}, false},
 		{"page-documents", pageData{Active: "documents", Actor: "op", Data: docs}, false},
 		{"page-document", pageData{Active: "documents", Actor: "op", Data: docPage}, false},
+		{"frag-document", docPage, false},
+		{"frag-document", gatedDocPage(docPage), false}, // with the escalated-review controls
+
 		{"page-cost", pageData{Active: "cost", Actor: "op", Data: cost}, false},
 		{"page-error", pageData{Actor: "op", Data: "something broke"}, false},
 	}
@@ -106,3 +109,12 @@ func TestUITemplatesParseAndRender(t *testing.T) {
 }
 
 func strptr(s string) *string { return &s }
+
+// gatedDocPage returns a copy of a document page marked human-gated, so the
+// review controls render.
+func gatedDocPage(p *docPageData) *docPageData {
+	cp := *p
+	id := uuid.New()
+	cp.ReviewCheckpointID = &id
+	return &cp
+}
