@@ -1,4 +1,4 @@
-# SPEC-005 Entry Criteria — The command centre's mutation slice (planning & review actions)
+# SPEC-006 Entry Criteria — The command centre's mutation slice (planning & review actions)
 
 **Status:** Draft — satisfies SPEC-004 DoD item 5
 **Date:** 2026-07-22
@@ -8,12 +8,11 @@ the first slice is read-everywhere + respond; the planning and document-review
 [DESIGN-007](../design/DESIGN-007-web-command-centre.md) §8 (the operation
 catalogue — the mutations already exist as gated, audited service methods).
 
-> **Naming note.** DESIGN-007 §9 reserves SPEC-005 for the **MCP facet** (the
-> read/poke surface for editor assistants). This next command-centre slice — the
-> UI mutations — is a separate piece of work; whether it takes the number
-> SPEC-005 (bumping the MCP facet) or its own number is a bookkeeping decision at
-> spec-authoring time. These criteria describe the *mutation slice* regardless of
-> its final number.
+> **Naming note (settled).** DESIGN-007 §9 already reserved SPEC-005 for the
+> **MCP facet** (the read/poke surface for editor assistants). Rather than
+> renumber an approved assignment, this mutation slice takes the next free
+> number, **SPEC-006** ([SPEC-006](../specs/SPEC-006-command-centre-mutations.md)).
+> Spec numbers are identifiers; build order is priority-driven, not numeric.
 
 ## Where this sits
 
