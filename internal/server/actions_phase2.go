@@ -406,12 +406,18 @@ func (s *Server) mergeFeature(ctx context.Context, featureID uuid.UUID, actor st
 	}
 	if merr := s.mergeBranch(wt.Branch); merr != nil {
 		// Non-clean merge: checkpoint, stay in review (FR-9.3).
-		return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-			_, e := store.CreateCheckpoint(ctx, tx, "merge-conflict", "feature", featureID,
+		var cp *store.Checkpoint
+		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			var e error
+			cp, e = store.CreateCheckpoint(ctx, tx, "merge-conflict", "feature", featureID,
 				fmt.Sprintf("Feature branch %s does not merge cleanly into main. Resolve conflicts, then respond.", wt.Branch),
 				map[string]any{"error": merr.Error(), "branch": wt.Branch})
 			return e
 		})
+		if err == nil {
+			s.notifyCheckpointRaised(cp)
+		}
+		return err
 	}
 	g := lifecycle.G3(true, true)
 	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
@@ -483,16 +489,22 @@ func (s *Server) markRevisionInFlight(ctx context.Context, featureID uuid.UUID, 
 			doneList = append(doneList, t.LocalID)
 		}
 	}
-	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+	var cp *store.Checkpoint
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.SetSpecStale(ctx, tx, featureID, true, "orchestrator",
 			"successor "+docType+" submitted"); err != nil {
 			return err
 		}
-		_, err := store.CreateCheckpoint(ctx, tx, "revision-in-flight", "feature", featureID,
+		var e error
+		cp, e = store.CreateCheckpoint(ctx, tx, "revision-in-flight", "feature", featureID,
 			fmt.Sprintf("A revised %s was submitted while this feature is in flight. New task dispatches are blocked. Continue (apply the revision to later work) or pause?", docType),
 			map[string]any{"in_flight_tasks": inflight, "done_tasks": doneList})
-		return err
+		return e
 	})
+	if err == nil {
+		s.notifyCheckpointRaised(cp)
+	}
+	return err
 }
 
 // clearSpecStale resolves a revision-in-flight: clears the flag and, on

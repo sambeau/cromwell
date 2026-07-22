@@ -1,0 +1,103 @@
+{{define "page-dashboard"}}{{template "pagetop" .}}
+<h1>Dashboard</h1>
+<div class="grid">
+  <section class="card" id="queue"
+           hx-get="/ui/frag/queue" hx-trigger="sse:changed" hx-swap="innerHTML">
+    {{template "frag-queue" .Data}}
+  </section>
+
+  <section class="card" id="cost"
+           hx-get="/ui/frag/cost" hx-trigger="sse:changed" hx-swap="innerHTML">
+    {{template "frag-cost" .Data}}
+  </section>
+
+  <section class="card wide" id="events"
+           hx-get="/ui/frag/events" hx-trigger="sse:changed" hx-swap="innerHTML">
+    {{template "frag-events" .Data}}
+  </section>
+
+  <section class="card wide" id="calibration"
+           hx-get="/ui/frag/calibration" hx-trigger="sse:changed" hx-swap="innerHTML">
+    {{template "frag-calibration" .Data}}
+  </section>
+</div>
+{{template "pagebottom" .}}{{end}}
+
+
+{{define "frag-queue"}}
+<h2>Queue</h2>
+<div class="stats">
+  <div class="stat"><span class="n">{{len .Running}}</span><span class="l">in&nbsp;flight</span></div>
+  <div class="stat"><span class="n">{{len .Queued}}</span><span class="l">queued</span></div>
+  <div class="stat {{if .Escalated}}alert{{end}}"><span class="n">{{.Escalated}}</span><span class="l">escalated</span></div>
+</div>
+{{if .Running}}
+<h3>Running</h3>
+<ul class="tight">
+  {{range .Running}}<li><code>{{.Purpose}}</code> <span class="muted">{{shortID .RefID}}</span></li>{{end}}
+</ul>
+{{end}}
+{{if .Queued}}
+<h3>Queued</h3>
+<ul class="tight">
+  {{range .Queued}}<li><code>{{.Purpose}}</code>{{if .QueueReason}} <span class="muted">— {{.QueueReason}}</span>{{end}}</li>{{end}}
+</ul>
+{{end}}
+{{if and (not .Running) (not .Queued)}}<p class="muted">Idle — nothing in flight.</p>{{end}}
+{{end}}
+
+
+{{define "frag-cost"}}
+<h2>Cost</h2>
+<div class="bignum {{if .OverCap}}alert{{else if .OverWarn}}warn{{end}}">{{usd .CostTotal}}</div>
+{{if .BudgetCap}}
+<div class="budgetbar">
+  <div class="fill {{if .OverCap}}alert{{else if .OverWarn}}warn{{end}}" style="width:{{clampPct .CostTotal .BudgetCap}}%"></div>
+</div>
+<p class="muted">of {{usd2 .BudgetCap}} cap ({{.BudgetPeriod}}){{if .OverWarn}} — over warn threshold{{end}}</p>
+{{else}}
+<p class="muted">No budget cap configured.</p>
+{{end}}
+{{end}}
+
+
+{{define "frag-events"}}
+<h2>Recent events</h2>
+{{if .Recent}}
+<table class="log">
+  <tbody>
+  {{range .Recent}}
+    <tr>
+      <td class="muted nowrap">{{ago .OccurredAt}}</td>
+      <td><code>{{.Kind}}</code></td>
+      <td class="muted">{{.RefType}}</td>
+      <td class="muted">{{.Actor}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No events yet.</p>{{end}}
+{{end}}
+
+
+{{define "frag-calibration"}}
+<h2>Calibration health</h2>
+{{if .Calibration}}
+<table class="cal">
+  <thead><tr><th>entity</th><th>tier</th><th class="r">estimate</th><th class="r">actual</th><th class="r">Δ</th></tr></thead>
+  <tbody>
+  {{range .Calibration}}
+    {{$delta := deltaTokens .ActualTokens .EstimateTokens}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td>{{template "tier-badge" .EstimateTier}}</td>
+      <td class="r">{{tokens .EstimateTokens}}</td>
+      <td class="r">{{tokens .ActualTokens}}</td>
+      <td class="r {{if gt $delta 0}}over{{else if lt $delta 0}}under{{end}}">{{signed $delta}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+<p class="muted">Δ = actual − estimate, in tokens; recent estimated-and-done work.</p>
+{{else}}<p class="muted">No completed estimates yet to calibrate against.</p>{{end}}
+{{end}}

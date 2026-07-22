@@ -1,0 +1,51 @@
+{{define "page-documents"}}{{template "pagetop" .}}
+<h1>Documents</h1>
+{{with .Data}}
+<table class="docs">
+  <thead><tr><th>title</th><th>type</th><th>state</th><th>owner</th><th>updated</th></tr></thead>
+  <tbody>
+  {{range .}}
+    <tr>
+      <td><a href="/ui/document?path={{.Path}}">{{if .Title}}{{.Title}}{{else}}{{.Path}}{{end}}</a></td>
+      <td><code>{{.Type}}</code></td>
+      <td><span class="tier tier-{{.State}}">{{.State}}</span></td>
+      <td class="muted">{{.OwnerType}}</td>
+      <td class="muted nowrap">{{ago .CreatedAt}} ago</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No documents registered.</p>{{end}}
+{{template "pagebottom" .}}{{end}}
+
+
+{{define "page-document"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="doc-head">
+  <a href="/ui/documents" class="back">← Documents</a>
+  <h1>{{if .Document.Title}}{{.Document.Title}}{{else}}{{.Document.Path}}{{end}}</h1>
+  <div class="meta">
+    <code>{{.Document.Type}}</code>
+    <span class="tier tier-{{.Document.State}}">{{.Document.State}}</span>
+    <span class="muted">{{.Document.Path}}</span>
+  </div>
+</div>
+<div class="doc-cols">
+  <article class="doc-body">{{.Body}}</article>
+  <aside class="comments">
+    <h2>Comments</h2>
+    {{with .Comments}}
+    {{range .}}
+    <div class="comment {{if .Resolved}}resolved{{end}}">
+      <div class="chead"><span class="author">{{.Author}}</span>
+        {{if .SectionRef}}<span class="muted">@ {{.SectionRef}}</span>{{end}}
+        {{if .Resolved}}<span class="tier tier-open">resolved</span>{{end}}
+      </div>
+      <div class="cbody">{{.Body}}</div>
+    </div>
+    {{end}}
+    {{else}}<p class="muted">No comments.</p>{{end}}
+  </aside>
+</div>
+{{end}}
+{{template "pagebottom" .}}{{end}}

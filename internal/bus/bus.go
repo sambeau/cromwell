@@ -92,6 +92,20 @@ type FeatureStarted struct {
 
 func (FeatureStarted) EventKind() string { return "feature.started" }
 
+// CheckpointRaised is a presentation-only signal that a checkpoint has just
+// been created (DESIGN-007 §6, FR-8.2). Checkpoint creation emits no workflow
+// event — the rule engine acts on responses, not raises — so this never enters
+// the orchestrator bus; it is broadcast straight into the SSE hub so the live
+// inbox lights the moment a checkpoint is raised. It carries no authority.
+type CheckpointRaised struct {
+	CheckpointID uuid.UUID
+	Kind         string
+	RefType      string
+	RefID        uuid.UUID
+}
+
+func (CheckpointRaised) EventKind() string { return "checkpoint.raised" }
+
 // Tick is the heartbeat (DESIGN-002 §3): stall detection, retry sweep, GC,
 // reconciliation. Handled by the server's heartbeat duties, not the rule
 // engine.

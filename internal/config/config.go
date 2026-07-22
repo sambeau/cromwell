@@ -70,6 +70,9 @@ type ServerConfig struct {
 	Socket           string `yaml:"socket"`
 	HTTP             string `yaml:"http"`
 	HeartbeatSeconds int    `yaml:"heartbeat_seconds"`
+	// UIActor is the single configured operator identity the web command
+	// centre acts as (DESIGN-007 CC-6, SD-4); multi-user auth is a later spec.
+	UIActor string `yaml:"ui_actor"`
 }
 
 type BudgetConfig struct {
@@ -80,7 +83,7 @@ type BudgetConfig struct {
 }
 
 type Provider struct {
-	APIKeyEnv string     `yaml:"api_key_env"`
+	APIKeyEnv string `yaml:"api_key_env"`
 	// BaseURL points the Anthropic wire protocol at a compatible endpoint
 	// (e.g. DeepSeek's https://api.deepseek.com/anthropic). Empty = the
 	// provider's default endpoint. Not a secret; lives in config.
@@ -158,6 +161,9 @@ func (c *Config) validate() error {
 	}
 	if c.Server.HeartbeatSeconds == 0 {
 		c.Server.HeartbeatSeconds = 30
+	}
+	if c.Server.UIActor == "" {
+		c.Server.UIActor = "operator"
 	}
 	switch c.Budget.Period {
 	case "monthly", "weekly", "total":

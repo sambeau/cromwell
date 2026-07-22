@@ -35,8 +35,8 @@ func ReviewOutcomeTool() provider.ToolDef {
 			"type": "object",
 			"properties": map[string]any{
 				"verdict": map[string]any{
-					"type": "string",
-					"enum": []string{"approve", "request_changes", "escalate"},
+					"type":        "string",
+					"enum":        []string{"approve", "request_changes", "escalate"},
 					"description": "approve: the document meets the bar. request_changes: fixable problems, listed in comments. escalate: a human must decide; explain why in reasoning.",
 				},
 				"comments": map[string]any{
@@ -72,13 +72,13 @@ func Cost(u provider.Usage, p config.PricePerMTok) float64 {
 // self-correction, DESIGN-002 §4), and — for mutating purposes — the tool
 // host context. Read-only document reviews carry a nil ToolCtx.
 type Plan struct {
-	System         string
-	User           string
-	TurnCap        int
-	Tools          []provider.ToolDef
-	OutcomeTool    string
+	System          string
+	User            string
+	TurnCap         int
+	Tools           []provider.ToolDef
+	OutcomeTool     string
 	ValidateOutcome func(json.RawMessage) error
-	ToolCtx        *toolhost.Context
+	ToolCtx         *toolhost.Context
 }
 
 // Planner assembles a dispatch's plan. Implemented by the server (it owns
@@ -107,6 +107,11 @@ type Dispatcher struct {
 	Tools     ToolExecutor
 	Providers ProviderFactory
 	Log       *slog.Logger
+
+	// OnCheckpoint, if set, is called after a checkpoint is created and its
+	// transaction commits — the presentation-only signal that lights the live
+	// inbox (DESIGN-007 §6, FR-8.2). Optional; nil disables it (e.g. in tests).
+	OnCheckpoint func(cp *store.Checkpoint)
 
 	// BackoffBase paces in-attempt transient retries and the attempt-level
 	// retry sweep; tests shrink it.
@@ -244,13 +249,18 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 	}
 	projected := cfg.Budget.PerDispatchCapUSD
 	if spent+projected > cfg.Budget.CapUSD {
+		var cp *store.Checkpoint
 		err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
-			_, err := store.CreateCheckpoint(ctx, tx, "budget", d.RefType, d.RefID,
+			var e error
+			cp, e = store.CreateCheckpoint(ctx, tx, "budget", d.RefType, d.RefID,
 				fmt.Sprintf("Budget cap $%.2f reached ($%.2f spent this %s period). Raise the cap or cancel queued work.",
 					cfg.Budget.CapUSD, spent, cfg.Budget.Period),
 				map[string]any{"spent_usd": spent, "cap_usd": cfg.Budget.CapUSD, "dispatch_id": d.ID.String()})
-			return err
+			return e
 		})
+		if err == nil && dp.OnCheckpoint != nil {
+			dp.OnCheckpoint(cp)
+		}
 		return false, "budget", err
 	}
 	if spent > cfg.Budget.WarnFraction*cfg.Budget.CapUSD {

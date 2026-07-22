@@ -67,6 +67,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("POST /api/hook/post-commit", s.handlePostCommit)
 	s.routesPhase3(mux)
+	s.uiRoutes(mux)
 	return mux
 }
 
@@ -161,6 +162,7 @@ func (s *Server) handleArchiveInitiative(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	g := lifecycle.G5(n)
+	var raised *store.Checkpoint
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.Audit(ctx, tx, actor(r), "gate.evaluated", "initiative", &in.ID,
 			map[string]any{"gate": string(g.Gate), "pass": g.Pass, "reason": g.Reason}); err != nil {
@@ -169,7 +171,8 @@ func (s *Server) handleArchiveInitiative(w http.ResponseWriter, r *http.Request)
 		if g.Pass {
 			return store.ArchiveInitiative(ctx, tx, in.ID, actor(r), req.Reason)
 		}
-		_, err := store.CreateCheckpoint(ctx, tx, "gate-override", "initiative", in.ID,
+		var err error
+		raised, err = store.CreateCheckpoint(ctx, tx, "gate-override", "initiative", in.ID,
 			"Archive blocked by G5: "+g.Reason+". Override?",
 			map[string]any{"gate": "G5", "reason": g.Reason, "requested_by": actor(r)})
 		return err
@@ -178,6 +181,7 @@ func (s *Server) handleArchiveInitiative(w http.ResponseWriter, r *http.Request)
 		writeErr(w, 500, err)
 		return
 	}
+	s.notifyCheckpointRaised(raised)
 	if g.Pass {
 		writeJSON(w, 200, map[string]any{"archived": true})
 		return

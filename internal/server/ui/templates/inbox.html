@@ -1,0 +1,38 @@
+{{define "page-inbox"}}{{template "pagetop" .}}
+<h1>Inbox</h1>
+<p class="muted">Pending checkpoints — the escalation-only human gate. Answering resumes the orchestrator.</p>
+<div id="inbox-list"
+     hx-get="/ui/frag/inbox" hx-trigger="sse:changed" hx-swap="innerHTML">
+  {{template "frag-inbox" .Data}}
+</div>
+{{template "pagebottom" .}}{{end}}
+
+
+{{define "frag-inbox"}}
+{{if .}}
+{{range .}}
+<article class="checkpoint">
+  <header>
+    <span class="kind">{{.Kind}}</span>
+    <span class="muted nowrap">{{.RefType}} · raised {{ago .CreatedAt}} ago</span>
+  </header>
+  <p class="question">{{.Question}}</p>
+  {{if .Context}}
+  <details><summary>context</summary><pre class="ctx">{{printf "%s" .Context}}</pre></details>
+  {{end}}
+  <form class="respond" hx-post="/ui/respond" hx-target="#inbox-list" hx-swap="innerHTML">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <input type="text" name="reason" placeholder="reason (optional)" class="reason">
+    <div class="answers">
+      {{range .Options}}<button type="submit" name="verb" value="{{.}}">{{.}}</button>{{end}}
+    </div>
+  </form>
+</article>
+{{end}}
+{{else}}
+<p class="empty">✓ Inbox clear — no checkpoints awaiting a human.</p>
+{{end}}
+{{end}}
+
+
+{{define "frag-inbox-badge"}}{{if .}}{{.}}{{end}}{{end}}

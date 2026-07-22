@@ -135,10 +135,16 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 	case rules.ReturnForChanges:
 		return s.returnForChanges(ctx, a)
 	case rules.RaiseCheckpoint:
-		return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-			_, err := store.CreateCheckpoint(ctx, tx, a.CPKind, a.RefType, a.RefID, a.Question, a.Context)
-			return err
+		var cp *store.Checkpoint
+		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			var e error
+			cp, e = store.CreateCheckpoint(ctx, tx, a.CPKind, a.RefType, a.RefID, a.Question, a.Context)
+			return e
 		})
+		if err == nil {
+			s.notifyCheckpointRaised(cp)
+		}
+		return err
 	case rules.EvaluateContractGate:
 		return s.evaluateContractGate(ctx, a.FeatureID)
 	case rules.ReindexDocument:
@@ -207,12 +213,18 @@ func (s *Server) queueReview(ctx context.Context, a rules.QueueReview) error {
 // configErrorCheckpoint implements F-8: deterministic config failures skip
 // the retry policy and surface as config-error checkpoints naming the file.
 func (s *Server) configErrorCheckpoint(ctx context.Context, refType string, refID uuid.UUID, cause error) error {
-	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		_, err := store.CreateCheckpoint(ctx, tx, "config-error", refType, refID,
+	var cp *store.Checkpoint
+	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		var e error
+		cp, e = store.CreateCheckpoint(ctx, tx, "config-error", refType, refID,
 			"A .cromwell/ configuration error is blocking dispatch. Fix the file and respond to resume.",
 			map[string]any{"error": cause.Error()})
-		return err
+		return e
 	})
+	if err == nil {
+		s.notifyCheckpointRaised(cp)
+	}
+	return err
 }
 
 // approveDocument executes the approve transition; if the document revises a
@@ -264,12 +276,16 @@ func (s *Server) approveDocument(ctx context.Context, docID uuid.UUID, actor str
 			// Files and states have diverged; the catch-up scan will keep
 			// flagging it. Surface loudly.
 			s.Log.Error("revision file takeover failed", "doc", doc.ID, "err", err)
-			_ = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-				_, cerr := store.CreateCheckpoint(ctx, tx, "document-integrity", "document", doc.ID,
+			var cp *store.Checkpoint
+			if e := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+				var cerr error
+				cp, cerr = store.CreateCheckpoint(ctx, tx, "document-integrity", "document", doc.ID,
 					"Revision approved but the file takeover commit failed; repo files need manual reconciliation.",
 					map[string]any{"error": err.Error()})
 				return cerr
-			})
+			}); e == nil {
+				s.notifyCheckpointRaised(cp)
+			}
 		}
 		doc.Path = canonicalPath
 	}

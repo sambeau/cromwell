@@ -57,12 +57,16 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 	// git worktree add (after the commit — DESIGN-006 §3).
 	if gerr := s.addWorktree(relPath, branch); gerr != nil {
 		s.Log.Error("worktree add failed", "feature", f.ID, "err", gerr)
-		_ = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-			_, e := store.CreateCheckpoint(ctx, tx, "worktree-failure", "feature", f.ID,
+		var cp *store.Checkpoint
+		if e := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			var ce error
+			cp, ce = store.CreateCheckpoint(ctx, tx, "worktree-failure", "feature", f.ID,
 				"Feature started but its git worktree could not be created; the server will retry on restart.",
 				map[string]any{"error": gerr.Error(), "branch": branch})
-			return e
-		})
+			return ce
+		}); e == nil {
+			s.notifyCheckpointRaised(cp)
+		}
 		return f, nil
 	}
 
@@ -154,4 +158,3 @@ func (s *Server) ReconcileWorktrees(ctx context.Context) error {
 	}
 	return nil
 }
-

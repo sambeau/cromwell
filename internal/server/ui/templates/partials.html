@@ -1,0 +1,38 @@
+{{define "pagetop"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cromwell — {{if .Active}}{{.Active | title}}{{else}}Command Centre{{end}}</title>
+  <link rel="stylesheet" href="/ui/static/app.css">
+  <script src="/ui/static/htmx.min.js" defer></script>
+  <script src="/ui/static/sse.js" defer></script>
+</head>
+<body hx-ext="sse" sse-connect="/ui/events" hx-boost="true">
+  <header class="topbar">
+    <div class="brand">⬢ Cromwell</div>
+    <div class="actor" title="operator identity for this session">{{.Actor}}</div>
+  </header>
+  <div class="shell">
+    <nav class="rail">
+      {{$a := .Active}}
+      <a href="/ui" class="{{if eq $a "dashboard"}}on{{end}}">Dashboard</a>
+      <a href="/ui/inbox" class="{{if eq $a "inbox"}}on{{end}}">Inbox
+        <span class="badge" id="inbox-badge"
+              hx-get="/ui/frag/inbox-badge" hx-trigger="sse:changed, load" hx-swap="innerHTML"></span>
+      </a>
+      <a href="/ui/planning" class="{{if eq $a "planning"}}on{{end}}">Planning</a>
+      <a href="/ui/documents" class="{{if eq $a "documents"}}on{{end}}">Documents</a>
+      <a href="/ui/cost" class="{{if eq $a "cost"}}on{{end}}">Cost</a>
+    </nav>
+    <main id="main">
+{{end}}
+
+{{define "pagebottom"}}
+    </main>
+  </div>
+</body>
+</html>
+{{end}}
+
+{{define "tier-badge"}}<span class="tier tier-{{.}}">{{.}}</span>{{end}}

@@ -1,0 +1,81 @@
+{{define "page-planning"}}{{template "pagetop" .}}
+<h1>Planning</h1>
+
+<section class="card wide">
+  <h2>Initiative tree</h2>
+  {{with .Data.Roots}}
+  <ul class="tree">
+    {{range .}}{{template "tree-node" .}}{{end}}
+  </ul>
+  {{else}}<p class="muted">No initiatives yet.</p>{{end}}
+</section>
+
+<section class="card wide">
+  <h2>Milestones</h2>
+  {{with .Data.Milestones}}
+  <table class="ms">
+    <thead><tr><th>milestone</th><th>state</th><th>progress</th><th class="r">done</th></tr></thead>
+    <tbody>
+    {{range .}}
+      <tr>
+        <td>{{.Milestone.Name}}</td>
+        <td>{{if .Locked}}<span class="tier tier-locked">locked</span>{{else}}<span class="tier tier-open">open</span>{{end}}</td>
+        <td class="progress"><div class="pbar"><div class="fill" style="width:{{pct .Progress.Done .Progress.Total}}%"></div></div></td>
+        <td class="r muted">{{.Progress.Done}}/{{.Progress.Total}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No milestones defined.</p>{{end}}
+</section>
+
+<section class="card wide">
+  <h2>Roadmaps</h2>
+  {{with .Data.Roadmaps}}
+  {{range .}}
+  <div class="roadmap">
+    <h3>{{.Roadmap.Name}}</h3>
+    {{with .Entries}}
+    <ol class="roadmap-entries">
+      {{range .}}
+      <li>
+        <span class="pos">{{.Position}}</span>
+        <span class="ms-name">{{.Milestone.Name}}</span>
+        {{if .Locked}}<span class="tier tier-locked">locked</span>{{else}}<span class="tier tier-open">open</span>{{end}}
+        <span class="muted">{{.Progress.Done}}/{{.Progress.Total}}</span>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}<p class="muted">Empty roadmap.</p>{{end}}
+  </div>
+  {{end}}
+  {{else}}<p class="muted">No roadmaps defined.</p>{{end}}
+</section>
+{{template "pagebottom" .}}{{end}}
+
+
+{{define "tree-node"}}
+<li class="tnode">
+  <div class="row">
+    <span class="type type-{{.Type}}">{{.Type}}</span>
+    <span class="name">{{.Name}}</span>
+    <span class="rollup">
+      {{if .Rollup.Estimated}}
+        {{tokens .Rollup.Tokens}} {{template "tier-badge" .Rollup.Tier}}
+        {{if .Rollup.Decomposed}}<span class="muted">Σ</span>{{end}}
+        {{if not .Rollup.Complete}}<span class="incomplete" title="{{len .Rollup.Unestimated}} unestimated below">+ ?</span>{{end}}
+      {{else}}
+        <span class="incomplete">?</span>
+      {{end}}
+    </span>
+  </div>
+  {{if .Rollup.Unestimated}}
+  <div class="unestimated muted">unestimated: {{range .Rollup.Unestimated}}{{.Name}} {{end}}</div>
+  {{end}}
+  {{with .Children}}
+  <ul class="tree">
+    {{range .}}{{template "tree-node" .}}{{end}}
+  </ul>
+  {{end}}
+</li>
+{{end}}
