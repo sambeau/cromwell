@@ -1,9 +1,21 @@
 {{define "page-planning"}}{{template "pagetop" .}}
 <h1>Planning</h1>
 
+{{template "planning-actions" .}}
+
+<div id="planning-body">
+  {{template "frag-planning" .Data}}
+</div>
+{{template "pagebottom" .}}{{end}}
+
+
+{{define "frag-planning"}}
+{{if .Notice}}<div class="banner ok">{{.Notice}}</div>{{end}}
+{{if .Error}}<div class="banner err">{{.Error}}</div>{{end}}
+{{with .View}}
 <section class="card wide">
   <h2>Initiative tree</h2>
-  {{with .Data.Roots}}
+  {{with .Roots}}
   <ul class="tree">
     {{range .}}{{template "tree-node" .}}{{end}}
   </ul>
@@ -12,7 +24,7 @@
 
 <section class="card wide">
   <h2>Milestones</h2>
-  {{with .Data.Milestones}}
+  {{with .Milestones}}
   <table class="ms">
     <thead><tr><th>milestone</th><th>state</th><th>progress</th><th class="r">done</th></tr></thead>
     <tbody>
@@ -31,7 +43,7 @@
 
 <section class="card wide">
   <h2>Roadmaps</h2>
-  {{with .Data.Roadmaps}}
+  {{with .Roadmaps}}
   {{range .}}
   <div class="roadmap">
     <h3>{{.Roadmap.Name}}</h3>
@@ -51,7 +63,30 @@
   {{end}}
   {{else}}<p class="muted">No roadmaps defined.</p>{{end}}
 </section>
-{{template "pagebottom" .}}{{end}}
+{{end}}
+{{end}}
+
+
+{{define "planning-actions"}}
+<details class="actions" open>
+  <summary>Actions</summary>
+  <div class="action-forms">
+    <form class="action" hx-post="/ui/estimate/set" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>Set estimate</h3>
+      <input type="text" name="ref" placeholder="ref (auth/login)" required>
+      <input type="number" name="tokens" placeholder="tokens" min="1" required>
+      <input type="text" name="rationale" placeholder="rationale (optional)">
+      <label class="chk"><input type="checkbox" name="cite_corpus" value="1"> cites corpus (considered)</label>
+      <button type="submit">Set</button>
+    </form>
+    <form class="action" hx-post="/ui/estimate/ai" hx-target="#planning-body" hx-swap="innerHTML">
+      <h3>AI estimate</h3>
+      <input type="text" name="ref" placeholder="ref (auth/login)" required>
+      <button type="submit">Dispatch estimator</button>
+    </form>
+  </div>
+</details>
+{{end}}
 
 
 {{define "tree-node"}}

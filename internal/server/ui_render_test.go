@@ -85,7 +85,9 @@ func TestUITemplatesParseAndRender(t *testing.T) {
 		{"frag-inbox", []inboxItem(nil), false}, // empty inbox renders the "clear" state
 		{"frag-inbox-badge", 2, false},
 		{"frag-inbox-badge", 0, true}, // a zero badge is deliberately empty
-		{"page-planning", pageData{Active: "planning", Actor: "op", Data: planning}, false},
+		{"page-planning", pageData{Active: "planning", Actor: "op", Data: planningPage{View: planning}}, false},
+		{"frag-planning", planningPage{View: planning, Notice: "estimate set"}, false},
+		{"frag-planning", planningPage{View: planning, Error: "no such ref"}, false},
 		{"page-documents", pageData{Active: "documents", Actor: "op", Data: docs}, false},
 		{"page-document", pageData{Active: "documents", Actor: "op", Data: docPage}, false},
 		{"page-cost", pageData{Active: "cost", Actor: "op", Data: cost}, false},

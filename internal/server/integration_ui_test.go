@@ -229,6 +229,51 @@ func waitFor(t *testing.T, lines <-chan string, cond func(string) bool) {
 	}
 }
 
+// TestUIEstimateMutation covers SPEC-006 FR-1.1 and FR-6.2: setting an estimate
+// through the UI drives the same RecordEstimate path as the CLI, refreshes the
+// planning roll-up, and surfaces a bad input inline rather than as a 500.
+func TestUIEstimateMutation(t *testing.T) {
+	h := newHarness(t)
+	h.setupFeatureWithSpec() // auth/login
+
+	// A valid estimate: the refreshed fragment shows the new roll-up and a notice.
+	code, body := h.postForm("/ui/estimate/set", map[string]string{
+		"ref": "auth/login", "tokens": "1500", "rationale": "email+password"})
+	if code != 200 {
+		t.Fatalf("estimate set: %d\n%s", code, body)
+	}
+	mustContain(t, "estimate notice", body, "estimate set")
+	mustContain(t, "estimate rollup", body, "1.5k")
+	mustContain(t, "estimate tier", body, "tier-rough")
+
+	// The same audited outcome as the CLI: an estimate.recorded row exists.
+	h.eventually("estimate.recorded audit", func() bool {
+		events, _ := h.srv.Store.AuditTail(context.Background(), "", nil, 100)
+		for _, e := range events {
+			if e.Kind == "estimate.recorded" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Cite-corpus lifts the tier to considered (evidence, not free choice).
+	_, cited := h.postForm("/ui/estimate/set", map[string]string{
+		"ref": "auth/login", "tokens": "1500", "cite_corpus": "1"})
+	mustContain(t, "considered tier", cited, "tier-considered")
+
+	// Bad input is surfaced inline, not as a 500, and changes nothing.
+	code, bad := h.postForm("/ui/estimate/set", map[string]string{"ref": "auth/login", "tokens": "0"})
+	if code != 200 {
+		t.Fatalf("bad estimate should still render the fragment, got %d", code)
+	}
+	mustContain(t, "inline error", bad, "positive token count")
+
+	// Estimates attach to features/tasks only — an initiative ref is rejected inline.
+	_, initErr := h.postForm("/ui/estimate/set", map[string]string{"ref": "auth", "tokens": "500"})
+	mustContain(t, "initiative rejected", initErr, "features and tasks only")
+}
+
 // TestUIServesStaticAssets confirms the vendored HTMX + SSE assets are embedded
 // and served (DESIGN-007 CC-1).
 func TestUIServesStaticAssets(t *testing.T) {

@@ -142,6 +142,20 @@ button.ghost { background: transparent; color: var(--accent); }
 .roadmap-entries li { display: flex; gap: .5rem; align-items: center; padding: .2rem 0; }
 .roadmap-entries .pos { width: 1.5rem; color: var(--muted); }
 
+/* Mutations: the Actions panel, forms, and result banners */
+.actions { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .5rem 1rem 1rem; margin-bottom: 1rem; }
+.actions > summary { cursor: pointer; font-weight: 600; padding: .3rem 0; color: var(--muted); text-transform: uppercase; font-size: .8rem; letter-spacing: .04em; }
+.action-forms { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; margin-top: .75rem; }
+.action { display: flex; flex-direction: column; gap: .4rem; border: 1px solid var(--line); border-radius: 6px; padding: .75rem; }
+.action h3 { margin: 0 0 .2rem; color: var(--ink); font-size: .85rem; }
+.action input[type=text], .action input[type=number], .action input[type=date], .action select {
+  padding: .35rem .5rem; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink); }
+.action .chk { display: flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--muted); }
+.action button { align-self: flex-start; }
+.banner { padding: .5rem .8rem; border-radius: 6px; margin-bottom: 1rem; font-size: .9rem; }
+.banner.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); border: 1px solid var(--ok); }
+.banner.err { background: color-mix(in srgb, var(--alert) 18%, transparent); border: 1px solid var(--alert); }
+
 @media (max-width: 720px) {
   .grid { grid-template-columns: 1fr; }
   .doc-cols { grid-template-columns: 1fr; }

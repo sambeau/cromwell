@@ -88,6 +88,15 @@ type planningView struct {
 	Roadmaps   []roadmapView
 }
 
+// planningPage wraps planningView with the result of the last mutation, so the
+// refreshed planning body carries an inline notice or error at the top
+// (SPEC-006 FR-6.2) — a mutation never fails silently or as a raw 500.
+type planningPage struct {
+	View   planningView
+	Notice string
+	Error  string
+}
+
 // treeNode is one node of the rendered planning tree: its type and label, its
 // subtree roll-up computed through the sizing engine (FR-4.1), and its
 // children.

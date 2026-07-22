@@ -140,9 +140,14 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/frag/inbox", s.handleFragInbox)
 	mux.HandleFunc("GET /ui/frag/inbox-badge", s.handleFragInboxBadge)
 
-	// Realtime stream and the one mutation.
+	// Realtime stream and the inbox respond.
 	mux.HandleFunc("GET /ui/events", s.handleUIEvents)
 	mux.HandleFunc("POST /ui/respond", s.handleUIRespond)
+
+	// Planning & review mutations (SPEC-006). Each posts to the same service
+	// method the CLI uses and returns the refreshed fragment.
+	mux.HandleFunc("POST /ui/estimate/set", s.handleUIEstimateSet)
+	mux.HandleFunc("POST /ui/estimate/ai", s.handleUIEstimateAI)
 }
 
 // --- Dashboard ---
@@ -300,7 +305,7 @@ func (s *Server) handleUIPlanning(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
-	s.render(w, "page-planning", s.page("planning", view))
+	s.render(w, "page-planning", s.page("planning", planningPage{View: view}))
 }
 
 // --- Documents ---
