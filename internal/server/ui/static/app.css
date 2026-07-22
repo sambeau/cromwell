@@ -130,6 +130,10 @@ button.ghost { background: transparent; color: var(--accent); }
 .doc-body pre { background: var(--bg); padding: .75rem; border-radius: 6px; overflow-x: auto; }
 .doc-body h1 { font-size: 1.4rem; } .doc-body h2 { font-size: 1.15rem; color: var(--ink); text-transform: none; }
 .doc-body h3 { font-size: 1rem; color: var(--ink); }
+.doc-body img { max-width: 100%; height: auto; }
+.doc-body table { width: auto; margin: .5rem 0; }
+.doc-body th, .doc-body td { border: 1px solid var(--line); padding: .3rem .6rem; }
+.doc-body blockquote { border-left: 3px solid var(--line); margin: .5rem 0; padding: .1rem 1rem; color: var(--muted); }
 .comment { border: 1px solid var(--line); border-radius: 6px; padding: .5rem .6rem; margin-bottom: .5rem; }
 .comment.resolved { opacity: .6; }
 .chead { display: flex; gap: .4rem; font-size: .8rem; margin-bottom: .25rem; }

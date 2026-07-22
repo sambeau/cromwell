@@ -8,7 +8,7 @@ import (
 func TestRenderMarkdownStructure(t *testing.T) {
 	out := string(renderMarkdown("# Heading\n\nA paragraph with **bold**, *italic*, and `code`.\n\n- one\n- two\n\n```\nfenced code\n```\n\n> a quote\n"))
 	for _, want := range []string{
-		"<h1>Heading</h1>",
+		"<h1", "Heading",
 		"<strong>bold</strong>",
 		"<em>italic</em>",
 		"<code>code</code>",
@@ -22,35 +22,59 @@ func TestRenderMarkdownStructure(t *testing.T) {
 	}
 }
 
-// TestRenderMarkdownEscapesHTML is the load-bearing security assertion (NFR-5):
-// a document body can never inject markup into the page. Every angle bracket and
-// every attribute-breaking quote in source must be escaped.
-func TestRenderMarkdownEscapesHTML(t *testing.T) {
-	out := string(renderMarkdown("Hello <script>alert('xss')</script> & \"quotes\".\n"))
-	if strings.Contains(out, "<script>") {
-		t.Errorf("script tag survived escaping:\n%s", out)
-	}
-	for _, want := range []string{"&lt;script&gt;", "&amp;"} {
+// TestRenderMarkdownFullFidelity proves the reason we moved to goldmark: GFM
+// tables and images render, which the bespoke floor did not do.
+func TestRenderMarkdownFullFidelity(t *testing.T) {
+	table := "| a | b |\n|---|---|\n| 1 | 2 |\n"
+	out := string(renderMarkdown(table))
+	for _, want := range []string{"<table>", "<th", "<td", "1", "2"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("expected escaped %q in:\n%s", want, out)
+			t.Errorf("table not rendered, missing %q\n---\n%s", want, out)
 		}
+	}
+
+	img := string(renderMarkdown("![a diagram](https://example.com/d.png)\n"))
+	if !strings.Contains(img, "<img") || !strings.Contains(img, `src="https://example.com/d.png"`) {
+		t.Errorf("image not rendered:\n%s", img)
 	}
 }
 
-// TestRenderMarkdownRejectsDangerousLinks ensures a javascript: URL is not
-// emitted as a live href (NFR-5); it falls back to literal source.
+// TestRenderMarkdownEscapesHTML is the load-bearing security assertion (NFR-5):
+// a document body can never inject active markup into the page. bluemonday
+// strips scripts, event handlers, and unknown/dangerous constructs.
+func TestRenderMarkdownEscapesHTML(t *testing.T) {
+	out := string(renderMarkdown("Hello <script>alert('xss')</script> and <img src=x onerror=alert(1)>.\n"))
+	if strings.Contains(out, "<script") {
+		t.Errorf("script tag survived sanitization:\n%s", out)
+	}
+	if strings.Contains(out, "onerror") {
+		t.Errorf("event handler survived sanitization:\n%s", out)
+	}
+	if strings.Contains(out, "alert(1)") {
+		t.Errorf("inline script payload survived:\n%s", out)
+	}
+}
+
+// TestRenderMarkdownRejectsDangerousLinks ensures dangerous URL schemes are not
+// emitted as live links or image sources (NFR-5), while safe and relative links
+// are kept.
 func TestRenderMarkdownRejectsDangerousLinks(t *testing.T) {
-	out := string(renderMarkdown("[click](javascript:alert(1))\n"))
-	if strings.Contains(out, "href=\"javascript:") {
-		t.Errorf("javascript: scheme became a live link:\n%s", out)
+	js := string(renderMarkdown("[click](javascript:alert(1))\n"))
+	if strings.Contains(js, "javascript:") {
+		t.Errorf("javascript: scheme survived:\n%s", js)
+	}
+
+	dataImg := string(renderMarkdown("![x](data:text/html,<script>alert(1)</script>)\n"))
+	if strings.Contains(dataImg, "data:text/html") {
+		t.Errorf("data: image URL survived:\n%s", dataImg)
 	}
 
 	safe := string(renderMarkdown("[docs](https://example.com/x)\n"))
-	if !strings.Contains(safe, `<a href="https://example.com/x">docs</a>`) {
-		t.Errorf("safe link not rendered as anchor:\n%s", safe)
+	if !strings.Contains(safe, `href="https://example.com/x"`) {
+		t.Errorf("safe link dropped:\n%s", safe)
 	}
 	rel := string(renderMarkdown("[rel](../other.md)\n"))
-	if !strings.Contains(rel, `<a href="../other.md">rel</a>`) {
-		t.Errorf("relative link not rendered as anchor:\n%s", rel)
+	if !strings.Contains(rel, `href="../other.md"`) {
+		t.Errorf("relative link dropped:\n%s", rel)
 	}
 }
