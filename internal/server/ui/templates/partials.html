@@ -250,7 +250,7 @@
      progress, and a rule between — the enclosing card supplies the chrome. */}}
 {{define "milestone-panel"}}
 <div class="u-mb-4">
-  <div class="u-row u-mb-2">
+  <div class="u-row u-mb-4">
     <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
     <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
     <span class="u-push">{{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}</span>
