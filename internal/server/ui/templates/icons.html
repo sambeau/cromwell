@@ -1,0 +1,130 @@
+{{/* Icon sprite from the design system (round 2): 75 symbols, 24x24 grid,
+     currentColor. Inlined into the shell because cross-document <use href>
+     does not resolve in Safari. Reference as:
+       <svg class="icon"><use href="#i-feature"/></svg>
+     The four i-tier-N rings are NOT stroke icons — they take class="tier",
+     never class="icon" (round-2 note §2). */}}
+{{define "icon-sprite"}}
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true" id="cromwell-icons">
+<!--
+  Cromwell icon set — 24×24 grid, 1.5 stroke, currentColor, no fills except
+  where marked data-solid. Embed this whole block once per page (or once in
+  your Go base template) and reference with:
+      <svg class="icon"><use href="#i-feature"/></svg>
+  No external requests, no icon font, no build step.
+-->
+
+<!-- == Entity types ================================================== -->
+<symbol id="i-project" viewBox="0 0 24 24"><path d="M12 3 3 7.5 12 12l9-4.5z"/><path d="M3 12l9 4.5 9-4.5"/><path d="M3 16.5 12 21l9-4.5"/></symbol>
+<symbol id="i-initiative" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="1.2" data-solid/></symbol>
+<symbol id="i-feature" viewBox="0 0 24 24"><path d="M12 3.2 20.8 12 12 20.8 3.2 12z"/></symbol>
+<symbol id="i-document" viewBox="0 0 24 24"><path d="M13.2 2.6H6.5a1.5 1.5 0 0 0-1.5 1.5v15.8a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V8.4z"/><path d="M13.2 2.6V8.4H19"/><path d="M8.4 13.2h7.2M8.4 17h5"/></symbol>
+<symbol id="i-milestone" viewBox="0 0 24 24"><path d="M5.6 21.2V3"/><path d="M5.6 4.4h11l-2 3.6 2 3.6h-11"/></symbol>
+<symbol id="i-roadmap" viewBox="0 0 24 24"><circle cx="6" cy="5.2" r="2.4"/><circle cx="18" cy="18.8" r="2.4"/><path d="M8.4 5.2h5.4a4 4 0 0 1 0 8H10a4 4 0 0 0 0 8h5.6"/></symbol>
+<symbol id="i-task" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.2"/><path d="M7.6 9.6 10.6 12l-3 2.4"/><path d="M13.2 14.6h3.8"/></symbol>
+<symbol id="i-question" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.7 9.5a2.4 2.4 0 1 1 3.2 2.3c-.6.2-.9.8-.9 1.4v.5"/><circle cx="12" cy="16.6" r=".95" data-solid/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13.4 6.2 4.6h11.6L21 13.4v5.1a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/><path d="M3 13.4h4.8l1 2.6h6.4l1-2.6H21"/></symbol>
+
+<!-- == Document types =============================================== -->
+<symbol id="i-doc-design" viewBox="0 0 24 24"><circle cx="8.4" cy="8.4" r="4.6"/><rect x="12.4" y="12.4" width="8" height="8" rx="1.2"/></symbol>
+<symbol id="i-doc-spec" viewBox="0 0 24 24"><path d="M3.6 7.2 5.4 9 8.6 5.4"/><path d="M3.6 16.2 5.4 18l3.2-3.6"/><path d="M12.4 7.2h8M12.4 16.2h8"/></symbol>
+<symbol id="i-doc-devplan" viewBox="0 0 24 24"><circle cx="7" cy="5.6" r="2.2"/><circle cx="7" cy="18.4" r="2.2"/><circle cx="17" cy="8.6" r="2.2"/><path d="M7 7.8v8.4"/><path d="M17 10.8v.8a4 4 0 0 1-4 4H9.2"/></symbol>
+<symbol id="i-doc-note" viewBox="0 0 24 24"><path d="M4.6 5.4a1.5 1.5 0 0 1 1.5-1.5h11.8a1.5 1.5 0 0 1 1.5 1.5v9L14 20.1H6.1a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M19.4 14.4H14v5.7"/></symbol>
+<symbol id="i-doc-research" viewBox="0 0 24 24"><path d="M4.2 5.4A2.4 2.4 0 0 1 6.6 3h13.2v14.4H6.6a2.4 2.4 0 0 0-2.4 2.4z"/><path d="M4.2 19.8A2.4 2.4 0 0 1 6.6 17.4h13.2V21H6.6"/><path d="M9 7.6h6"/></symbol>
+
+<!--
+  Confidence tier — a ring cut into three fixed segments, filling clockwise
+  from twelve. The count is the meaning:
+      0 of 3  not estimated   no number at all
+      1 of 3  rough           a name and a description
+      2 of 3  considered      ...and a written design or spec
+      3 of 3  decomposed      ...and children that each carry an estimate
+  Colour comes from --seg-on / --seg-off on the referencing element, which
+  cascade into the <use> shadow tree. Do not add class="icon" to these —
+  they are not stroke icons and must not inherit its stroke rules.
+  Geometry: r 7.6, circumference 47.7522, one third 15.9174,
+  dash 13.3706 (84% of a third) leaves a 16% gap between segments.
+-->
+<symbol id="i-tier-0" viewBox="0 0 24 24">
+  <circle cx="12" cy="12" r="9" fill="none" stroke="var(--seg-off)" stroke-width="1.7" stroke-dasharray="2.2 2.4"/>
+</symbol>
+<symbol id="i-tier-1" viewBox="0 0 24 24"><g transform="rotate(-90 12 12)" fill="none" stroke-width="5">
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-on)"  stroke-dasharray="13.3706 34.3816" stroke-dashoffset="0"/>
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-off)" stroke-dasharray="13.3706 34.3816" stroke-dashoffset="-15.9174"/>
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-off)" stroke-dasharray="13.3706 34.3816" stroke-dashoffset="-31.8348"/>
+</g></symbol>
+<symbol id="i-tier-2" viewBox="0 0 24 24"><g transform="rotate(-90 12 12)" fill="none" stroke-width="5">
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-on)"  stroke-dasharray="13.3706 34.3816" stroke-dashoffset="0"/>
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-on)"  stroke-dasharray="13.3706 34.3816" stroke-dashoffset="-15.9174"/>
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-off)" stroke-dasharray="13.3706 34.3816" stroke-dashoffset="-31.8348"/>
+</g></symbol>
+<symbol id="i-tier-3" viewBox="0 0 24 24"><g transform="rotate(-90 12 12)" fill="none" stroke-width="5">
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-on)" stroke-dasharray="13.3706 34.3816" stroke-dashoffset="0"/>
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-on)" stroke-dasharray="13.3706 34.3816" stroke-dashoffset="-15.9174"/>
+  <circle cx="12" cy="12" r="7.6" stroke="var(--seg-on)" stroke-dasharray="13.3706 34.3816" stroke-dashoffset="-31.8348"/>
+</g></symbol>
+
+<!-- == Lifecycle state marks ======================================== -->
+<symbol id="i-state-idea" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4" stroke-dasharray="2.5 2.9"/></symbol>
+<symbol id="i-state-ready" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/></symbol>
+<symbol id="i-state-active" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8z" data-solid/></symbol>
+<symbol id="i-state-review" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="3.4" data-solid/></symbol>
+<symbol id="i-state-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M8.2 12.3 10.9 15l4.9-6"/></symbol>
+<symbol id="i-state-abandoned" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M6.1 6.1 17.9 17.9"/></symbol>
+<symbol id="i-state-draft" viewBox="0 0 24 24"><path d="M4 20.2l3.9-.9L18.9 8.3a2.3 2.3 0 0 0-3.2-3.2L4.9 16.1z"/><path d="M14.6 6.2l3.2 3.2"/><path d="M13.5 20.2h7"/></symbol>
+<symbol id="i-state-superseded" viewBox="0 0 24 24"><rect x="3" y="4.6" width="18" height="4.4" rx="1.2"/><path d="M4.8 9v10a1.6 1.6 0 0 0 1.6 1.6h11.2A1.6 1.6 0 0 0 19.2 19V9"/><path d="M9.6 13.6h4.8"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.6" y="10.4" width="14.8" height="10.2" rx="2"/><path d="M8 10.4V7.6a4 4 0 0 1 8 0v2.8"/></symbol>
+<symbol id="i-unlock" viewBox="0 0 24 24"><rect x="4.6" y="10.4" width="14.8" height="10.2" rx="2"/><path d="M8 10.4V7.6a4 4 0 0 1 7.6-1.7"/></symbol>
+
+<!-- == Actions ===================================================== -->
+<symbol id="i-start" viewBox="0 0 24 24"><path d="M7.8 5.2 19 12 7.8 18.8z"/></symbol>
+<symbol id="i-run" viewBox="0 0 24 24"><path d="M13.2 2.8 5 13.4h5.6L10.8 21.2 19 10.6h-5.6z"/></symbol>
+<symbol id="i-estimate" viewBox="0 0 24 24"><path d="M3.4 18.4a9 9 0 1 1 17.2 0"/><path d="M12 18.4 16.4 12.6"/><circle cx="12" cy="18.4" r=".9" data-solid/></symbol>
+<symbol id="i-attach" viewBox="0 0 24 24"><path d="M19.6 11.4 11.7 19.3a5 5 0 0 1-7.1-7.1l8.5-8.5a3.4 3.4 0 0 1 4.8 4.8l-8.5 8.5a1.8 1.8 0 0 1-2.5-2.5l7.9-7.9"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20.2l3.9-.9L18.9 8.3a2.3 2.3 0 0 0-3.2-3.2L4.9 16.1z"/><path d="M14.6 6.2l3.2 3.2"/></symbol>
+<symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4.6" width="18" height="4.4" rx="1.2"/><path d="M4.8 9v10a1.6 1.6 0 0 0 1.6 1.6h11.2A1.6 1.6 0 0 0 19.2 19V9"/><path d="M9.6 13.6h4.8"/></symbol>
+<symbol id="i-abandon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M6.1 6.1 17.9 17.9"/></symbol>
+<symbol id="i-approve" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M8.2 12.3 10.9 15l4.9-6"/></symbol>
+<symbol id="i-request-changes" viewBox="0 0 24 24"><path d="M3.6 6.4a2 2 0 0 1 2-2h12.8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6.6L7.4 20.2v-3.8H5.6a2 2 0 0 1-2-2z"/><path d="M12 7.8v3.4"/><circle cx="12" cy="13.8" r=".9" data-solid/></symbol>
+<symbol id="i-add-to-milestone" viewBox="0 0 24 24"><path d="M5 21.2V3"/><path d="M5 4.4h8.4l-1.5 3 1.5 3H5"/><path d="M18.4 8.4v6M15.4 11.4h6"/></symbol>
+<symbol id="i-copy-path" viewBox="0 0 24 24"><path d="M10.2 13.6a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.6 1.7"/><path d="M13.8 10.4a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.6-1.7"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.4 12a8.4 8.4 0 1 1-2.5-6"/><path d="M20.4 4v5.2h-5.2"/></symbol>
+
+<!-- == Structural ================================================== -->
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9.5 5.5 16 12l-6.5 6.5"/></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M5.5 9.5 12 16l6.5-6.5"/></symbol>
+<symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="M5.5 14.5 12 8l6.5 6.5"/></symbol>
+<symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></symbol>
+<symbol id="i-crumb-sep" viewBox="0 0 24 24"><path d="M10 4.5 15.5 12 10 19.5" stroke-width="1.3"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M13.8 4.4h5.8v5.8"/><path d="M19.6 4.4 11 13"/><path d="M18 14.4v4.2a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6V7.6A1.6 1.6 0 0 1 5.4 6h4.2"/></symbol>
+<symbol id="i-owner" viewBox="0 0 24 24"><circle cx="12" cy="8.2" r="3.8"/><path d="M4.6 20.4a7.4 7.4 0 0 1 14.8 0"/></symbol>
+<symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7.4" width="16" height="12" rx="3"/><path d="M12 4v3.4"/><circle cx="12" cy="3.2" r="1.2" data-solid/><circle cx="9.2" cy="13.2" r="1.1" data-solid/><circle cx="14.8" cy="13.2" r="1.1" data-solid/></symbol>
+<symbol id="i-live" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.1" data-solid/><path d="M8.2 8.2a5.4 5.4 0 0 0 0 7.6"/><path d="M15.8 15.8a5.4 5.4 0 0 0 0-7.6"/><path d="M5.4 5.4a9.4 9.4 0 0 0 0 13.2"/><path d="M18.6 18.6a9.4 9.4 0 0 0 0-13.2"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.6" cy="10.6" r="6.6"/><path d="M15.4 15.4 20.4 20.4"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M3.6 5.4h16.8L14 13.2v5.4l-4 2.2v-7.6z"/></symbol>
+<symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 4.6v14.8M4 16.4 7 19.4l3-3"/><path d="M17 19.4V4.6M14 7.6 17 4.6l3 3"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.2" cy="12" r="1.3" data-solid/><circle cx="12" cy="12" r="1.3" data-solid/><circle cx="18.8" cy="12" r="1.3" data-solid/></symbol>
+<symbol id="i-panel-left" viewBox="0 0 24 24"><rect x="3" y="4.4" width="18" height="15.2" rx="2.2"/><path d="M9.4 4.4v15.2"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 14.6A8.6 8.6 0 0 1 9.4 3.8a8.6 8.6 0 1 0 10.8 10.8z"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.6 21.4 19.8H2.6z"/><path d="M12 9.6v4.2"/><circle cx="12" cy="16.8" r=".95" data-solid/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 11.4v5"/><circle cx="12" cy="8" r=".95" data-solid/></symbol>
+<symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M9.2 9.2 14.8 14.8M14.8 9.2 9.2 14.8"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.6 9.6 17.2 19 7" stroke-width="2"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 6.8v5.4l3.4 2"/></symbol>
+<symbol id="i-tokens" viewBox="0 0 24 24"><path d="M12 2.9 20 7.45v9.1L12 21.1 4 16.55V7.45z"/><circle cx="12" cy="12" r="2.9" data-solid/></symbol>
+<symbol id="i-comment" viewBox="0 0 24 24"><path d="M3.6 6.4a2 2 0 0 1 2-2h12.8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6.6L7.4 20.2v-3.8H5.6a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-activity" viewBox="0 0 24 24"><path d="M2.8 12.4h4L10 5.6l4 12.8 3-6h4.2"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7.4 4.4 12 9 16.6"/><path d="M15 7.4 19.6 12 15 16.6"/></symbol>
+<symbol id="i-diff" viewBox="0 0 24 24"><path d="M7 3.6v6.8M3.6 7h6.8"/><path d="M13.6 17h6.8"/><path d="M4.6 15.4h4.8v5.2H4.6z"/><path d="M14.6 3.4h4.8v5.2h-4.8z"/></symbol>
+<symbol id="i-children" viewBox="0 0 24 24"><rect x="9" y="2.6" width="6" height="5" rx="1.2"/><rect x="2.6" y="16.4" width="6" height="5" rx="1.2"/><rect x="15.4" y="16.4" width="6" height="5" rx="1.2"/><path d="M12 7.6v3.2"/><path d="M5.6 16.4v-3.2h12.8v3.2"/><path d="M12 10.8v2.4"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3.4 11 12 3.4 20.6 11"/><path d="M5.6 9.6V19a1.6 1.6 0 0 0 1.6 1.6h9.6A1.6 1.6 0 0 0 18.4 19V9.6"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h15"/><path d="M13.4 6.4 19 12l-5.6 5.6"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.6 12S6.2 5.6 12 5.6 21.4 12 21.4 12 17.8 18.4 12 18.4 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="3.1"/></symbol>
+<symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" data-solid/></symbol>
+<symbol id="i-hash" viewBox="0 0 24 24"><path d="M9.4 3.6 7.4 20.4M16.6 3.6l-2 16.8M3.6 8.6h17M3 15.4h17"/></symbol>
+</svg>
+{{end}}

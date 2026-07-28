@@ -1,103 +1,313 @@
+{{/* Home, ordered by claim on your attention rather than by hierarchy (FR-7.1):
+     what is waiting on you, then what is running, then what is unsized. Work is
+     counted in tokens; no figure on this page is money (D-4).
+
+     The project-level milestones and roadmaps live here because the project is
+     their parent (§5.1a) — this is not a global list of every milestone. */}}
+
 {{define "page-dashboard"}}{{template "pagetop" .}}
-<h1>Dashboard</h1>
-<div class="grid">
-  <section class="card" id="queue"
-           hx-get="/ui/frag/queue" hx-trigger="sse:changed" hx-swap="innerHTML">
-    {{template "frag-queue" .Data}}
-  </section>
-
-  <section class="card" id="cost"
-           hx-get="/ui/frag/cost" hx-trigger="sse:changed" hx-swap="innerHTML">
-    {{template "frag-cost" .Data}}
-  </section>
-
-  <section class="card wide" id="events"
-           hx-get="/ui/frag/events" hx-trigger="sse:changed" hx-swap="innerHTML">
-    {{template "frag-events" .Data}}
-  </section>
-
-  <section class="card wide" id="calibration"
-           hx-get="/ui/frag/calibration" hx-trigger="sse:changed" hx-swap="innerHTML">
-    {{template "frag-calibration" .Data}}
-  </section>
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-home"/></svg></span>
+    <div class="page-head-titles"><h1 class="t-page">Home</h1></div>
+  </div>
+  <p class="page-lede">What needs doing, what is running, and what still has no estimate.</p>
 </div>
+
+<div id="stats" hx-get="/ui/frag/queue" hx-trigger="sse:changed" hx-swap="innerHTML">
+  {{template "frag-queue" .Data}}
+</div>
+
+{{with .Data}}
+{{if .Waiting}}
+<section class="panel u-mt-6">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> Waiting for you</h2>
+    <div class="panel-head-actions"><a class="btn btn--sm" href="/ui/inbox">Open the inbox</a></div>
+  </div>
+  <div class="panel-body section-body--flush">
+    <div class="rows">
+      {{range .Waiting}}
+      <a class="row" href="/ui/inbox/{{.ID}}">
+        <svg class="icon icon-sm icon-entity" data-entity="question" aria-hidden="true"><use href="#i-question"/></svg>
+        <span class="row-main">
+          <span class="row-title">{{.Question}}</span>
+          <span class="row-sub">{{.Kind}}</span>
+        </span>
+        <span class="row-end"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</section>
+{{end}}
+
+<div class="page-split u-mt-6">
+  <div>
+    {{if .ByState}}
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg> Features, by where they have got to</h2>
+      </div>
+      <div class="panel-body section-body--flush">
+        {{range .ByState}}
+        <details class="section" open>
+          <summary>
+            <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+            {{template "state-badge" .State}}
+            <span class="section-summary"><span class="count-pill">{{len .Features}}</span></span>
+          </summary>
+          <div class="section-body section-body--flush">
+            <div class="rows">
+              {{range .Features}}
+              <a class="row" href="{{.URL}}">
+                <svg class="icon icon-sm icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg>
+                <span class="row-main"><span class="row-title">{{.Name}}</span></span>
+                <span class="row-end">{{template "size-badge" .Size}}</span>
+              </a>
+              {{end}}
+            </div>
+          </div>
+        </details>
+        {{end}}
+      </div>
+    </section>
+    {{end}}
+
+    {{if .TopInitiatives}}
+    <section class="panel u-mt-4">
+      <div class="panel-head">
+        <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="initiative" aria-hidden="true"><use href="#i-initiative"/></svg> Initiatives</h2>
+        <div class="panel-head-actions"><a class="btn btn--sm" href="/ui/project">Browse the project</a></div>
+      </div>
+      <div class="panel-body section-body--flush">
+        <div class="rows">
+          {{range .TopInitiatives}}
+          <a class="row" href="{{.URL}}">
+            <svg class="icon icon-sm icon-entity" data-entity="initiative" aria-hidden="true"><use href="#i-initiative"/></svg>
+            <span class="row-main">
+              <span class="row-title">{{.Name}}</span>
+            </span>
+            <span class="row-end">{{template "size-badge" .Size}}</span>
+          </a>
+          {{end}}
+        </div>
+      </div>
+    </section>
+    {{end}}
+
+    {{if .ProjectDocs}}
+    <section class="panel u-mt-4">
+      <div class="panel-head">
+        <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-doc-design"/></svg> The project's own design writing</h2>
+      </div>
+      <div class="panel-body section-body--flush">
+        <div class="rows">
+          {{range .ProjectDocs}}
+          <a class="row" href="{{.URL}}">
+            <svg class="icon icon-sm icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Type}}"/></svg>
+            <span class="row-main">
+              <span class="row-title">{{.Title}}</span>
+              <span class="row-sub">{{.Type}}</span>
+            </span>
+            <span class="row-end">{{template "state-badge" .State}}</span>
+          </a>
+          {{end}}
+        </div>
+      </div>
+    </section>
+    {{end}}
+
+    {{/* The project's own plan. Milestones and roadmaps owned by an initiative
+         appear on that initiative's page, not here (§5.1a). */}}
+    {{if or .Milestones .Roadmaps}}
+    <section class="panel u-mt-4">
+      <div class="panel-head">
+        <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg> The project's own plan</h2>
+      </div>
+      <div class="panel-body">
+        <p class="t-meta u-mb-4">Milestones and roadmaps planned for the project as a whole.</p>
+
+        {{range .Roadmaps}}
+        <div class="panel u-mb-4">
+          <div class="panel-head">
+            <h3 class="panel-title">
+              <svg class="icon icon-sm icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
+              <a href="{{.URL}}">{{.Name}}</a>
+            </h3>
+            <div class="panel-head-actions"><span class="t-meta">In intended order</span></div>
+          </div>
+          <div class="panel-body">
+            {{with .Milestones}}{{template "roadmap-spine" .}}
+            {{else}}<p class="empty--inline">No milestones have been placed on this roadmap yet.</p>{{end}}
+          </div>
+        </div>
+        {{end}}
+
+        {{range .Milestones}}{{template "milestone-panel" .}}{{end}}
+      </div>
+    </section>
+    {{end}}
+  </div>
+
+  <aside class="rail" aria-label="Work and activity">
+    <div class="rail-card" id="work" hx-get="/ui/frag/work" hx-trigger="sse:changed" hx-swap="innerHTML">
+      {{template "frag-work" .}}
+    </div>
+    <div class="rail-card" id="events" hx-get="/ui/frag/events" hx-trigger="sse:changed" hx-swap="innerHTML">
+      {{template "frag-events" .}}
+    </div>
+  </aside>
+</div>
+
+<section class="panel u-mt-6" id="calibration"
+         hx-get="/ui/frag/calibration" hx-trigger="sse:changed" hx-swap="innerHTML">
+  {{template "frag-calibration" .}}
+</section>
+{{end}}
 {{template "pagebottom" .}}{{end}}
 
 
+{{/* ---------- Live regions ---------- */}}
+
 {{define "frag-queue"}}
-<h2>Queue</h2>
 <div class="stats">
-  <div class="stat"><span class="n">{{len .Running}}</span><span class="l">in&nbsp;flight</span></div>
-  <div class="stat"><span class="n">{{len .Queued}}</span><span class="l">queued</span></div>
-  <div class="stat {{if .Escalated}}alert{{end}}"><span class="n">{{.Escalated}}</span><span class="l">escalated</span></div>
+  <div class="stat {{if .Escalated}}stat--attention{{end}}">
+    <p class="stat-label">Waiting for you</p>
+    <p class="stat-num">{{.Escalated}}</p>
+    <p class="stat-note">Questions an agent could not settle on its own.</p>
+  </div>
+  <div class="stat">
+    <p class="stat-label">Running now</p>
+    <p class="stat-num">{{len .Running}}</p>
+    <p class="stat-note">{{if .Running}}Agent runs in flight.{{else}}Nothing is running.{{end}}</p>
+  </div>
+  <div class="stat">
+    <p class="stat-label">Queued</p>
+    <p class="stat-num">{{len .Queued}}</p>
+    <p class="stat-note">Waiting for a slot or a dependency.</p>
+  </div>
 </div>
-{{if .Running}}
-<h3>Running</h3>
-<ul class="tight">
-  {{range .Running}}<li><code>{{.Purpose}}</code> <span class="muted">{{shortID .RefID}}</span></li>{{end}}
-</ul>
+{{if or .Running .Queued}}
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-run"/></svg> In flight</h2>
+    <div class="panel-head-actions"><span class="live"><span class="live-dot"></span>Live</span></div>
+  </div>
+  <div class="panel-body section-body--flush">
+    <div class="rows">
+      {{range .Running}}
+      <div class="row row--edge" data-state="active">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>
+        <span class="row-main">
+          <span class="row-title">{{.Purpose}}</span>
+          <span class="row-sub">Running now</span>
+        </span>
+        <span class="row-end">{{template "state-badge" "running"}}</span>
+      </div>
+      {{end}}
+      {{range .Queued}}
+      <div class="row">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-clock"/></svg>
+        <span class="row-main">
+          <span class="row-title">{{.Purpose}}</span>
+          {{if .QueueReason}}<span class="row-sub">{{.QueueReason}}</span>{{end}}
+        </span>
+        <span class="row-end">{{template "state-badge" "queued"}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</section>
 {{end}}
-{{if .Queued}}
-<h3>Queued</h3>
-<ul class="tight">
-  {{range .Queued}}<li><code>{{.Purpose}}</code>{{if .QueueReason}} <span class="muted">— {{.QueueReason}}</span>{{end}}</li>{{end}}
-</ul>
-{{end}}
-{{if and (not .Running) (not .Queued)}}<p class="muted">Idle — nothing in flight.</p>{{end}}
 {{end}}
 
 
-{{define "frag-cost"}}
-<h2>Cost</h2>
-<div class="bignum {{if .OverCap}}alert{{else if .OverWarn}}warn{{end}}">{{usd .CostTotal}}</div>
-{{if .BudgetCap}}
-<div class="budgetbar">
-  <div class="fill {{if .OverCap}}alert{{else if .OverWarn}}warn{{end}}" style="width:{{clampPct .CostTotal .BudgetCap}}%"></div>
+{{define "frag-work"}}
+<p class="rail-card-head"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg> Work in this project</p>
+<div class="rail-card-body">
+  <div class="rail-field">
+    {{if .Project.Estimated}}
+    <span class="tokens tokens--hero">
+      {{/* icon-lg for the stroke band: this renders ~26px (24-30px wants 1.4). */}}
+      <svg class="icon icon-lg" aria-hidden="true"><use href="#i-tokens"/></svg>
+      <span class="tokens-num">{{tokens .Project.Tokens}}</span><span class="visually-hidden">tokens</span>
+      {{template "tier-ring" .Project.Tier}}
+    </span>
+    <p class="t-meta">The estimated size of the whole project.{{if not .Project.Complete}} Some work still has no estimate, so treat this as a floor rather than a forecast.{{end}}</p>
+    {{else}}
+    <span class="tokens unestimated">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+      <span class="tokens-unit">Not estimated yet</span>
+      {{template "tier-ring" "unestimated"}}
+    </span>
+    <p class="t-meta">No work has been sized yet.</p>
+    {{end}}
+  </div>
+  {{if .Unestimated}}
+  <div class="rail-divider"></div>
+  <div class="rail-field">
+    <span class="rail-field-label">Still needs an estimate</span>
+    <div class="rows">
+      {{range .Unestimated}}
+      <div class="row">
+        <span class="row-main"><span class="row-title">{{.Name}}</span><span class="row-sub">{{.Type}}</span></span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
 </div>
-<p class="muted">of {{usd2 .BudgetCap}} cap ({{.BudgetPeriod}}){{if .OverWarn}} — over warn threshold{{end}}</p>
-{{else}}
-<p class="muted">No budget cap configured.</p>
-{{end}}
 {{end}}
 
 
 {{define "frag-events"}}
-<h2>Recent events</h2>
-{{if .Recent}}
-<table class="log">
-  <tbody>
-  {{range .Recent}}
-    <tr>
-      <td class="muted nowrap">{{ago .OccurredAt}}</td>
-      <td><code>{{.Kind}}</code></td>
-      <td class="muted">{{.RefType}}</td>
-      <td class="muted">{{.Actor}}</td>
-    </tr>
+<p class="rail-card-head"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-activity"/></svg> Recent activity</p>
+<div class="rail-card-body">
+  {{if .Recent}}
+  <div class="activity">
+    {{range .Recent}}
+    <div class="activity-row">
+      <span class="activity-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-dot"/></svg></span>
+      <span class="activity-text"><b>{{.Actor}}</b> {{.Kind}} <span class="u-dim">{{.RefType}}</span></span>
+      <span class="activity-time">{{ago .OccurredAt}}</span>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="empty--inline">Nothing has happened yet.</p>
   {{end}}
-  </tbody>
-</table>
-{{else}}<p class="muted">No events yet.</p>{{end}}
+</div>
 {{end}}
 
 
 {{define "frag-calibration"}}
-<h2>Calibration health</h2>
-{{if .Calibration}}
-<table class="cal">
-  <thead><tr><th>entity</th><th>tier</th><th class="r">estimate</th><th class="r">actual</th><th class="r">Δ</th></tr></thead>
-  <tbody>
-  {{range .Calibration}}
-    {{$delta := deltaTokens .ActualTokens .EstimateTokens}}
-    <tr>
-      <td>{{.Name}}</td>
-      <td>{{template "tier-badge" .EstimateTier}}</td>
-      <td class="r">{{tokens .EstimateTokens}}</td>
-      <td class="r">{{tokens .ActualTokens}}</td>
-      <td class="r {{if gt $delta 0}}over{{else if lt $delta 0}}under{{end}}">{{signed $delta}}</td>
-    </tr>
+<div class="panel-head">
+  <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-estimate"/></svg> How close the estimates have been</h2>
+</div>
+<div class="panel-body">
+  {{if .Calibration}}
+  <table class="table">
+    <thead>
+      <tr><th>Work</th><th>Confidence</th><th class="num">Estimated</th><th class="num">Actually used</th><th class="num">Difference</th></tr>
+    </thead>
+    <tbody>
+      {{range .Calibration}}
+      {{$delta := deltaTokens .ActualTokens .EstimateTokens}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td>{{template "tier-badge" .EstimateTier}}</td>
+        <td class="num">{{tokens .EstimateTokens}}</td>
+        <td class="num">{{tokens .ActualTokens}}</td>
+        <td class="num">{{signed $delta}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="t-meta u-mt-2">The difference is the tokens actually used minus the estimate, for work that was
+     estimated and has now finished. A positive number means the work took more tokens than expected.</p>
+  {{else}}
+  <p class="empty--inline">No finished work has been estimated yet, so there is nothing to calibrate against.</p>
   {{end}}
-  </tbody>
-</table>
-<p class="muted">Δ = actual − estimate, in tokens; recent estimated-and-done work.</p>
-{{else}}<p class="muted">No completed estimates yet to calibrate against.</p>{{end}}
+</div>
 {{end}}

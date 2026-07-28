@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -129,6 +130,45 @@ func CreateFeature(ctx context.Context, tx pgx.Tx, initiativeID uuid.UUID, slug,
 		return nil, err
 	}
 	return f, nil
+}
+
+// UpdateEntityFields updates the name/title and/or description of an initiative
+// or feature, in one transaction with an audit row (SPEC-007 FR-4, SPEC-008
+// FR-6). A nil field is left unchanged, so the same method serves the UI's
+// in-place edit (which may touch one field) and the MCP update tool. It is the
+// one place the human-facing description column is written by a human or their
+// chat agent, so the two authoring surfaces cannot diverge. refType is
+// "initiative" or "feature".
+func UpdateEntityFields(ctx context.Context, tx pgx.Tx, refType string, id uuid.UUID, name, description *string, actor string) error {
+	if name == nil && description == nil {
+		return nil
+	}
+	table, ok := map[string]string{"initiative": "initiatives", "feature": "features"}[refType]
+	if !ok {
+		return fmt.Errorf("cannot update fields on %q", refType)
+	}
+	changed := map[string]any{}
+	// Build the SET clause from the fields actually supplied.
+	set := ""
+	args := []any{id}
+	if name != nil {
+		args = append(args, *name)
+		set += fmt.Sprintf(", name = $%d", len(args))
+		changed["name"] = *name
+	}
+	if description != nil {
+		args = append(args, *description)
+		set += fmt.Sprintf(", description = $%d", len(args))
+		changed["description"] = true // record that it changed, not the prose itself
+	}
+	tag, err := tx.Exec(ctx, `UPDATE `+table+` SET id = id`+set+` WHERE id = $1`, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return Audit(ctx, tx, actor, refType+".updated", refType, &id, changed)
 }
 
 func GetFeature(ctx context.Context, q Querier, id uuid.UUID) (*Feature, error) {

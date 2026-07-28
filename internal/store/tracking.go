@@ -25,15 +25,22 @@ type Milestone struct {
 	TargetDate  *time.Time
 	State       lifecycle.MilestoneState
 	LockedAt    *time.Time
-	CreatedAt   time.Time
+	// OwnerType and OwnerID name the entity whose local plan this milestone
+	// belongs to (DESIGN-008 D-9): the project (owner_type 'project', owner_id
+	// nil) or an initiative. Ownership is whose page it appears on; it does not
+	// constrain membership (D-12).
+	OwnerType string
+	OwnerID   *uuid.UUID
+	CreatedAt time.Time
 }
 
-const milestoneCols = `id, name, description, target_date, state, locked_at, created_at`
+const milestoneCols = `id, name, description, target_date, state, locked_at, owner_type, owner_id, created_at`
 
 func scanMilestone(row pgx.Row) (*Milestone, error) {
 	var m Milestone
 	var state string
-	err := row.Scan(&m.ID, &m.Name, &m.Description, &m.TargetDate, &state, &m.LockedAt, &m.CreatedAt)
+	err := row.Scan(&m.ID, &m.Name, &m.Description, &m.TargetDate, &state, &m.LockedAt,
+		&m.OwnerType, &m.OwnerID, &m.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -41,8 +48,13 @@ func scanMilestone(row pgx.Row) (*Milestone, error) {
 	return &m, err
 }
 
+// CreateMilestone creates a project-owned milestone (owner defaults to the
+// project). Owner-scoped creation — an initiative owning its own milestone — is
+// Stage B (SPEC-007 SD-1); the owner columns and their reads land now so
+// browsing is complete.
 func CreateMilestone(ctx context.Context, tx pgx.Tx, name, description string, targetDate *time.Time, actor string) (*Milestone, error) {
-	m := &Milestone{ID: NewID(), Name: name, Description: description, TargetDate: targetDate, State: lifecycle.MilestoneOpen}
+	m := &Milestone{ID: NewID(), Name: name, Description: description, TargetDate: targetDate,
+		State: lifecycle.MilestoneOpen, OwnerType: "project"}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO milestones (id, name, description, target_date)
 		VALUES ($1, $2, $3, $4)`, m.ID, name, description, targetDate)
@@ -353,12 +365,27 @@ func LockMilestone(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, actor 
 // --- Roadmaps (FR-6) ---
 
 type Roadmap struct {
-	ID   uuid.UUID
-	Name string
+	ID        uuid.UUID
+	Name      string
+	OwnerType string
+	OwnerID   *uuid.UUID
 }
 
+const roadmapCols = `id, name, owner_type, owner_id`
+
+func scanRoadmap(row pgx.Row) (*Roadmap, error) {
+	var r Roadmap
+	err := row.Scan(&r.ID, &r.Name, &r.OwnerType, &r.OwnerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &r, err
+}
+
+// CreateRoadmap creates a project-owned roadmap (owner defaults to the
+// project). Owner-scoped creation is Stage B (SPEC-007 SD-1).
 func CreateRoadmap(ctx context.Context, tx pgx.Tx, name, actor string) (*Roadmap, error) {
-	r := &Roadmap{ID: NewID(), Name: name}
+	r := &Roadmap{ID: NewID(), Name: name, OwnerType: "project"}
 	if _, err := tx.Exec(ctx, `INSERT INTO roadmaps (id, name) VALUES ($1, $2)`, r.ID, name); err != nil {
 		return nil, err
 	}
@@ -372,28 +399,23 @@ func CreateRoadmap(ctx context.Context, tx pgx.Tx, name, actor string) (*Roadmap
 }
 
 func GetRoadmap(ctx context.Context, q Querier, id uuid.UUID) (*Roadmap, error) {
-	var r Roadmap
-	err := q.QueryRow(ctx, `SELECT id, name FROM roadmaps WHERE id = $1`, id).Scan(&r.ID, &r.Name)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return &r, err
+	return scanRoadmap(q.QueryRow(ctx, `SELECT `+roadmapCols+` FROM roadmaps WHERE id = $1`, id))
 }
 
 // RoadmapByName resolves a roadmap by its (assumed unique) name.
 func RoadmapByName(ctx context.Context, q Querier, name string) (*Roadmap, error) {
-	rows, err := q.Query(ctx, `SELECT id, name FROM roadmaps WHERE name = $1`, name)
+	rows, err := q.Query(ctx, `SELECT `+roadmapCols+` FROM roadmaps WHERE name = $1`, name)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var found []Roadmap
 	for rows.Next() {
-		var r Roadmap
-		if err := rows.Scan(&r.ID, &r.Name); err != nil {
+		r, err := scanRoadmap(rows)
+		if err != nil {
 			return nil, err
 		}
-		found = append(found, r)
+		found = append(found, *r)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
+	"crypto/sha256"
 	"embed"
-	"errors"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -37,9 +39,10 @@ type uiTemplates struct {
 	t *template.Template
 }
 
+// uiFuncs are the template helpers. There is deliberately no currency
+// formatter: money is off the human surface (DESIGN-008 D-4), and the absence
+// of the helper is what keeps it off.
 var uiFuncs = template.FuncMap{
-	"usd":     func(v float64) string { return fmt.Sprintf("$%.4f", v) },
-	"usd2":    func(v float64) string { return fmt.Sprintf("$%.2f", v) },
 	"tokens":  humanTokens,
 	"shortID": func(id uuid.UUID) string { return id.String()[:8] },
 	"ago":     ago,
@@ -56,25 +59,349 @@ var uiFuncs = template.FuncMap{
 		}
 		return done * 100 / total
 	},
-	"clampPct":    clampPct,
 	"deltaTokens": func(actual, estimate int64) int64 { return actual - estimate },
+	// slice2 builds the two-crumb trail the plain read-only pages use: the
+	// owning entity, then the page itself (unlinked).
+	"slice2": func(owner crumb, here string) []crumb {
+		return []crumb{owner, {Label: here, Here: true}}
+	},
+
+	// --- Design-system helpers -------------------------------------------
+	// State and tier are rendered as hue AND icon AND word, never colour
+	// alone, so these turn a stored value into its human label and its icon
+	// name. Labels are full words in plain language (D-6).
+	"stateLabel":  stateLabel,
+	"stateIcon":   stateIcon,
+	"tierLabel":   tierLabel,
+	"tierExplain": tierExplain,
+	// The confidence tier renders as a three-segment ring (design round 2 §2):
+	// how many segments are filled IS the meaning, because the tiers are an
+	// ordinal count of the evidence behind a number.
+	"tierSegments": tierSegments,
+	"tierTitle":    tierTitle,
+	"docIcon":      docIcon,
+	// The inbox spells out what each answer will do, because these decisions are
+	// expensive to reverse and a sentence of prose is cheap.
+	"verbLabel":       verbLabel,
+	"verbIcon":        verbIcon,
+	"verbConsequence": verbConsequence,
+	"add":             func(a, b int) int { return a + b },
+	"inc":             func(i int) int { return i + 1 },
+	// nonPrimary drops the document that is already rendered as the page body,
+	// so the Documents section lists the *other* documents rather than repeating
+	// the one you are looking at (design round 4 §2).
+	"nonPrimary": func(docs []docCard) []docCard {
+		out := make([]docCard, 0, len(docs))
+		for _, d := range docs {
+			if !d.IsPrimary {
+				out = append(out, d)
+			}
+		}
+		return out
+	},
+	// article picks "a" or "an" so generated sentences read correctly
+	// ("about an initiative", not "about a initiative").
+	"article": func(v any) string {
+		s := str(v)
+		if s == "" {
+			return "a"
+		}
+		switch s[0] {
+		case 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U':
+			return "an"
+		}
+		return "a"
+	},
+	// spentPct is the share of an estimate already spent, clamped so an overrun
+	// fills the bar rather than overflowing it.
+	"spentPct": func(done, estimate int64) int {
+		if estimate <= 0 {
+			return 0
+		}
+		p := int(done * 100 / estimate)
+		if p > 100 {
+			return 100
+		}
+		if p < 0 {
+			return 0
+		}
+		return p
+	},
+	// pips renders the countable done/not-done marks beside a milestone's
+	// count, so "3 of 4" is legible without reading the number. It returns
+	// one bool per item, capped so a huge milestone does not flood the row.
+	"pips": func(done, total int) []bool {
+		if total <= 0 {
+			return nil
+		}
+		if total > 24 { // beyond this the number carries it; pips would be noise
+			return nil
+		}
+		out := make([]bool, total)
+		for i := 0; i < done && i < total; i++ {
+			out[i] = true
+		}
+		return out
+	},
 }
 
-// clampPct returns cost as a whole-percent of cap, clamped to [0,100] for a
-// progress bar width.
-func clampPct(cost, cap float64) int {
-	if cap <= 0 {
-		return 0
+// str normalises the several distinct string-kinded state types the store uses
+// (lifecycle.FeatureState, lifecycle.DocumentState, sizing.Tier, …) into a plain
+// string, so one template helper serves them all.
+func str(v any) string {
+	switch s := v.(type) {
+	case string:
+		return s
+	case fmt.Stringer:
+		return s.String()
+	default:
+		return fmt.Sprintf("%v", v)
 	}
-	p := int(cost / cap * 100)
-	if p < 0 {
-		return 0
-	}
-	if p > 100 {
-		return 100
-	}
-	return p
 }
+
+// stateLabel is the human-facing name of a lifecycle state (D-6): a phrase a
+// reader understands, not the stored token.
+func stateLabel(v any) string {
+	state := str(v)
+	switch state {
+	case "idea":
+		return "Idea"
+	case "ready":
+		return "Ready to start"
+	case "active":
+		return "In progress"
+	case "review":
+		return "In review"
+	case "done":
+		return "Done"
+	case "abandoned":
+		return "Abandoned"
+	case "draft":
+		return "Draft"
+	case "reviewing":
+		return "In review"
+	case "approved":
+		return "Approved"
+	case "superseded":
+		return "Superseded"
+	case "open":
+		return "Open"
+	case "locked":
+		return "Locked"
+	case "queued":
+		return "Queued"
+	case "running":
+		return "Running"
+	case "succeeded":
+		return "Succeeded"
+	case "failed":
+		return "Failed"
+	case "cancelled":
+		return "Cancelled"
+	case "":
+		return ""
+	default:
+		return strings.ToUpper(state[:1]) + state[1:]
+	}
+}
+
+// stateIcon maps a state to its lifecycle mark in the icon sprite. The marks are
+// geometric siblings, so the progression reads as a family; states without a
+// mark of their own borrow the nearest one.
+func stateIcon(v any) string {
+	state := str(v)
+	switch state {
+	case "idea", "ready", "active", "review", "done", "abandoned", "draft", "superseded":
+		return state
+	case "reviewing":
+		return "review"
+	case "approved":
+		return "done"
+	case "open":
+		return "ready"
+	case "locked":
+		return "done"
+	case "running", "queued":
+		return "active"
+	case "succeeded":
+		return "done"
+	case "failed", "cancelled":
+		return "abandoned"
+	default:
+		return "ready"
+	}
+}
+
+// tierLabel names a confidence tier in words, and says plainly when there is no
+// estimate at all rather than showing a fourth colour.
+func tierLabel(v any) string {
+	switch str(v) {
+	case "decomposed":
+		return "Decomposed"
+	case "considered":
+		return "Considered"
+	case "rough":
+		return "Rough"
+	default:
+		return "Not estimated yet"
+	}
+}
+
+// tierExplain says in one sentence what a confidence tier actually means, so a
+// reader never has to know the vocabulary to trust the number (D-6).
+func tierExplain(v any) string {
+	switch str(v) {
+	case "decomposed":
+		return "Decomposed — every part of this has its own estimate, so the total is a sum of real sizings rather than one guess."
+	case "considered":
+		return "Considered — sized against work that has already finished, so there is evidence behind it."
+	case "rough":
+		return "Rough — sized from a name and a sentence, with nothing to check it against. Treat it as a placeholder."
+	default:
+		return "Nothing here has been sized yet."
+	}
+}
+
+// tierSegments is how many of the ring's three segments a tier fills, which
+// selects the sprite symbol (i-tier-0 … i-tier-3). The count is the meaning:
+// each segment is one more piece of evidence behind the number.
+func tierSegments(v any) int {
+	switch str(v) {
+	case "decomposed":
+		return 3
+	case "considered":
+		return 2
+	case "rough":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// tierTitle is the ring's accessible name and tooltip: the tier, the count, and
+// what that count actually rests on — so the mark never has to be decoded.
+func tierTitle(v any) string {
+	switch str(v) {
+	case "decomposed":
+		return "Decomposed estimate — 3 of 3: every child carries its own estimate"
+	case "considered":
+		return "Considered estimate — 2 of 3: sized against a written design"
+	case "rough":
+		return "Rough estimate — 1 of 3: sized from a name and a description"
+	default:
+		return "Not estimated — 0 of 3: nothing has been sized here yet"
+	}
+}
+
+// verbLabel, verbIcon and verbConsequence turn a checkpoint answer verb into
+// something a person can act on confidently: a plain-language label, a mark, and
+// a sentence saying what happens next if they choose it.
+func verbLabel(v any) string {
+	switch str(v) {
+	case "approve":
+		return "Approve"
+	case "request_changes":
+		return "Ask for changes"
+	case "override":
+		return "Override the gate"
+	case "deny":
+		return "Deny"
+	case "retry":
+		return "Try again"
+	case "cancel":
+		return "Cancel this work"
+	case "proceed":
+		return "Go ahead"
+	case "continue":
+		return "Carry on"
+	case "pause":
+		return "Pause"
+	default:
+		return stateLabel(v)
+	}
+}
+
+func verbIcon(v any) string {
+	switch str(v) {
+	case "approve", "proceed", "continue":
+		return "approve"
+	case "request_changes":
+		return "request-changes"
+	case "override":
+		return "unlock"
+	case "deny", "cancel":
+		return "close"
+	case "retry":
+		return "refresh"
+	case "pause":
+		return "clock"
+	default:
+		return "arrow-right"
+	}
+}
+
+func verbConsequence(v any) string {
+	switch str(v) {
+	case "approve":
+		return "The work carries on from where it stopped, and the decision is recorded against your name."
+	case "request_changes":
+		return "Your reason goes back to whoever wrote this, and they revise it before it comes round again."
+	case "override":
+		return "The rule that blocked this is set aside, with your reason kept on the record as the justification."
+	case "deny":
+		return "The request is refused and the work stays where it is."
+	case "retry":
+		return "The same step runs again from the beginning."
+	case "cancel":
+		return "This work stops for good. It stays visible as part of the history."
+	case "proceed":
+		return "The agent continues with the option it proposed."
+	case "continue":
+		return "The run picks up where it left off."
+	case "pause":
+		return "The work is held where it is until you come back to it."
+	default:
+		return "The agent resumes with your answer."
+	}
+}
+
+// docIcon maps a document type to its icon name in the sprite.
+func docIcon(v any) string {
+	switch str(v) {
+	case "design":
+		return "doc-design"
+	case "spec":
+		return "doc-spec"
+	case "dev_plan":
+		return "doc-devplan"
+	case "research":
+		return "doc-research"
+	default:
+		return "doc-note"
+	}
+}
+
+// assetVersion is a short content hash of the embedded static assets, appended to
+// their URLs as a query string. Without it a browser has no reason to refetch a
+// stylesheet whose URL never changes, so a UI change can appear half-applied
+// until someone thinks to hard-refresh — which cost real confusion once already.
+// Hashing the content means any edit busts the cache and no edit busts it twice.
+var assetVersion = func() string {
+	h := sha256.New()
+	entries, err := fs.ReadDir(uiStaticFS, "ui/static")
+	if err != nil {
+		return "dev"
+	}
+	for _, e := range entries {
+		b, err := uiStaticFS.ReadFile("ui/static/" + e.Name())
+		if err != nil {
+			continue
+		}
+		h.Write([]byte(e.Name()))
+		h.Write(b)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:10]
+}()
 
 func loadUITemplates() (*uiTemplates, error) {
 	t, err := template.New("ui").Funcs(uiFuncs).ParseFS(uiTemplatesFS, "ui/templates/*.html")
@@ -95,15 +422,44 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 }
 
 // pageData is the envelope every full page renders with: which nav item is
-// active, the operator identity, and the view's own data.
+// active, the operator identity, the shell's own chrome (title, breadcrumbs and
+// the navigation tree), and the view's own data.
+//
+// Breadcrumbs live here rather than in each view's body because they belong to
+// the persistent top bar: "where am I" is then answered in one place, at one
+// size, on every page.
 type pageData struct {
 	Active string
 	Actor  string
+	Title  string
+	Crumbs []crumb
+	Tree   []navNode
 	Data   any
+	// AssetV busts the browser cache when the embedded CSS or JS changes.
+	AssetV string
 }
 
-func (s *Server) page(active string, data any) pageData {
-	return pageData{Active: active, Actor: s.uiActor(), Data: data}
+// headed is implemented by view structs that know their own page title and
+// breadcrumb trail. The shell lifts both out of the view, so no handler has to
+// pass them separately and no view can drift from its own heading.
+type headed interface {
+	headTitle() string
+	headCrumbs() []crumb
+}
+
+func (s *Server) page(ctx context.Context, active string, data any) pageData {
+	p := pageData{Active: active, Actor: s.uiActor(), Data: data, AssetV: assetVersion}
+	if h, ok := data.(headed); ok {
+		p.Title = h.headTitle()
+		p.Crumbs = h.headCrumbs()
+	}
+	if tree, err := s.navTree(ctx, p.Crumbs); err == nil {
+		p.Tree = tree
+	} else {
+		// The tree is navigation furniture; losing it must never cost the page.
+		s.Log.Warn("ui nav tree", "err", err)
+	}
+	return p
 }
 
 // uiActor is the single seam for the browser session's identity (SD-4, CC-6).
@@ -121,21 +477,66 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	static, _ := fs.Sub(uiStaticFS, "ui/static")
 	mux.Handle("GET /ui/static/", http.StripPrefix("/ui/static/", http.FileServer(http.FS(static))))
 
+	// The bare root sends a browser to Home. The pattern is "/{$}", which in Go's
+	// mux matches the root path *exactly* — a plain "/" would swallow every
+	// unmatched path and turn genuine 404s into redirects.
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui", http.StatusFound)
+	})
 	mux.HandleFunc("GET /ui", s.handleUIDashboard)
 	mux.HandleFunc("GET /ui/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui", http.StatusFound)
 	})
 	mux.HandleFunc("GET /ui/inbox", s.handleUIInbox)
-	mux.HandleFunc("GET /ui/planning", s.handleUIPlanning)
 	mux.HandleFunc("GET /ui/documents", s.handleUIDocuments)
-	mux.HandleFunc("GET /ui/document", s.handleUIDocument)
-	mux.HandleFunc("GET /ui/cost", s.handleUICost)
+	mux.HandleFunc("GET /ui/work", s.handleUIWork)
+	// The verb-shaped Planning view and the money-denominated Cost view are
+	// superseded by the browsable surface and the Work view (SPEC-007 §0,
+	// FR-7.2); their old URLs redirect so existing links still land somewhere
+	// sensible.
+	mux.HandleFunc("GET /ui/planning", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/project", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("GET /ui/cost", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/work", http.StatusMovedPermanently)
+	})
+	// A document is now a page at its own readable address rather than a query
+	// parameter (FR-1.1); the old address redirects.
+	mux.HandleFunc("GET /ui/document", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/d/"+r.URL.Query().Get("path"), http.StatusMovedPermanently)
+	})
+
+	// The workflow surface (SPEC-007): every entity is a page at a real,
+	// readable URL, reached by breadcrumb, child list or nav rail — never by
+	// typing a path into a form (FR-1.1, SD-6).
+	mux.HandleFunc("GET /ui/project", s.handleUIProject)
+	mux.HandleFunc("GET /ui/i/{path...}", s.handleUIInitiativePage)
+	mux.HandleFunc("GET /ui/f/{path...}", s.handleUIFeaturePage)
+	mux.HandleFunc("GET /ui/d/{path...}", s.handleUIDocumentPage)
+	mux.HandleFunc("GET /ui/m/{id}", s.handleUIMilestonePage)
+	mux.HandleFunc("GET /ui/r/{id}", s.handleUIRoadmapPage)
+	mux.HandleFunc("GET /ui/t/{id}", s.handleUITaskPage)
+
+	// Actions on their things (FR-5): each carries the entity's id from the
+	// page it was rendered on, and calls the same gated, audited service
+	// method the CLI uses.
+	mux.HandleFunc("POST /ui/entity/describe", s.handleEntityDescribe)
+	mux.HandleFunc("POST /ui/entity/attach", s.handleEntityAttach)
+	mux.HandleFunc("POST /ui/entity/estimate", s.handleEntityEstimateSet)
+	mux.HandleFunc("POST /ui/entity/estimate/ai", s.handleEntityEstimateAI)
+	mux.HandleFunc("POST /ui/document/primary", s.handleDocumentPrimary)
+	mux.HandleFunc("POST /ui/document/review", s.handleEntityDocumentReview)
+	mux.HandleFunc("POST /ui/feature/start", s.handleEntityFeatureStart)
+	mux.HandleFunc("POST /ui/feature/abandon", s.handleEntityFeatureAbandon)
+	mux.HandleFunc("POST /ui/feature/new", s.handleEntityFeatureCreate)
+	mux.HandleFunc("POST /ui/initiative/new", s.handleEntityInitiativeCreate)
+	mux.HandleFunc("POST /ui/initiative/archive", s.handleEntityInitiativeArchive)
 
 	// Live-region fragments (re-read through the normal service path on an SSE
 	// signal, SD-5).
 	mux.HandleFunc("GET /ui/frag/queue", s.handleFragQueue)
 	mux.HandleFunc("GET /ui/frag/events", s.handleFragEvents)
-	mux.HandleFunc("GET /ui/frag/cost", s.handleFragCost)
+	mux.HandleFunc("GET /ui/frag/work", s.handleFragWork)
 	mux.HandleFunc("GET /ui/frag/calibration", s.handleFragCalibration)
 	mux.HandleFunc("GET /ui/frag/inbox", s.handleFragInbox)
 	mux.HandleFunc("GET /ui/frag/inbox-badge", s.handleFragInboxBadge)
@@ -144,21 +545,6 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/events", s.handleUIEvents)
 	mux.HandleFunc("POST /ui/respond", s.handleUIRespond)
 
-	// Planning & review mutations (SPEC-006). Each posts to the same service
-	// method the CLI uses and returns the refreshed fragment.
-	mux.HandleFunc("POST /ui/estimate/set", s.handleUIEstimateSet)
-	mux.HandleFunc("POST /ui/estimate/ai", s.handleUIEstimateAI)
-	mux.HandleFunc("POST /ui/milestone/create", s.handleUIMilestoneCreate)
-	mux.HandleFunc("POST /ui/milestone/member", s.handleUIMilestoneMember)
-	mux.HandleFunc("POST /ui/milestone/lock", s.handleUIMilestoneLock)
-	mux.HandleFunc("POST /ui/roadmap/create", s.handleUIRoadmapCreate)
-	mux.HandleFunc("POST /ui/roadmap/entry", s.handleUIRoadmapEntry)
-	mux.HandleFunc("POST /ui/initiative/create", s.handleUIInitiativeCreate)
-	mux.HandleFunc("POST /ui/initiative/archive", s.handleUIInitiativeArchive)
-	mux.HandleFunc("POST /ui/feature/create", s.handleUIFeatureCreate)
-	mux.HandleFunc("POST /ui/feature/start", s.handleUIFeatureStart)
-	mux.HandleFunc("POST /ui/feature/abandon", s.handleUIFeatureAbandon)
-	mux.HandleFunc("POST /ui/document/review", s.handleUIDocumentReview)
 }
 
 // --- Dashboard ---
@@ -169,7 +555,7 @@ func (s *Server) handleUIDashboard(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
-	s.render(w, "page-dashboard", s.page("dashboard", sum))
+	s.render(w, "page-dashboard", s.page(r.Context(), "home", sum))
 }
 
 func (s *Server) handleFragQueue(w http.ResponseWriter, r *http.Request) {
@@ -190,13 +576,13 @@ func (s *Server) handleFragEvents(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "frag-events", sum)
 }
 
-func (s *Server) handleFragCost(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleFragWork(w http.ResponseWriter, r *http.Request) {
 	sum, err := s.DashboardSummary(r.Context(), 20)
 	if err != nil {
 		s.uiError(w, err)
 		return
 	}
-	s.render(w, "frag-cost", sum)
+	s.render(w, "frag-work", sum)
 }
 
 func (s *Server) handleFragCalibration(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +622,7 @@ func (s *Server) handleUIInbox(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
-	s.render(w, "page-inbox", s.page("inbox", items))
+	s.render(w, "page-inbox", s.page(r.Context(), "inbox", items))
 }
 
 func (s *Server) handleFragInbox(w http.ResponseWriter, r *http.Request) {
@@ -308,17 +694,6 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "frag-inbox", items)
 }
 
-// --- Planning ---
-
-func (s *Server) handleUIPlanning(w http.ResponseWriter, r *http.Request) {
-	view, err := s.planningView(r)
-	if err != nil {
-		s.uiError(w, err)
-		return
-	}
-	s.render(w, "page-planning", s.page("planning", planningPage{View: view}))
-}
-
 // --- Documents ---
 
 func (s *Server) handleUIDocuments(w http.ResponseWriter, r *http.Request) {
@@ -327,31 +702,18 @@ func (s *Server) handleUIDocuments(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
-	s.render(w, "page-documents", s.page("documents", docs))
+	s.render(w, "page-documents", s.page(r.Context(), "documents", docs))
 }
 
-func (s *Server) handleUIDocument(w http.ResponseWriter, r *http.Request) {
-	view, err := s.documentView(r)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			http.NotFound(w, r)
-			return
-		}
-		s.uiError(w, err)
-		return
-	}
-	s.render(w, "page-document", s.page("documents", view))
-}
+// --- Work (FR-7.2) ---
 
-// --- Cost ---
-
-func (s *Server) handleUICost(w http.ResponseWriter, r *http.Request) {
-	view, err := s.costView(r)
+func (s *Server) handleUIWork(w http.ResponseWriter, r *http.Request) {
+	view, err := s.workView(r)
 	if err != nil {
 		s.uiError(w, err)
 		return
 	}
-	s.render(w, "page-cost", s.page("cost", view))
+	s.render(w, "page-work", s.page(r.Context(), "work", view))
 }
 
 // --- Realtime ---
@@ -404,7 +766,9 @@ func (s *Server) handleUIEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) uiError(w http.ResponseWriter, err error) {
 	s.Log.Error("ui handler", "err", err)
 	w.WriteHeader(http.StatusInternalServerError)
-	s.render(w, "page-error", s.page("", err.Error()))
+	// No context here by design: the error page is the one page that must render
+	// even when a read is what failed, so it goes without the navigation tree.
+	s.render(w, "page-error", pageData{Actor: s.uiActor(), Data: err.Error(), AssetV: assetVersion})
 }
 
 // notifyCheckpointRaised fans a presentation-only checkpoint-raised signal into
@@ -425,13 +789,36 @@ func (s *Server) notifyCheckpointRaised(cp *store.Checkpoint) {
 // humanTokens renders a token count compactly (1_234 → "1.2k").
 func humanTokens(n int64) string {
 	switch {
-	case n >= 1_000_000:
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
-	case n >= 1_000:
-		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	case n <= 0:
+		return "0"
+	case n < 500:
+		// Real work, but less than the unit. Rounding would print "0k", which
+		// reads as "nothing happened" — say what is true instead.
+		return "<1k"
 	default:
-		return fmt.Sprintf("%d", n)
+		return groupThousands((n+500)/1_000) + "k"
 	}
+}
+
+// groupThousands puts separators into a plain integer ("1240" → "1,240"), so a
+// large figure stays readable without changing unit.
+func groupThousands(n int64) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	var b strings.Builder
+	lead := len(s) % 3
+	if lead > 0 {
+		b.WriteString(s[:lead])
+	}
+	for i := lead; i < len(s); i += 3 {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(s[i : i+3])
+	}
+	return b.String()
 }
 
 // ago renders a compact relative age.

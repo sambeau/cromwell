@@ -1,0 +1,106 @@
+{{/* The Work view (SPEC-007 FR-7.2): the roll-ups counted in tokens, the unit of
+     work. This page replaces the former Cost view — no figure here is money
+     (DESIGN-008 D-4). Every size carries its confidence tier, and work nobody has
+     estimated is said so in words rather than given a fabricated number. */}}
+
+{{define "page-work"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-tokens"/></svg></span>
+    <div class="page-head-titles">
+      <h1 class="t-page">Work</h1>
+      <div class="page-head-meta">{{template "size-badge" .Project}}</div>
+    </div>
+  </div>
+  <p class="page-lede">Everything here is measured in tokens — the honest unit of work for agents, for whom
+     time means nothing. Where some of the work underneath has never been estimated, the total is
+     a floor rather than a forecast, and it says so.</p>
+</div>
+
+<div class="stats u-mt-4">
+  {{/* The figure is one thing at one size, `k` included, with the hexagon beside
+       what it qualifies; the tier is read out in prose underneath (round 2 §5). */}}
+  <div class="stat">
+    <p class="stat-label">The whole project</p>
+    <p class="stat-num"><svg class="icon" aria-hidden="true"><use href="#i-tokens"/></svg>{{tokens .Project.Tokens}}</p>
+    <span class="visually-hidden">tokens</span>
+    <p class="stat-note stat-tier">
+      {{template "tier-ring" .Project.Tier}}
+      <span>{{if .Project.Estimated}}{{tierExplain .Project.Tier}}{{else}}Nothing in the project has been estimated yet.{{end}}</span>
+    </p>
+  </div>
+  <div class="stat">
+    <p class="stat-label">Initiatives</p>
+    <p class="stat-num">{{len .Initiatives}}</p>
+    <p class="stat-note">Containers of work, each with its own roll-up.</p>
+  </div>
+  <div class="stat">
+    <p class="stat-label">Features</p>
+    <p class="stat-num">{{len .Features}}</p>
+    <p class="stat-note">Buildable units of work.</p>
+  </div>
+</div>
+
+<section class="panel u-mt-6">
+  <div class="panel-head">
+    <h2 class="panel-title">
+      <svg class="icon icon-md icon-entity" data-entity="initiative" aria-hidden="true"><use href="#i-initiative"/></svg>
+      By initiative</h2>
+  </div>
+  <div class="panel-body section-body--flush">
+    {{if .Initiatives}}
+    <div class="rows">
+      {{range .Initiatives}}
+      <a class="row" href="{{.URL}}">
+        <svg class="icon icon-sm icon-entity" data-entity="initiative" aria-hidden="true"><use href="#i-initiative"/></svg>
+        <span class="row-main"><span class="row-title">{{.Name}}</span></span>
+        <span class="row-end">{{template "size-badge" .Size}}</span>
+      </a>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="empty--inline">There are no initiatives yet.</p>
+    {{end}}
+  </div>
+</section>
+
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title">
+      <svg class="icon icon-md icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg>
+      By feature</h2>
+  </div>
+  <div class="panel-body section-body--flush">
+    {{if .Features}}
+    <div class="rows">
+      {{range .Features}}
+      <a class="row" href="{{.URL}}">
+        <svg class="icon icon-sm icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg>
+        <span class="row-main"><span class="row-title">{{.Name}}</span></span>
+        <span class="row-end">{{template "size-badge" .Size}}</span>
+      </a>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="empty--inline">There are no features yet.</p>
+    {{end}}
+  </div>
+</section>
+
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title">
+      <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+      By milestone</h2>
+  </div>
+  <div class="panel-body">
+    {{if .Milestones}}
+    {{range .Milestones}}{{template "milestone-panel" .}}{{end}}
+    {{else}}
+    <p class="empty--inline">There are no milestones yet.</p>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{template "pagebottom" .}}{{end}}

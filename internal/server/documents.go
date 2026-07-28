@@ -40,8 +40,23 @@ func (s *Server) linkChecker(docPath string) lifecycle.LinkChecker {
 	}
 }
 
-// RegisterDoc registers a file as a document and indexes it (FR-4.1).
+// RegisterDoc registers a file as a document and indexes it (FR-4.1). ownerRef
+// is a human-readable owner path resolved to an id; the UI's "attach a document"
+// uses RegisterDocForOwner with the id it already holds.
 func (s *Server) RegisterDoc(ctx context.Context, path, docType, ownerType string, ownerRef string, actor string) (*store.Document, error) {
+	ownerID, err := s.resolveOwner(ctx, ownerType, ownerRef)
+	if err != nil {
+		return nil, err
+	}
+	return s.RegisterDocForOwner(ctx, path, docType, ownerType, ownerID, actor)
+}
+
+// RegisterDocForOwner registers a Markdown file as a document owned by the given
+// entity (owner id already resolved), indexing its sections in the same
+// transaction (SPEC-007 FR-6.1, SPEC-008 FR-2.4). It is the one registration
+// path the CLI's `doc add`, the UI's attach action, and the MCP attach tool all
+// share (DEC-003).
+func (s *Server) RegisterDocForOwner(ctx context.Context, path, docType, ownerType string, ownerID *uuid.UUID, actor string) (*store.Document, error) {
 	if _, err := config.LoadManifest(s.CompartmentRoot, docType); err != nil && docType == "spec" {
 		return nil, err // a type without a template can still be registered, but spec must have one
 	}
@@ -59,10 +74,7 @@ func (s *Server) RegisterDoc(ctx context.Context, path, docType, ownerType strin
 
 	var doc *store.Document
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		ownerID, err := s.resolveOwner(ctx, ownerType, ownerRef)
-		if err != nil {
-			return err
-		}
+		var err error
 		doc, err = store.RegisterDocument(ctx, tx, docType, ownerType, ownerID, path, title, content.Hash(raw), nil, actor)
 		if err != nil {
 			return err

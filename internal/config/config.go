@@ -73,6 +73,12 @@ type ServerConfig struct {
 	// UIActor is the single configured operator identity the web command
 	// centre acts as (DESIGN-007 CC-6, SD-4); multi-user auth is a later spec.
 	UIActor string `yaml:"ui_actor"`
+	// MCPActor is the single configured identity the chat agent authors as over
+	// the MCP facet (SPEC-008 SD-3), parallel to UIActor. Every MCP mutation is
+	// attributed to it on the audit trail, which is what makes a second
+	// authoring surface safe (NFR-6). Per-user auth is a later spec; this is the
+	// seam it will grow from.
+	MCPActor string `yaml:"mcp_actor"`
 }
 
 type BudgetConfig struct {
@@ -164,6 +170,9 @@ func (c *Config) validate() error {
 	}
 	if c.Server.UIActor == "" {
 		c.Server.UIActor = "operator"
+	}
+	if c.Server.MCPActor == "" {
+		c.Server.MCPActor = "chat-agent"
 	}
 	switch c.Budget.Period {
 	case "monthly", "weekly", "total":

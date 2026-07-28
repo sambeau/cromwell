@@ -1,38 +1,258 @@
+{{/* The shell: navigation rail, top bar with breadcrumbs, and the page frame.
+
+     The visual language is the design system in ui/static/app.css; the
+     information architecture is DESIGN-008 §8 — Home, Browse, Inbox, Documents,
+     Work. Deliberately NO top-level roadmap or milestone list: both are parented
+     to entities and reached by clicking through from their owner (D-9, §5.1a).
+
+     Nothing here needs page-level JavaScript. Disclosure is <details>, theming is
+     CSS custom properties honouring prefers-color-scheme, and modals are the
+     browser's own <dialog> — so an HTMX fragment swapped in mid-page is correct
+     the instant it lands. */}}
+
 {{define "pagetop"}}<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cromwell — {{if .Active}}{{.Active | title}}{{else}}Command Centre{{end}}</title>
-  <link rel="stylesheet" href="/ui/static/app.css">
-  <script src="/ui/static/htmx.min.js" defer></script>
-  <script src="/ui/static/sse.js" defer></script>
+  <title>{{if .Title}}{{.Title}} — Cromwell{{else if .Active}}{{.Active | title}} — Cromwell{{else}}Cromwell{{end}}</title>
+  <link rel="stylesheet" href="/ui/static/app.css?v={{.AssetV}}">
+  <script src="/ui/static/htmx.min.js?v={{.AssetV}}" defer></script>
+  <script src="/ui/static/sse.js?v={{.AssetV}}" defer></script>
+  {{/* The only bespoke script: one delegated listener that calls showModal() on
+       a native <dialog>. Nothing else on the page needs JavaScript. */}}
+  <script src="/ui/static/dialog.js?v={{.AssetV}}" defer></script>
 </head>
 <body hx-ext="sse" sse-connect="/ui/events" hx-boost="true">
-  <header class="topbar">
-    <div class="brand">⬢ Cromwell</div>
-    <div class="actor" title="operator identity for this session">{{.Actor}}</div>
-  </header>
-  <div class="shell">
-    <nav class="rail">
-      {{$a := .Active}}
-      <a href="/ui" class="{{if eq $a "dashboard"}}on{{end}}">Dashboard</a>
-      <a href="/ui/inbox" class="{{if eq $a "inbox"}}on{{end}}">Inbox
-        <span class="badge" id="inbox-badge"
-              hx-get="/ui/frag/inbox-badge" hx-trigger="sse:changed, load" hx-swap="innerHTML"></span>
-      </a>
-      <a href="/ui/planning" class="{{if eq $a "planning"}}on{{end}}">Planning</a>
-      <a href="/ui/documents" class="{{if eq $a "documents"}}on{{end}}">Documents</a>
-      <a href="/ui/cost" class="{{if eq $a "cost"}}on{{end}}">Cost</a>
-    </nav>
-    <main id="main">
+{{template "icon-sprite"}}
+<a class="skip" href="#main">Skip to main content</a>
+<div class="app">
+  {{template "nav" .}}
+  <div class="app-main">
+    <header class="topbar">
+      {{if .Crumbs}}{{template "crumbs" .Crumbs}}{{else}}<div class="crumbs"></div>{{end}}
+      <div class="topbar-actions">
+        <span class="live" title="This page updates itself as work progresses; you never need to refresh">
+          <svg class="icon icon-xs" aria-hidden="true"><use href="#i-live"/></svg>
+          <span class="live-dot"></span>Live
+        </span>
+      </div>
+    </header>
+    <main class="page" id="main">
 {{end}}
 
 {{define "pagebottom"}}
     </main>
   </div>
+</div>
 </body>
 </html>
 {{end}}
 
-{{define "tier-badge"}}<span class="tier tier-{{.}}">{{.}}</span>{{end}}
+
+{{/* ---------- Navigation rail ---------- */}}
+
+{{define "nav"}}
+{{$a := .Active}}
+<nav class="nav" aria-label="Main">
+  <a class="nav-brand" href="/ui">
+    <span class="nav-brand-mark"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-project"/></svg></span>
+    <span>
+      <span class="nav-brand-name">Cromwell</span>
+      <span class="nav-brand-project">Command centre</span>
+    </span>
+  </a>
+  <div class="nav-scroll">
+    <div class="nav-group">
+      <a class="nav-item" href="/ui" {{if eq $a "home"}}aria-current="page"{{end}}>
+        <svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>Home</span></a>
+      <a class="nav-item" href="/ui/project" {{if eq $a "browse"}}aria-current="page"{{end}}>
+        <svg class="icon" aria-hidden="true"><use href="#i-project"/></svg><span>Browse</span></a>
+      <a class="nav-item" href="/ui/inbox" {{if eq $a "inbox"}}aria-current="page"{{end}}>
+        <svg class="icon" aria-hidden="true"><use href="#i-inbox"/></svg><span>Inbox</span>
+        <span class="nav-count nav-count--attention" id="inbox-badge"
+              hx-get="/ui/frag/inbox-badge" hx-trigger="sse:changed, load" hx-swap="innerHTML"></span></a>
+      <a class="nav-item" href="/ui/documents" {{if eq $a "documents"}}aria-current="page"{{end}}>
+        <svg class="icon" aria-hidden="true"><use href="#i-document"/></svg><span>Documents</span></a>
+      <a class="nav-item" href="/ui/work" {{if eq $a "work"}}aria-current="page"{{end}}>
+        <svg class="icon" aria-hidden="true"><use href="#i-tokens"/></svg><span>Work</span></a>
+    </div>
+
+    {{/* The project tree is navigation furniture, not a work surface (D-7).
+         Native <details>, so disclosure survives an HTMX swap untouched. */}}
+    {{if .Tree}}
+    <div class="nav-group">
+      <p class="nav-group-label">Project structure</p>
+      <div class="tree">
+        {{range .Tree}}{{template "nav-tree-node" .}}{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+  <div class="nav-foot">
+    <span class="t-meta" title="Everything you do here is recorded against this name">
+      <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
+      <span>{{.Actor}}</span></span>
+  </div>
+</nav>
+{{end}}
+
+{{define "nav-tree-node"}}
+{{if .Children}}
+<details {{if .Open}}open{{end}}>
+  <summary>
+    <svg class="icon icon-sm twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+    <span class="tree-label">{{.Name}}</span>
+  </summary>
+  <div>
+    {{/* A branch needs its own page reachable too, not just its children. */}}
+    <a class="tree-leaf" href="{{.URL}}" {{if .Here}}aria-current="page"{{end}}>
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+      <span class="tree-label u-dim">Overview</span>
+    </a>
+    {{range .Children}}{{template "nav-tree-node" .}}{{end}}
+  </div>
+</details>
+{{else}}
+<a class="tree-leaf" href="{{.URL}}" {{if .Here}}aria-current="page"{{end}}>
+  <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+  <span class="tree-label">{{.Name}}</span>
+  {{if .State}}<span class="state-dot u-push" data-state="{{.State}}" role="img" aria-label="{{stateLabel .State}}"></span>{{end}}
+</a>
+{{end}}
+{{end}}
+
+
+{{/* ---------- Breadcrumbs (the only "up" control) ---------- */}}
+
+{{define "crumbs"}}
+<div class="crumbs">
+  {{range $i, $c := .}}{{if $i}}<svg class="icon icon-xs crumb-sep" aria-hidden="true"><use href="#i-crumb-sep"/></svg>{{end}}{{if $c.Here}}<span class="crumb" aria-current="page">{{if $c.Kind}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{$c.Kind}}"/></svg>{{end}}{{$c.Label}}</span>{{else}}<a class="crumb" href="{{$c.URL}}">{{if $c.Kind}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{$c.Kind}}"/></svg>{{end}}{{$c.Label}}</a>{{end}}{{end}}
+</div>
+{{end}}
+
+
+{{/* ---------- Shared small components ---------- */}}
+
+{{/* A lifecycle state badge: hue AND icon AND word, never colour alone. */}}
+{{define "state-badge"}}<span class="badge" data-state="{{.}}"><svg class="icon icon-xs" aria-hidden="true"><use href="#i-state-{{stateIcon .}}"/></svg><span class="badge-text">{{stateLabel .}}</span></span>{{end}}
+
+{{/* The confidence tier as a three-segment ring, filled clockwise: the count of
+     filled segments IS the meaning, so it survives greyscale and colour
+     blindness. NEVER give these class="icon" — they are not stroke icons and
+     would inherit rules that break them (design round 2 §2). */}}
+{{define "tier-ring"}}<svg class="tier" data-tier="{{.}}" role="img" aria-label="{{tierTitle .}}"><title>{{tierTitle .}}</title><use href="#i-tier-{{tierSegments .}}"/></svg>{{end}}
+
+{{/* The ring plus the tier in words, for places with room for both. */}}
+{{define "tier-badge"}}{{template "tier-ring" .}}<span class="tier-label" data-tier="{{.}}">{{tierLabel .}}</span>{{end}}
+
+{{/* The hero metric. The hexagon carries the unit — it is the only thing on
+     screen identifying a number as tokens, so it is never dropped to save room.
+     The word survives for screen readers only. */}}
+{{define "size-badge"}}
+{{- if .Estimated -}}
+<span class="tokens" title="{{tokens .Tokens}} tokens — {{tierTitle .Tier}}">
+  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+  <span class="tokens-num">{{tokens .Tokens}}</span><span class="visually-hidden"> tokens</span>
+  {{template "tier-badge" .Tier}}
+  {{if not .Complete}}<span class="u-dim" title="Some work below this has no estimate, so the total is a floor rather than a forecast">and more, not yet estimated</span>{{end}}
+</span>
+{{- else -}}
+<span class="tokens unestimated" title="{{tierTitle .Tier}}">
+  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+  <span class="tokens-unit">Not estimated yet</span>
+  {{template "tier-ring" .Tier}}
+</span>
+{{- end -}}
+{{end}}
+
+{{/* The same readout with the ring but no tier word — for a page head, where the
+     word restates what the rail already explains in a sentence (round 4 §2, and
+     its rule 4: symbols may recur, words may not). */}}
+{{define "size-badge-ring"}}
+{{- if .Estimated -}}
+<span class="tokens" title="{{tokens .Tokens}} tokens — {{tierTitle .Tier}}">
+  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+  <span class="tokens-num">{{tokens .Tokens}}</span><span class="visually-hidden"> tokens</span>
+  {{template "tier-ring" .Tier}}
+  {{if not .Complete}}<span class="u-dim" title="Some work below this has no estimate, so the total is a floor rather than a forecast">and more, not yet estimated</span>{{end}}
+</span>
+{{- else -}}
+<span class="tokens unestimated" title="{{tierTitle .Tier}}">
+  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+  <span class="tokens-unit">Not estimated yet</span>
+  {{template "tier-ring" .Tier}}
+</span>
+{{- end -}}
+{{end}}
+
+{{/* Milestone progress, shown two ways at once — the count and the token bar.
+     They routinely disagree, and the disagreement is the useful part (D-10). */}}
+{{define "milestone-progress"}}
+<div class="progress">
+  <div class="progress-legend">
+    {{with pips .Done .Total}}<span class="pips" role="img">{{range .}}<i data-done="{{.}}"></i>{{end}}</span>{{end}}
+    <span><b>{{.Done}} of {{.Total}} items</b> done</span>
+    <span class="sep">|</span>
+    <span><b>{{tokens .DoneTokens}}</b> of <b>{{tokens .TotalTokens}}</b> estimated tokens done ({{.TokenPct}}%)</span>
+  </div>
+  <div class="bar"><div class="bar-fill" style="width:{{.TokenPct}}%"></div></div>
+</div>
+{{end}}
+
+{{/* A roadmap: an ordered, numbered spine of milestones (D-10 — it is literally
+     an ordered list, so it is marked up as one). Each item is a two-column grid,
+     the spine and the card; the number must sit INSIDE the spine, or the card
+     gets pushed into the 44px spine column. */}}
+{{define "roadmap-spine"}}
+<ol class="roadmap">
+  {{range $i, $m := .}}
+  <li class="roadmap-item" data-status="{{if $m.Locked}}locked{{else if and $m.Total (eq $m.Done $m.Total)}}done{{else}}active{{end}}">
+    <div class="roadmap-spine"><span class="roadmap-num">{{inc $i}}</span></div>
+    <div class="roadmap-card">
+      <div class="roadmap-card-head">
+        <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+        <div>
+          <h3 class="roadmap-card-title"><a href="{{$m.URL}}">{{$m.Name}}</a></h3>
+        </div>
+        <div class="roadmap-card-end">
+          {{if $m.Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}
+        </div>
+      </div>
+      {{template "milestone-progress" $m}}
+    </div>
+  </li>
+  {{end}}
+</ol>
+{{end}}
+
+{{/* One milestone as a card in a list of them. */}}
+{{define "milestone-panel"}}
+<div class="panel u-mb-4">
+  <div class="panel-head">
+    <h3 class="panel-title">
+      <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+      <a href="{{.URL}}">{{.Name}}</a>
+    </h3>
+    <div class="panel-head-actions">
+      {{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}
+    </div>
+  </div>
+  <div class="panel-body">{{template "milestone-progress" .}}</div>
+</div>
+{{end}}
+
+{{define "page-error"}}{{template "pagetop" .}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg></span>
+    <div class="page-head-titles"><h1 class="t-page">Something went wrong</h1></div>
+  </div>
+</div>
+<div class="banner banner--error">
+  <svg class="icon" aria-hidden="true"><use href="#i-x-circle"/></svg>
+  <div>{{.Data}}</div>
+</div>
+<p class="u-mt-4"><a class="btn" href="/ui"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-home"/></svg>Back to Home</a></p>
+{{template "pagebottom" .}}{{end}}

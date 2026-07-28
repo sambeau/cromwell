@@ -68,6 +68,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/hook/post-commit", s.handlePostCommit)
 	s.routesPhase3(mux)
 	s.uiRoutes(mux)
+	s.mcpRoutes(mux)
 	return mux
 }
 

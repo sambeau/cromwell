@@ -204,18 +204,18 @@ func RecentCalibration(ctx context.Context, q Querier, limit int) ([]CorpusRow, 
 // ListRoadmaps lists every roadmap, name order — the Cost and Planning views'
 // roadmap index (FR-4.2, FR-6.1).
 func ListRoadmaps(ctx context.Context, q Querier) ([]Roadmap, error) {
-	rows, err := q.Query(ctx, `SELECT id, name FROM roadmaps ORDER BY name`)
+	rows, err := q.Query(ctx, `SELECT `+roadmapCols+` FROM roadmaps ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Roadmap
 	for rows.Next() {
-		var rm Roadmap
-		if err := rows.Scan(&rm.ID, &rm.Name); err != nil {
+		rm, err := scanRoadmap(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, rm)
+		out = append(out, *rm)
 	}
 	return out, rows.Err()
 }

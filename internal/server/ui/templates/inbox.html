@@ -1,7 +1,26 @@
+{{/* The Inbox: questions an agent could not settle on its own. This is the
+     escalation-only human gate — answering resumes the orchestrator.
+
+     Each answer is a full-width target with its consequence on a second line.
+     These decisions are expensive to reverse, and a sentence of prose is cheap
+     (D-6). */}}
+
 {{define "page-inbox"}}{{template "pagetop" .}}
-<h1>Inbox</h1>
-<p class="muted">Pending checkpoints — the escalation-only human gate. Answering resumes the orchestrator.</p>
-<div id="inbox-list"
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="question" aria-hidden="true"><use href="#i-inbox"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">Inbox</h1>
+      <div class="page-head-meta"><span class="live"><span class="live-dot"></span>Live</span></div>
+    </div>
+  </div>
+  <p class="page-lede">Work stops here only when an agent reaches a decision that is genuinely yours to
+     make. Answering one lets the work carry on.</p>
+</div>
+
+<div id="inbox-list" class="u-mt-4"
      hx-get="/ui/frag/inbox" hx-trigger="sse:changed" hx-swap="innerHTML">
   {{template "frag-inbox" .Data}}
 </div>
@@ -12,25 +31,62 @@
 {{if .}}
 {{range .}}
 <article class="checkpoint">
-  <header>
-    <span class="kind">{{.Kind}}</span>
-    <span class="muted nowrap">{{.RefType}} · raised {{ago .CreatedAt}} ago</span>
-  </header>
-  <p class="question">{{.Question}}</p>
+  {{/* The question lives inside the head, which is the padded region; the
+       context and the answers are the other two padded regions. */}}
+  <div class="checkpoint-head">
+    <svg class="icon icon-lg icon-entity" data-entity="question" aria-hidden="true"><use href="#i-question"/></svg>
+    <div>
+      <h2 class="checkpoint-question">{{.Question}}</h2>
+      <p class="t-meta u-mt-2 u-row">
+        <svg class="icon icon-xs" aria-hidden="true"><use href="#i-clock"/></svg>
+        <span>Raised {{ago .CreatedAt}} ago, about {{article .RefType}} {{.RefType}}</span>
+      </p>
+    </div>
+    <span class="u-push">
+      <span class="badge" data-state="review">
+        <svg class="icon icon-xs" aria-hidden="true"><use href="#i-state-review"/></svg>
+        <span class="badge-text">{{.Kind}}</span></span>
+    </span>
+  </div>
+
   {{if .Context}}
-  <details><summary>context</summary><pre class="ctx">{{printf "%s" .Context}}</pre></details>
+  <div class="checkpoint-context">
+    <details>
+      <summary class="u-row"><svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+        <span class="t-label">What the agent was doing</span></summary>
+      <pre class="u-mt-2"><code>{{printf "%s" .Context}}</code></pre>
+    </details>
+  </div>
   {{end}}
-  <form class="respond" hx-post="/ui/respond" hx-target="#inbox-list" hx-swap="innerHTML">
+
+  <form class="checkpoint-answers" hx-post="/ui/respond" hx-target="#inbox-list" hx-swap="innerHTML">
     <input type="hidden" name="id" value="{{.ID}}">
-    <input type="text" name="reason" placeholder="reason (optional)" class="reason">
-    <div class="answers">
-      {{range .Options}}<button type="submit" name="verb" value="{{.}}">{{.}}</button>{{end}}
+    <div class="checkpoint-answer-list">
+      {{range .Options}}
+      <button class="answer" type="submit" name="verb" value="{{.}}">
+        <span class="answer-mark"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{verbIcon .}}"/></svg></span>
+        <span>
+          <span class="answer-title">{{verbLabel .}}</span>
+          <span class="answer-conseq">{{verbConsequence .}}</span>
+        </span>
+      </button>
+      {{end}}
+    </div>
+    <div class="field u-mt-4">
+      <label class="field-label" for="reason-{{.ID}}">Add a reason <span class="opt">optional, and it goes on the record</span></label>
+      <input class="input" id="reason-{{.ID}}" type="text" name="reason"
+             placeholder="Why you decided this way">
     </div>
   </form>
 </article>
 {{end}}
 {{else}}
-<p class="empty">✓ Inbox clear — no checkpoints awaiting a human.</p>
+<div class="empty">
+  <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-check"/></svg></span>
+  <p class="empty-title">Nothing is waiting for you</p>
+  <p class="empty-text">Agents settle most decisions themselves and stop only when a choice is genuinely
+     yours to make. An empty inbox means the work is running without needing you.</p>
+</div>
 {{end}}
 {{end}}
 

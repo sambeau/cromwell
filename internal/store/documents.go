@@ -23,19 +23,23 @@ type Document struct {
 	Tags         []string
 	SupersedesID *uuid.UUID
 	ContentHash  string
-	IndexedAt    *time.Time
-	SubmittedAt  *time.Time
-	ApprovedAt   *time.Time
-	CreatedAt    time.Time
+	// IsPrimary marks this as its owner's main design document — the one
+	// rendered as the body of the owner's page (SPEC-007 FR-3.1, migration
+	// 0005). At most one live document per owner carries the mark.
+	IsPrimary   bool
+	IndexedAt   *time.Time
+	SubmittedAt *time.Time
+	ApprovedAt  *time.Time
+	CreatedAt   time.Time
 }
 
 const docCols = `id, type, state, owner_type, owner_id, path, title, tags,
-	supersedes_id, content_hash, indexed_at, submitted_at, approved_at, created_at`
+	supersedes_id, content_hash, is_primary, indexed_at, submitted_at, approved_at, created_at`
 
 func scanDoc(row pgx.Row) (*Document, error) {
 	var d Document
 	err := row.Scan(&d.ID, &d.Type, &d.State, &d.OwnerType, &d.OwnerID, &d.Path,
-		&d.Title, &d.Tags, &d.SupersedesID, &d.ContentHash, &d.IndexedAt,
+		&d.Title, &d.Tags, &d.SupersedesID, &d.ContentHash, &d.IsPrimary, &d.IndexedAt,
 		&d.SubmittedAt, &d.ApprovedAt, &d.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

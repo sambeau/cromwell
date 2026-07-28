@@ -1,0 +1,905 @@
+{{/* The workflow surface, Stage A (SPEC-007): the shared entity page anatomy and
+     the plain read-only pages, in the design system's visual language.
+
+     The page reads top to bottom — what this is, what the plan says, what it is
+     made of — with the design document as the body at full reading width and the
+     relation sections below it rather than competing with it (§5.2).
+
+     Two milestone relationships are kept distinct, which is the whole point of
+     parent ownership (FR-8.1/8.2): the milestones and roadmaps *parented here*
+     are this entity's own local plan; the milestones it is *a member of* may be
+     owned anywhere in the tree. All prose is human-facing (D-6). */}}
+
+
+{{/* ---------- The entity page ---------- */}}
+
+{{define "page-entity"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Title}}</h1>
+      <div class="page-head-meta">
+        {{if .State}}{{template "state-badge" .State}}{{end}}
+        {{/* Ring without the tier word: the rail explains the tier in a sentence,
+             so the word here would be its third appearance (round 4 §2). */}}
+        {{template "size-badge-ring" .Size}}
+      </div>
+    </div>
+    {{/* One primary action, everything else in the menu (round 4 rule 3). */}}
+    <div class="page-head-actions">
+      {{if and (eq .Kind "feature") .CanStart}}
+      <form method="post" action="/ui/feature/start">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button class="btn btn--primary btn--sm" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Start work</button>
+      </form>
+      {{end}}
+      {{template "entity-menu" .}}
+    </div>
+  </div>
+  {{if .Description}}<p class="page-lede">{{.Description}}</p>{{end}}
+</div>
+
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg>
+  <div>{{.Notice}}</div>
+</div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg>
+  <div>{{.Error}}</div>
+</div>
+{{end}}
+
+<div class="page-split u-mt-6">
+  <div>
+    {{/* The body: the main design document, rendered at reading width. */}}
+    <section class="panel">
+      {{if .HasBody}}
+      {{/* The title is the link to the document's own page — a separate
+           "Open full page" button said the same thing twice (round 4 §2). */}}
+      <div class="panel-head">
+        <h2 class="panel-title">
+          <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .BodyDoc.Type}}"/></svg>
+          <a href="{{.BodyDoc.URL}}">{{.BodyDoc.Title}}</a>
+        </h2>
+        <div class="panel-head-actions">
+          {{template "state-badge" .BodyDoc.State}}
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="doc">{{.Body}}</div>
+      </div>
+      {{else}}
+      <div class="panel-body">
+        <div class="empty">
+          <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-doc-design"/></svg></span>
+          <p class="empty-title">There is no design document here yet</p>
+          <p class="empty-text">A design document is the writing a person comes to this page to read, and it becomes the body of the page. Attach a Markdown file that is already in the repository to give this page its body.</p>
+          <button class="btn btn--primary" type="button" data-open-dialog="dlg-attach">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-attach"/></svg>Attach a document</button>
+        </div>
+      </div>
+      {{end}}
+    </section>
+  </div>
+
+  {{template "entity-rail" .}}
+</div>
+
+{{/* ---------- The relation sections ---------- */}}
+
+{{/* The relation sections sit in one wrapper so the first of them always clears
+     the body and the rail above, whichever sections happen to be present. */}}
+<div class="u-mt-6">
+
+{{if .Children}}
+  <details class="section" id="children" open>
+    <summary>
+      <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-children"/></svg>
+      <span class="section-title">{{if eq .Kind "feature"}}Tasks in this feature{{else}}What is inside{{end}}</span>
+      <span class="section-summary"><span class="count-pill">{{len .Children}}</span></span>
+    </summary>
+    <div class="section-body section-body--flush">
+      <div class="rows">
+        {{range .Children}}
+        <a class="row {{if .State}}row--edge{{end}}" {{if .State}}data-state="{{.State}}"{{end}} href="{{.URL}}">
+          <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+          <span class="row-main">
+            <span class="row-title">{{.Name}}</span>
+            {{if .Description}}<span class="row-sub">{{.Description}}</span>{{end}}
+          </span>
+          <span class="row-end">
+            {{if .State}}{{template "state-badge" .State}}{{end}}
+            {{template "size-badge" .Size}}
+          </span>
+        </a>
+        {{end}}
+      </div>
+    </div>
+  </details>
+{{end}}
+
+{{/* "Other" documents: the one rendered as the body is not repeated here
+     (round 4 §2). The count stays, because a collapsed drawer needs a legible
+     handle — one of the things round 4 deliberately kept. */}}
+{{with nonPrimary .Documents}}
+<details class="section" id="documents" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-document"/></svg>
+    <span class="section-title">Other documents</span>
+    <span class="section-summary"><span class="count-pill">{{len .}}</span></span>
+  </summary>
+  <div class="section-body section-body--flush">
+    <div class="rows">
+      {{range .}}
+      <div class="row">
+        <svg class="icon icon-sm icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Type}}"/></svg>
+        <span class="row-main">
+          <span class="row-title"><a href="{{.URL}}">{{.Title}}</a></span>
+          <span class="row-sub">{{.Type}}</span>
+        </span>
+        <span class="row-end">
+          {{template "state-badge" .State}}
+          <form method="post" action="/ui/document/primary">
+            <input type="hidden" name="doc_id" value="{{.ID}}">
+            <button class="btn btn--sm" type="submit"
+                    title="Show this document as the body of the page">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-eye"/></svg>Make this the body</button>
+          </form>
+        </span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</details>
+{{end}}
+
+{{/* This entity's own local plan — the milestones and roadmaps parented here
+     (FR-8.1). Only the ones directly parented to this entity appear: each level
+     owns its own plan, and you never reach down into a child's from here. */}}
+{{if or .OwnedMilestones .OwnedRoadmaps}}
+<details class="section" id="planning" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-milestone"/></svg>
+    <span class="section-title">This {{if eq .Kind "project"}}project{{else}}{{.Kind}}{{end}}&#39;s own plan</span>
+    <span class="section-summary"><span class="count-pill">{{add (len .OwnedMilestones) (len .OwnedRoadmaps)}}</span></span>
+  </summary>
+  <div class="section-body">
+    <p class="t-meta u-mb-4">Milestones and roadmaps planned at this level. A milestone may include work from anywhere in the project, not only from here.</p>
+
+    {{range .OwnedRoadmaps}}
+    <div class="panel u-mb-4">
+      <div class="panel-head">
+        <h3 class="panel-title">
+          <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
+          <a href="{{.URL}}">{{.Name}}</a>
+        </h3>
+        <div class="panel-head-actions"><span class="t-meta">In intended order</span></div>
+      </div>
+      <div class="panel-body">
+        {{with .Milestones}}{{template "roadmap-spine" .}}
+        {{else}}<p class="empty--inline">No milestones have been placed on this roadmap yet.</p>{{end}}
+      </div>
+    </div>
+    {{end}}
+
+    {{range .OwnedMilestones}}{{template "milestone-panel" .}}{{end}}
+  </div>
+</details>
+{{end}}
+
+{{/* The "Part of these milestones" section is gone (round 4 §2): an entity's
+     milestone membership is now a field in the rail, named once. The *other*
+     direction — the milestones and roadmaps parented HERE, above — is a
+     different relationship (FR-8.1 vs FR-8.2) and stays a section, because
+     nothing else on the page carries it. */}}
+
+{{if .Activity}}
+<details class="section" id="activity" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-activity"/></svg>
+    <span class="section-title">Recent activity</span>
+    <span class="section-summary"><span class="live"><span class="live-dot"></span>Live</span></span>
+  </summary>
+  <div class="section-body section-body--flush">
+    <div class="activity">
+      {{range .Activity}}
+      <div class="activity-row">
+        <span class="activity-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-dot"/></svg></span>
+        <span class="activity-text"><b>{{.Actor}}</b> {{.Kind}}</span>
+        <span class="activity-time">{{ago .OccurredAt}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</details>
+{{end}}
+
+</div>{{/* end of the relation sections */}}
+
+{{template "entity-modals" .}}
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+
+{{/* ---------- The side rail ----------
+     One card carrying everything the page states about itself once: the size,
+     what has been spent, where it lives, and which milestones it belongs to
+     (round 4 §2 merges Size and Status). A second card appears only to hold a
+     *blocked* action, because a blocked action must show its reason and so can
+     never live in a menu (round 4 §1). Everything else is in the menu beside
+     the page title. */}}
+
+{{define "entity-rail"}}
+<aside class="rail" aria-label="Status and actions">
+
+  <div class="rail-card">
+    <div class="rail-card-body">
+      <div class="rail-field">
+        {{if .Size.Estimated}}
+        <span class="tokens tokens--hero">
+          {{/* icon-lg, not icon-sm: this renders ~26px, which is the 24-30px
+               stroke band (1.4). The class supplies only the weight here —
+               .tokens--hero .icon sets the width. */}}
+          <svg class="icon icon-lg" aria-hidden="true"><use href="#i-tokens"/></svg>
+          <span class="tokens-num">{{tokens .Size.Tokens}}</span><span class="visually-hidden">tokens</span>
+          {{template "tier-ring" .Size.Tier}}
+        </span>
+        <p class="t-meta">{{tierExplain .Size.Tier}}</p>
+        {{if not .Size.Complete}}
+        <p class="t-meta">Some work below this has no estimate yet, so treat the total as a floor rather than a forecast.</p>
+        {{end}}
+        {{else}}
+        <span class="tokens unestimated">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+          <span class="tokens-unit">Not estimated yet</span>
+          {{template "tier-ring" "unestimated"}}
+        </span>
+        <p class="t-meta">Nothing here has been sized yet. Work is measured in tokens — the unit of computation an agent spends.</p>
+        {{end}}
+      </div>
+      {{if .Done}}
+      <div class="rail-divider"></div>
+      <div class="rail-field">
+        <span class="rail-field-label">Spent so far</span>
+        <span class="rail-field-value">
+          <span class="tokens">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+            <span class="tokens-num">{{tokens .Done}}</span><span class="visually-hidden">tokens</span>
+          </span>
+        </span>
+        {{if .Size.Estimated}}
+        <div class="bar"><div class="bar-fill bar-fill--running" style="width:{{spentPct .Done .Size.Tokens}}%"></div></div>
+        <span class="t-meta">{{spentPct .Done .Size.Tokens}}% of the estimate</span>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if or .Path .MemberOf}}<div class="rail-divider"></div>{{end}}
+
+      {{if .Path}}
+      <div class="rail-field">
+        <span class="rail-field-label">Where this lives</span>
+        <span class="rail-field-value"><code class="t-meta">{{.Path}}</code></span>
+      </div>
+      {{end}}
+
+      {{/* Membership moved here from its own section (round 4 §2). Their mock
+           could drop the section because their rail already named the milestone;
+           ours did not, so the fact moves rather than disappearing — this is the
+           only place an entity's milestone membership appears (FR-8.2). */}}
+      {{with .MemberOf}}
+      <div class="rail-field">
+        <span class="rail-field-label">{{if gt (len .) 1}}Milestones{{else}}Milestone{{end}}</span>
+        {{range .}}
+        <span class="rail-field-value">
+          <svg class="icon icon-sm icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+          <a href="{{.URL}}">{{.Name}}</a>
+          {{if .Locked}}<span class="t-meta">locked</span>{{end}}
+        </span>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  {{/* A blocked action, and only a blocked action, gets its own card: it has to
+       show the reason it is blocked, which a closed menu cannot do (round 4 §1). */}}
+  {{if and (eq .Kind "feature") (not .CanStart) (not .IsTerminal)}}
+  <div class="rail-card">
+    <div class="rail-card-body">
+      <div class="action">
+        <button class="btn btn--block" type="button" disabled aria-describedby="why-start">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Start work on this</button>
+        <p class="action-reason" id="why-start">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg>
+          <span>{{.StartReason}}</span></p>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</aside>
+{{end}}
+
+
+{{/* ---------- The overflow menu beside the page title ----------
+     A native <details>, so it opens without JavaScript and survives an HTMX
+     swap. Honestly a disclosure containing buttons rather than an ARIA menu
+     (round 4 §1). Blocked actions are never in here — they live in the rail
+     where their reason is visible. */}}
+
+{{define "entity-menu"}}
+<details class="menu">
+  <summary class="btn btn--ghost btn--icon btn--sm" aria-label="More actions">
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-more"/></svg>
+  </summary>
+  <div class="menu-list">
+    <button class="menu-item" type="button" data-open-dialog="dlg-estimate">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-estimate"/></svg>{{if .Size.Estimated}}Change the estimate{{else}}Estimate the size{{end}}</button>
+    <button class="menu-item" type="button" data-open-dialog="dlg-attach">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-attach"/></svg>Attach a document</button>
+
+    {{if eq .Kind "initiative"}}
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-open-dialog="dlg-new-feature">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New feature here</button>
+    <button class="menu-item" type="button" data-open-dialog="dlg-new-initiative">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New sub-initiative</button>
+    {{end}}
+
+    {{if eq .Kind "project"}}
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-open-dialog="dlg-new-initiative">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New initiative</button>
+    {{end}}
+
+    {{if .Editable}}
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-open-dialog="dlg-edit">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit name and description</button>
+    {{end}}
+
+    {{if or (and (eq .Kind "feature") .CanAbandon) (eq .Kind "initiative")}}
+    <div class="menu-sep"></div>
+    {{if and (eq .Kind "feature") .CanAbandon}}
+    <button class="menu-item menu-item--danger" type="button" data-open-dialog="dlg-abandon">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-abandon"/></svg>Abandon this feature</button>
+    {{end}}
+    {{if eq .Kind "initiative"}}
+    <button class="menu-item menu-item--danger" type="button" data-open-dialog="dlg-archive">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-archive"/></svg>Archive this initiative</button>
+    {{end}}
+    {{end}}
+  </div>
+</details>
+{{end}}
+
+
+{{/* ---------- Modals: short forms and destructive confirmations ----------
+     Native <dialog>, so Escape, focus trapping and focus return are the
+     browser's job. Each wraps a real POST to the same gated, audited service
+     method the other surfaces use — the UI gains no authority (D-8). */}}
+
+{{define "entity-modals"}}
+<dialog class="modal" id="dlg-estimate" aria-labelledby="t-estimate">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-estimate"><svg class="icon icon-md" aria-hidden="true"><use href="#i-estimate"/></svg> Estimate the size of this work</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/entity/estimate">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">Work is measured in tokens — the unit of computation an agent spends. An estimate you write yourself is recorded as your judgement; tick the box below if you sized it against work that has already finished.</p>
+        <div class="field">
+          <label class="field-label" for="est-tokens">Size in tokens</label>
+          <input class="input" id="est-tokens" name="tokens" type="number" min="1" required>
+        </div>
+        <div class="field">
+          <label class="field-label"><input type="checkbox" name="cite_corpus" value="1"> I sized this against work that has already finished</label>
+          <p class="field-hint">This raises the confidence from a rough guess to a considered estimate.</p>
+        </div>
+      </div>
+      <input type="hidden" name="ref_type" value="{{.RefType}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Save the estimate</button>
+    </div>
+  </form>
+  <form method="post" action="/ui/entity/estimate/ai">
+    <input type="hidden" name="ref_type" value="{{.RefType}}">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <div class="modal-foot">
+      <button class="btn btn--block" type="submit">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-agent"/></svg>Ask the estimator agent to size it instead</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="dlg-attach" aria-labelledby="t-attach">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-attach"><svg class="icon icon-md" aria-hidden="true"><use href="#i-attach"/></svg> Attach a document</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/entity/attach">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">Registers a Markdown file that is already in the repository. Documents are written in your own editor and kept in git; this records that the file belongs to this page. A design document becomes the body of the page.</p>
+        <div class="field">
+          <label class="field-label" for="att-path">Where the file is in the repository</label>
+          <input class="input" id="att-path" name="file_path" placeholder="docs/design/example.md" required>
+          <p class="field-hint">The path to a file, not the name of anything in Cromwell.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="att-type">What kind of document is it</label>
+          <select class="select" id="att-type" name="doc_type">
+            <option value="design">Design — the thinking behind this work</option>
+            <option value="research">Research</option>
+            <option value="note">Note</option>
+            <option value="report">Report</option>
+            <option value="spec">Specification — written for agents</option>
+          </select>
+        </div>
+      </div>
+      <input type="hidden" name="owner_type" value="{{.RefType}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Attach the document</button>
+    </div>
+  </form>
+</dialog>
+
+{{if .Editable}}
+<dialog class="modal" id="dlg-edit" aria-labelledby="t-edit">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-edit"><svg class="icon icon-md" aria-hidden="true"><use href="#i-edit"/></svg> Edit the name and description</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/entity/describe">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">The description is a short summary in plain language, for the people reading this page. It is usually written by your chat agent when the work is created; correcting a word here is fine.</p>
+        <div class="field">
+          <label class="field-label" for="ed-name">Name</label>
+          <input class="input" id="ed-name" name="name" value="{{.Title}}">
+        </div>
+        <div class="field">
+          <label class="field-label" for="ed-desc">Description</label>
+          <textarea class="textarea" id="ed-desc" name="description" rows="4">{{.Description}}</textarea>
+        </div>
+      </div>
+      <input type="hidden" name="ref_type" value="{{.RefType}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{if eq .Kind "initiative"}}
+<dialog class="modal" id="dlg-new-feature" aria-labelledby="t-new-feature">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-new-feature"><svg class="icon icon-md" aria-hidden="true"><use href="#i-feature"/></svg> New feature here</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/feature/new">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">A feature is a buildable unit of work. Creating one here places it inside <b>{{.Title}}</b>.</p>
+        <div class="field">
+          <label class="field-label" for="nf-name">Name</label>
+          <input class="input" id="nf-name" name="name" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="nf-slug">Short name for the web address</label>
+          <input class="input" id="nf-slug" name="slug" placeholder="login" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="nf-desc">Description <span class="opt">optional</span></label>
+          <input class="input" id="nf-desc" name="description" placeholder="What is it, in one sentence?">
+        </div>
+      </div>
+      <input type="hidden" name="initiative_id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Create the feature</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{if or (eq .Kind "initiative") (eq .Kind "project")}}
+<dialog class="modal" id="dlg-new-initiative" aria-labelledby="t-new-initiative">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-new-initiative"><svg class="icon icon-md" aria-hidden="true"><use href="#i-initiative"/></svg> {{if eq .Kind "project"}}New initiative{{else}}New sub-initiative{{end}}</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/initiative/new">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">An initiative is a container for work — it holds features, other initiatives, and its own plan.{{if ne .Kind "project"}} This one will sit inside <b>{{.Title}}</b>.{{end}}</p>
+        <div class="field">
+          <label class="field-label" for="ni-name">Name</label>
+          <input class="input" id="ni-name" name="name" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="ni-slug">Short name for the web address</label>
+          <input class="input" id="ni-slug" name="slug" placeholder="auth" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="ni-desc">Description <span class="opt">optional</span></label>
+          <input class="input" id="ni-desc" name="description" placeholder="What is it, in one sentence?">
+        </div>
+      </div>
+      {{if ne .Kind "project"}}<input type="hidden" name="parent_id" value="{{.ID}}">{{end}}
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Create</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{if and (eq .Kind "feature") .CanAbandon}}
+<dialog class="modal" id="dlg-abandon" aria-labelledby="t-abandon">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-abandon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-abandon"/></svg> Abandon this feature</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/feature/abandon">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">Abandoning stops this feature for good and records why. It stays visible as part of the history rather than disappearing.</p>
+        <div class="field">
+          <label class="field-label" for="ab-reason">Why is this being abandoned?</label>
+          <input class="input" id="ab-reason" name="reason" required>
+        </div>
+      </div>
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--danger" type="submit">Abandon this feature</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{if eq .Kind "initiative"}}
+<dialog class="modal" id="dlg-archive" aria-labelledby="t-archive">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-archive"><svg class="icon icon-md" aria-hidden="true"><use href="#i-archive"/></svg> Archive this initiative</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/initiative/archive">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">Archiving takes this initiative out of the active project. If work is still going on underneath it, the request becomes a question in your inbox rather than happening straight away.</p>
+        <div class="field">
+          <label class="field-label" for="ar-reason">Why archive it? <span class="opt">optional</span></label>
+          <input class="input" id="ar-reason" name="reason">
+        </div>
+      </div>
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--danger" type="submit">Archive</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+{{end}}
+
+
+{{/* ---------- Not found ---------- */}}
+
+{{define "page-notfound"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg></span>
+    <div class="page-head-titles"><h1 class="t-page">Page not found</h1></div>
+  </div>
+</div>
+<div class="empty">
+  <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-alert"/></svg></span>
+  <p class="empty-title">There is no {{.Kind}} at this address</p>
+  <p class="empty-text"><code>{{.Path}}</code> does not match anything in the project. It may have been renamed, or it may never have existed. The breadcrumbs and the navigation rail will get you back.</p>
+  <a class="btn btn--primary" href="/ui/project">
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-project"/></svg>Go to the project</a>
+</div>
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+
+{{/* ---------- Milestone: an unordered checklist of its members ---------- */}}
+
+{{define "page-milestone"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Milestone.Name}}</h1>
+      <div class="page-head-meta">
+        {{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}
+        <span class="t-meta u-row">
+          <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
+          <span>Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a></span>
+        </span>
+      </div>
+    </div>
+  </div>
+  {{if .Milestone.Description}}<p class="page-lede">{{.Milestone.Description}}</p>{{end}}
+</div>
+
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg> Progress</h2>
+  </div>
+  <div class="panel-body">
+    {{template "milestone-progress" .Card}}
+    <p class="t-meta u-mt-2">The count and the token share often disagree — a milestone can be most of the way through its items and only part of the way through the work. Both are shown because both are true.</p>
+  </div>
+</section>
+
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-children"/></svg> What is in this milestone</h2>
+    <div class="panel-head-actions"><span class="count-pill">{{len .Members}}</span></div>
+  </div>
+  <div class="panel-body section-body--flush">
+    {{with .Members}}
+    <div class="checklist">
+      {{range .}}
+      <div class="check-item" data-done="{{.Done}}">
+        <span class="check-box">
+          {{if .Done}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg>{{end}}
+        </span>
+        <span class="check-title">
+          <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+          <a href="{{.URL}}">{{.Label}}</a>
+        </span>
+        <span class="check-end"><span class="t-meta">{{.Kind}}</span></span>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty">
+      <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-milestone"/></svg></span>
+      <p class="empty-title">Nothing has been added to this milestone yet</p>
+      <p class="empty-text">A milestone gathers the work that ships together. Its members can come from anywhere in the project, not only from where the milestone is planned.</p>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+
+{{/* ---------- Roadmap: an ordered, numbered spine of milestones ---------- */}}
+
+{{define "page-roadmap"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Roadmap.Name}}</h1>
+      <div class="page-head-meta">
+        <span class="t-meta u-row">
+          <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
+          <span>Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a></span>
+        </span>
+      </div>
+    </div>
+  </div>
+  <p class="page-lede">The milestones on this roadmap, in the order they are intended to happen. Progress is shown both as a count of items and as a share of estimated tokens.</p>
+</div>
+
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-roadmap"/></svg> The sequence</h2>
+    <div class="panel-head-actions"><span class="t-meta">Numbered in intended order</span></div>
+  </div>
+  <div class="panel-body">
+    {{with .Card.Milestones}}{{template "roadmap-spine" .}}
+    {{else}}
+    <div class="empty">
+      <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-roadmap"/></svg></span>
+      <p class="empty-title">No milestones have been placed on this roadmap yet</p>
+      <p class="empty-text">A roadmap is an ordered list of milestones. The order means whatever the planner intends by it — sequence, priority, or schedule.</p>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+
+{{/* ---------- Task: the record of one agent run ---------- */}}
+
+{{define "page-task"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="task" aria-hidden="true"><use href="#i-task"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Task.Title}}</h1>
+      <div class="page-head-meta">
+        {{template "state-badge" .Task.State}}
+        {{if .FeatureURL}}
+        <span class="t-meta">
+          <svg class="icon icon-xs icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg>
+          Part of <a href="{{.FeatureURL}}">{{.FeatureName}}</a></span>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</div>
+
+{{if .Task.Description}}
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-task"/></svg> What this task covers</h2>
+  </div>
+  <div class="panel-body"><div class="doc"><p>{{.Task.Description}}</p></div></div>
+</section>
+{{end}}
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+
+{{/* ---------- Document page ---------- */}}
+
+{{define "page-entity-document"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Document.Type}}"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Document.Title}}</h1>
+      <div class="page-head-meta">
+        {{template "state-badge" .Document.State}}
+        <span class="t-meta">{{.Document.Type}}</span>
+        {{if .OwnerCrumb.Label}}
+        <span class="t-meta u-row">
+          <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
+          <span>Belongs to <a href="{{.OwnerCrumb.URL}}">{{.OwnerCrumb.Label}}</a></span>
+        </span>
+        {{end}}
+        {{if .Document.Path}}<span class="t-meta u-nowrap"><code>{{.Document.Path}}</code></span>{{end}}
+      </div>
+    </div>
+  </div>
+</div>
+
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
+
+{{/* This document is edited in the author's own editor and committed to git;
+     the page re-renders itself when the file changes (§5.5). */}}
+<div class="banner banner--info">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-info"/></svg>
+  <div><b>This document is written in your own editor.</b>Edit the file in git and this page updates itself — Cromwell reads it, it does not own it.</div>
+</div>
+
+{{if .ReviewCheckpointID}}
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> This document is waiting for your review</h2>
+  </div>
+  <div class="panel-body">
+    <p class="t-meta u-mb-4">The agent reviewer could not settle this on its own, so the decision is yours. Approving lets the work downstream start; asking for changes sends your reason back to the author.</p>
+    <div class="action-row">
+      <form method="post" action="/ui/document/review">
+        <input type="hidden" name="doc_id" value="{{.Document.ID}}">
+        <input type="hidden" name="decision" value="approve">
+        <button class="btn btn--primary" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>Approve this document</button>
+      </form>
+      <button class="btn" type="button" data-open-dialog="dlg-changes">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-request-changes"/></svg>Ask for changes</button>
+    </div>
+  </div>
+</section>
+
+<dialog class="modal" id="dlg-changes" aria-labelledby="t-changes">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-changes"><svg class="icon icon-md" aria-hidden="true"><use href="#i-request-changes"/></svg> Ask for changes</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/document/review">
+    <div class="modal-body">
+      <div class="form">
+        <div class="field">
+          <label class="field-label" for="rc-reason">What needs to change?</label>
+          <textarea class="textarea" id="rc-reason" name="reason" rows="4" required></textarea>
+          <p class="field-hint">This goes back to whoever wrote the document, so say what would make it approvable.</p>
+        </div>
+      </div>
+      <input type="hidden" name="doc_id" value="{{.Document.ID}}">
+      <input type="hidden" name="decision" value="request_changes">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Send this back</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+<section class="panel u-mt-4">
+  <div class="panel-body">
+    <div class="doc">{{.Body}}</div>
+  </div>
+</section>
+
+{{if .Comments}}
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-comment"/></svg> Review comments</h2>
+    <div class="panel-head-actions"><span class="count-pill">{{len .Comments}}</span></div>
+  </div>
+  <div class="panel-body">
+    <div class="thread">
+      {{range .Comments}}
+      <div class="comment">
+        <span class="avatar avatar--agent"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-agent"/></svg></span>
+        <div>
+          <div class="comment-head">
+            <span class="comment-author">{{.Author}}</span>
+            {{if .SectionRef}}<span class="comment-time">on {{.SectionRef}}</span>{{end}}
+          </div>
+          <div class="comment-body"><p>{{.Body}}</p></div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</section>
+{{end}}
+{{end}}
+{{template "pagebottom" .}}{{end}}

@@ -80,121 +80,6 @@ func responseFor(kind, verb, reason string) map[string]any {
 	return r
 }
 
-// --- Planning tree ---
-
-// planningView is the initiative → feature → task tree with roll-ups, plus
-// milestones with progress and roadmaps in order (FR-4).
-type planningView struct {
-	Roots      []treeNode
-	Milestones []store.MilestoneProgress
-	Roadmaps   []roadmapView
-}
-
-// planningPage wraps planningView with the result of the last mutation, so the
-// refreshed planning body carries an inline notice or error at the top
-// (SPEC-006 FR-6.2) — a mutation never fails silently or as a raw 500.
-type planningPage struct {
-	View   planningView
-	Notice string
-	Error  string
-}
-
-// treeNode is one node of the rendered planning tree: its type and label, its
-// subtree roll-up computed through the sizing engine (FR-4.1), and its
-// children.
-type treeNode struct {
-	Type     string
-	Name     string
-	Rollup   sizing.Rollup
-	Children []treeNode
-}
-
-// toTreeNode derives a display node from a sizing node, computing each node's
-// own subtree roll-up with sizing.RollUp — the same computation FR-4.1 asserts
-// against, never a re-derivation.
-func toTreeNode(n sizing.Node) treeNode {
-	tn := treeNode{Type: n.Ref.Type, Name: n.Ref.Name, Rollup: sizing.RollUp(n)}
-	for _, c := range n.Children {
-		tn.Children = append(tn.Children, toTreeNode(c))
-	}
-	return tn
-}
-
-func (s *Server) planningView(r *http.Request) (planningView, error) {
-	ctx := r.Context()
-	roots, err := store.RootInitiatives(ctx, s.Store.Pool)
-	if err != nil {
-		return planningView{}, err
-	}
-	var nodes []treeNode
-	for _, in := range roots {
-		sn, err := store.InitiativeSizingNode(ctx, s.Store.Pool, in.ID)
-		if err != nil {
-			return planningView{}, err
-		}
-		nodes = append(nodes, toTreeNode(sn))
-	}
-
-	ms, err := store.MilestonesWithProgress(ctx, s.Store.Pool)
-	if err != nil {
-		return planningView{}, err
-	}
-	roadmaps, err := s.roadmapViews(ctx)
-	if err != nil {
-		return planningView{}, err
-	}
-	return planningView{Roots: nodes, Milestones: ms, Roadmaps: roadmaps}, nil
-}
-
-// roadmapView is a roadmap with its milestones resolved and in position order
-// (FR-4.2).
-type roadmapView struct {
-	Roadmap store.Roadmap
-	Entries []roadmapEntryView
-}
-
-type roadmapEntryView struct {
-	Position  int
-	Milestone store.Milestone
-	Progress  store.Progress
-	Locked    bool
-}
-
-func (s *Server) roadmapViews(ctx context.Context) ([]roadmapView, error) {
-	rms, err := store.ListRoadmaps(ctx, s.Store.Pool)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]roadmapView, 0, len(rms))
-	for _, rm := range rms {
-		entries, err := store.RoadmapEntries(ctx, s.Store.Pool, rm.ID)
-		if err != nil {
-			return nil, err
-		}
-		rv := roadmapView{Roadmap: rm}
-		for _, e := range entries {
-			m, err := store.GetMilestone(ctx, s.Store.Pool, e.MilestoneID)
-			if err != nil {
-				return nil, err
-			}
-			locked := m.LockedAt != nil
-			var prog store.Progress
-			if locked {
-				prog, err = store.SnapshotProgress(ctx, s.Store.Pool, m.ID)
-			} else {
-				prog, err = store.LiveProgress(ctx, s.Store.Pool, m.ID)
-			}
-			if err != nil {
-				return nil, err
-			}
-			rv.Entries = append(rv.Entries, roadmapEntryView{
-				Position: e.Position, Milestone: *m, Progress: prog, Locked: locked})
-		}
-		out = append(out, rv)
-	}
-	return out, nil
-}
-
 // --- Documents ---
 
 // docPageData is a single document with its rendered body and comment thread
@@ -267,96 +152,82 @@ func (s *Server) openReviewCheckpoint(ctx context.Context, docID uuid.UUID) (*st
 	return nil, nil
 }
 
-// --- Cost ---
+// --- Work (FR-7.2) ---
 
-// costView is the extended roll-up surface (FR-6.1): the grand total plus
-// per-initiative (transitive), per-feature, per-milestone (resolved members),
-// per-roadmap, and per-month costs, all from the frozen-price ledger.
-type costView struct {
-	Total       float64
-	Initiatives []entityCost
-	Features    []entityCost
-	Milestones  []entityCost
-	Roadmaps    []entityCost
-	Months      []store.MonthCost
+// workView is the roll-up surface counted in tokens, the unit of work
+// (DESIGN-008 D-4). It replaces the money-denominated Cost view: the project
+// total plus per-initiative (transitive), per-feature and per-milestone sizes,
+// each with its confidence tier and the `?` for work not yet estimated. No
+// figure on this page is money; the engine's cost ledger is untouched but
+// dormant behind the surface (SD-5, Q-C).
+type workView struct {
+	Project     sizing.Rollup
+	Initiatives []entityWork
+	Features    []entityWork
+	Milestones  []milestoneCard
 }
 
-// entityCost is one labelled cost line.
-type entityCost struct {
+// entityWork is one labelled line of work, sized in tokens.
+type entityWork struct {
 	Name string
-	Cost float64
+	URL  string
+	Size sizing.Rollup
 }
 
-func (s *Server) costView(r *http.Request) (costView, error) {
+func (s *Server) workView(r *http.Request) (workView, error) {
 	ctx := r.Context()
-	var view costView
+	var view workView
 
-	rollup, err := s.Store.CostRollup(ctx)
+	proj, err := s.projectRollup(ctx)
 	if err != nil {
 		return view, err
 	}
-	for _, row := range rollup {
-		view.Total += row.CostUSD
-	}
+	view.Project = proj
 
 	// Every initiative in the tree (roots + nested), each transitive; and every
-	// feature under them.
+	// feature under them, sized through the same sizing engine the pages use.
 	inits, err := s.allInitiatives(ctx)
 	if err != nil {
 		return view, err
 	}
 	for _, in := range inits {
-		c, err := store.InitiativeCost(ctx, s.Store.Pool, in.ID)
+		path, err := s.initiativePath(ctx, in.ID)
 		if err != nil {
 			return view, err
 		}
-		view.Initiatives = append(view.Initiatives, entityCost{Name: in.Slug, Cost: c})
+		roll, err := s.initiativeRollup(ctx, in.ID)
+		if err != nil {
+			return view, err
+		}
+		view.Initiatives = append(view.Initiatives, entityWork{
+			Name: path, URL: "/ui/i/" + path, Size: roll})
 
 		feats, err := store.FeaturesForInitiative(ctx, s.Store.Pool, in.ID)
 		if err != nil {
 			return view, err
 		}
 		for _, f := range feats {
-			fc, err := store.FeatureCost(ctx, s.Store.Pool, f.ID)
+			froll, err := s.featureRollup(ctx, f.ID)
 			if err != nil {
 				return view, err
 			}
-			view.Features = append(view.Features, entityCost{Name: in.Slug + "/" + f.Slug, Cost: fc})
+			view.Features = append(view.Features, entityWork{
+				Name: path + "/" + f.Slug, URL: "/ui/f/" + path + "/" + f.Slug, Size: froll})
 		}
 	}
 
-	// Milestones over their resolved members.
-	ms, err := store.MilestonesWithProgress(ctx, s.Store.Pool)
+	// Milestones, each showing the ticked count and the token bar (FR-8.3).
+	ms, err := store.ListMilestones(ctx, s.Store.Pool)
 	if err != nil {
 		return view, err
 	}
 	for _, m := range ms {
-		mc, err := store.MilestoneCost(ctx, s.Store.Pool, m.Progress.Leaves)
+		card, err := s.milestoneCardFor(ctx, m)
 		if err != nil {
 			return view, err
 		}
-		view.Milestones = append(view.Milestones, entityCost{Name: m.Milestone.Name, Cost: mc})
+		view.Milestones = append(view.Milestones, card)
 	}
-
-	// Roadmaps.
-	rms, err := store.ListRoadmaps(ctx, s.Store.Pool)
-	if err != nil {
-		return view, err
-	}
-	for _, rm := range rms {
-		rc, err := store.RoadmapCost(ctx, s.Store.Pool, rm.ID)
-		if err != nil {
-			return view, err
-		}
-		view.Roadmaps = append(view.Roadmaps, entityCost{Name: rm.Name, Cost: rc})
-	}
-
-	// Months.
-	months, err := store.CostByMonth(ctx, s.Store.Pool)
-	if err != nil {
-		return view, err
-	}
-	view.Months = months
 	return view, nil
 }
 
