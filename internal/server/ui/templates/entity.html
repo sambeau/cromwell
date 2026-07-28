@@ -9,8 +9,6 @@
      parent ownership (FR-8.1/8.2): the milestones and roadmaps *parented here*
      are this entity's own local plan; the milestones it is *a member of* may be
      owned anywhere in the tree. All prose is human-facing (D-6). */}}
-
-
 {{/* ---------- The entity page ---------- */}}
 
 {{define "page-entity"}}{{template "pagetop" .}}
@@ -178,18 +176,15 @@
     <p class="t-meta u-mb-4">Milestones and roadmaps planned at this level. A milestone may include work from anywhere in the project, not only from here.</p>
 
     {{range .OwnedRoadmaps}}
-    <div class="panel u-mb-4">
-      <div class="panel-head">
-        <h3 class="panel-title">
-          <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
-          <a href="{{.URL}}">{{.Name}}</a>
-        </h3>
-        <div class="panel-head-actions"><span class="t-meta">In intended order</span></div>
+    {{/* A block, not a card: this already sits inside one. */}}
+    <div class="u-mb-6">
+      <div class="u-row u-mb-2">
+        <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
+        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+        <span class="u-push t-meta">In intended order</span>
       </div>
-      <div class="panel-body">
         {{with .Milestones}}{{template "roadmap-spine" .}}
         {{else}}<p class="empty--inline">No milestones have been placed on this roadmap yet.</p>{{end}}
-      </div>
     </div>
     {{end}}
 
@@ -231,8 +226,6 @@
 {{template "entity-modals" .}}
 {{end}}
 {{template "pagebottom" .}}{{end}}
-
-
 {{/* ---------- The side rail ----------
      One card carrying everything the page states about itself once: the size,
      what has been spent, where it lives, and which milestones it belongs to
@@ -331,8 +324,6 @@
   {{end}}
 </aside>
 {{end}}
-
-
 {{/* ---------- The overflow menu beside the page title ----------
      A native <details>, so it opens without JavaScript and survives an HTMX
      swap. Honestly a disclosure containing buttons rather than an ARIA menu
@@ -384,8 +375,6 @@
   </div>
 </details>
 {{end}}
-
-
 {{/* ---------- Modals: short forms and destructive confirmations ----------
      Native <dialog>, so Escape, focus trapping and focus return are the
      browser's job. Each wraps a real POST to the same gated, audited service
@@ -616,8 +605,6 @@
 </dialog>
 {{end}}
 {{end}}
-
-
 {{/* ---------- Not found ---------- */}}
 
 {{define "page-notfound"}}{{template "pagetop" .}}
@@ -637,8 +624,6 @@
 </div>
 {{end}}
 {{template "pagebottom" .}}{{end}}
-
-
 {{/* ---------- Milestone: an unordered checklist of its members ---------- */}}
 
 {{define "page-milestone"}}{{template "pagetop" .}}
@@ -677,7 +662,7 @@
     <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-children"/></svg> What is in this milestone</h2>
     <div class="panel-head-actions"><span class="count-pill">{{len .Members}}</span></div>
   </div>
-  <div class="panel-body section-body--flush">
+  <div class="panel-body panel-body--flush">
     {{with .Members}}
     <div class="checklist">
       {{range .}}
@@ -704,8 +689,6 @@
 </section>
 {{end}}
 {{template "pagebottom" .}}{{end}}
-
-
 {{/* ---------- Roadmap: an ordered, numbered spine of milestones ---------- */}}
 
 {{define "page-roadmap"}}{{template "pagetop" .}}
@@ -746,8 +729,6 @@
 </section>
 {{end}}
 {{template "pagebottom" .}}{{end}}
-
-
 {{/* ---------- Task: the record of one agent run ---------- */}}
 
 {{define "page-task"}}{{template "pagetop" .}}
@@ -781,8 +762,6 @@
 {{end}}
 {{end}}
 {{template "pagebottom" .}}{{end}}
-
-
 {{/* ---------- Document page ---------- */}}
 
 {{define "page-entity-document"}}{{template "pagetop" .}}

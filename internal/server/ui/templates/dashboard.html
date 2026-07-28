@@ -25,7 +25,7 @@
     <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> Waiting for you</h2>
     <div class="panel-head-actions"><a class="btn btn--sm" href="/ui/inbox">Open the inbox</a></div>
   </div>
-  <div class="panel-body section-body--flush">
+  <div class="panel-body panel-body--flush">
     <div class="rows">
       {{range .Waiting}}
       <a class="row" href="/ui/inbox/{{.ID}}">
@@ -44,13 +44,17 @@
 
 <div class="page-split u-mt-6">
   <div>
+    {{/* One drawer per lifecycle state, as siblings. A .section is a card in its
+         own right — background, border and radius — so putting these inside a
+         .panel produced a card within a card and a stray rounded corner. The
+         label above does the grouping that the panel head used to. */}}
     {{if .ByState}}
-    <section class="panel">
-      <div class="panel-head">
-        <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg> Features, by where they have got to</h2>
-      </div>
-      <div class="panel-body section-body--flush">
-        {{range .ByState}}
+    {{/* No icon on the label: every row beneath it already carries the feature
+         mark, and an icon here would need the .t-meta inline-flex treatment to
+         stay on the line — not worth widening that rule for a heading. */}}
+    <p class="t-eyebrow">Features, by where they have got to</p>
+    <div class="u-mt-2">
+      {{range .ByState}}
         <details class="section" open>
           <summary>
             <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
@@ -69,9 +73,8 @@
             </div>
           </div>
         </details>
-        {{end}}
-      </div>
-    </section>
+      {{end}}
+    </div>
     {{end}}
 
     {{if .TopInitiatives}}
@@ -80,7 +83,7 @@
         <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="initiative" aria-hidden="true"><use href="#i-initiative"/></svg> Initiatives</h2>
         <div class="panel-head-actions"><a class="btn btn--sm" href="/ui/project">Browse the project</a></div>
       </div>
-      <div class="panel-body section-body--flush">
+      <div class="panel-body panel-body--flush">
         <div class="rows">
           {{range .TopInitiatives}}
           <a class="row" href="{{.URL}}">
@@ -101,7 +104,7 @@
       <div class="panel-head">
         <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-doc-design"/></svg> The project's own design writing</h2>
       </div>
-      <div class="panel-body section-body--flush">
+      <div class="panel-body panel-body--flush">
         <div class="rows">
           {{range .ProjectDocs}}
           <a class="row" href="{{.URL}}">
@@ -129,18 +132,15 @@
         <p class="t-meta u-mb-4">Milestones and roadmaps planned for the project as a whole.</p>
 
         {{range .Roadmaps}}
-        <div class="panel u-mb-4">
-          <div class="panel-head">
-            <h3 class="panel-title">
-              <svg class="icon icon-sm icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
-              <a href="{{.URL}}">{{.Name}}</a>
-            </h3>
-            <div class="panel-head-actions"><span class="t-meta">In intended order</span></div>
+        {{/* A block, not a card: this already sits inside one. */}}
+        <div class="u-mb-6">
+          <div class="u-row u-mb-2">
+            <svg class="icon icon-sm icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
+            <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+            <span class="u-push t-meta">In intended order</span>
           </div>
-          <div class="panel-body">
             {{with .Milestones}}{{template "roadmap-spine" .}}
             {{else}}<p class="empty--inline">No milestones have been placed on this roadmap yet.</p>{{end}}
-          </div>
         </div>
         {{end}}
 
@@ -166,8 +166,6 @@
 </section>
 {{end}}
 {{template "pagebottom" .}}{{end}}
-
-
 {{/* ---------- Live regions ---------- */}}
 
 {{define "frag-queue"}}
@@ -194,7 +192,7 @@
     <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-run"/></svg> In flight</h2>
     <div class="panel-head-actions"><span class="live"><span class="live-dot"></span>Live</span></div>
   </div>
-  <div class="panel-body section-body--flush">
+  <div class="panel-body panel-body--flush">
     <div class="rows">
       {{range .Running}}
       <div class="row row--edge" data-state="active">

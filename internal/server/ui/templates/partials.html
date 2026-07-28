@@ -241,18 +241,19 @@
 {{end}}
 
 {{/* One milestone as a card in a list of them. */}}
+{{/* One milestone as a block in a list of them. Deliberately NOT a .panel: this
+     is only ever rendered inside a panel or a section, and a card inside a card
+     draws a second border and a stray rounded corner. A heading row, its
+     progress, and a rule between — the enclosing card supplies the chrome. */}}
 {{define "milestone-panel"}}
-<div class="panel u-mb-4">
-  <div class="panel-head">
-    <h3 class="panel-title">
-      <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
-      <a href="{{.URL}}">{{.Name}}</a>
-    </h3>
-    <div class="panel-head-actions">
-      {{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}
-    </div>
+<div class="u-mb-4">
+  <div class="u-row u-mb-2">
+    <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+    <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+    <span class="u-push">{{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}</span>
   </div>
-  <div class="panel-body">{{template "milestone-progress" .}}</div>
+  {{template "milestone-progress" .}}
+  <div class="rail-divider u-mt-4"></div>
 </div>
 {{end}}
 
