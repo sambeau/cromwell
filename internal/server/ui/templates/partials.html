@@ -165,11 +165,14 @@
      The word survives for screen readers only. */}}
 {{define "size-badge"}}
 {{- if .Estimated -}}
+{{/* The confidence comes first and the figure last, so that in a list the
+     numbers form a single right-aligned column instead of being pushed around
+     by labels of different lengths. */}}
 <span class="tokens" title="{{tokens .Tokens}} tokens — {{tierTitle .Tier}}">
+  {{if not .Complete}}<span class="u-dim" title="Some work below this has no estimate, so the total is a floor rather than a forecast">and more, not yet estimated</span>{{end}}
+  {{template "tier-badge" .Tier}}
   <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
   <span class="tokens-num">{{tokens .Tokens}}</span><span class="visually-hidden"> tokens</span>
-  {{template "tier-badge" .Tier}}
-  {{if not .Complete}}<span class="u-dim" title="Some work below this has no estimate, so the total is a floor rather than a forecast">and more, not yet estimated</span>{{end}}
 </span>
 {{- else -}}
 <span class="tokens unestimated" title="{{tierTitle .Tier}}">
@@ -186,10 +189,10 @@
 {{define "size-badge-ring"}}
 {{- if .Estimated -}}
 <span class="tokens" title="{{tokens .Tokens}} tokens — {{tierTitle .Tier}}">
+  {{if not .Complete}}<span class="u-dim" title="Some work below this has no estimate, so the total is a floor rather than a forecast">and more, not yet estimated</span>{{end}}
+  {{template "tier-ring" .Tier}}
   <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
   <span class="tokens-num">{{tokens .Tokens}}</span><span class="visually-hidden"> tokens</span>
-  {{template "tier-ring" .Tier}}
-  {{if not .Complete}}<span class="u-dim" title="Some work below this has no estimate, so the total is a floor rather than a forecast">and more, not yet estimated</span>{{end}}
 </span>
 {{- else -}}
 <span class="tokens unestimated" title="{{tierTitle .Tier}}">

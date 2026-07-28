@@ -80,6 +80,8 @@ var uiFuncs = template.FuncMap{
 	"tierSegments": tierSegments,
 	"tierTitle":    tierTitle,
 	"docIcon":      docIcon,
+	// Audit kinds are machine identifiers; an activity feed is for people.
+	"eventLabel": eventLabel,
 	// The inbox spells out what each answer will do, because these decisions are
 	// expensive to reverse and a sentence of prose is cheap.
 	"verbLabel":       verbLabel,
@@ -290,6 +292,92 @@ func tierTitle(v any) string {
 		return "Rough estimate — 1 of 3: sized from a name and a description"
 	default:
 		return "Not estimated — 0 of 3: nothing has been sized here yet"
+	}
+}
+
+// eventLabel turns an audit event kind into a short phrase a person can read.
+// The stored kinds are dotted identifiers meant for machines ("gate.evaluated");
+// an activity feed is for humans, so it says what happened (D-6). Anything
+// unmapped falls back to the identifier with its punctuation softened, so a new
+// event kind degrades to something legible rather than to nothing.
+func eventLabel(v any) string {
+	switch str(v) {
+	case "initiative.created":
+		return "created this initiative"
+	case "initiative.changed":
+		return "edited this initiative"
+	case "initiative.archived":
+		return "archived this initiative"
+	case "feature.created":
+		return "created this feature"
+	case "feature.updated":
+		return "edited this feature"
+	case "feature.transition":
+		return "moved this feature on"
+	case "feature.merged":
+		return "merged this feature"
+	case "feature.spec_stale":
+		return "flagged the specification as out of date"
+	case "task.created":
+		return "added a task"
+	case "task.deleted":
+		return "removed a task"
+	case "task.transition":
+		return "moved a task on"
+	case "task.review_comments":
+		return "left review comments"
+	case "devplan.decomposed":
+		return "broke the development plan into tasks"
+	case "document.registered":
+		return "attached a document"
+	case "document.indexed":
+		return "indexed a document"
+	case "document.validated":
+		return "validated a document"
+	case "document.transition":
+		return "moved a document on"
+	case "document.revision_created":
+		return "started a new revision"
+	case "document.marked_primary":
+		return "made a document the page body"
+	case "estimate.recorded":
+		return "recorded an estimate"
+	case "gate.evaluated":
+		return "checked whether this could proceed"
+	case "checkpoint.created", "checkpoint.raised":
+		return "raised a question for a person"
+	case "checkpoint.responded":
+		return "answered a question"
+	case "dispatch.queued":
+		return "queued an agent run"
+	case "dispatch.requeued":
+		return "queued an agent run again"
+	case "dispatch.running":
+		return "started an agent run"
+	case "dispatch.succeeded":
+		return "finished an agent run"
+	case "dispatch.failed":
+		return "had an agent run fail"
+	case "dispatch.cancelled":
+		return "cancelled an agent run"
+	case "budget.warning":
+		return "warned that spending is near its limit"
+	case "milestone.created":
+		return "created a milestone"
+	case "milestone.locked":
+		return "locked a milestone"
+	case "milestone.member_added":
+		return "added something to a milestone"
+	case "milestone.member_removed":
+		return "took something out of a milestone"
+	case "roadmap.created":
+		return "created a roadmap"
+	case "roadmap.entry_set":
+		return "placed a milestone on a roadmap"
+	case "worktree.created":
+		return "made a working copy of the repository"
+	default:
+		return strings.ReplaceAll(strings.ReplaceAll(str(v), ".", " "), "_", " ")
 	}
 }
 

@@ -2031,3 +2031,8 @@ dialog.modal::backdrop { background: var(--c-overlay); }
   gap: var(--sp-2);
 }
 .page-head-meta > .t-meta:has(> svg.icon:first-child) { display: flex; }
+
+/* A modal title's icon inherits 1.1em of a 17px heading — 18.7px, a fractional
+   size whose thin strokes rasterise with visible breaks. Pinned to an integer
+   inside the same 18–23px stroke band, so the weight stays correct. */
+.modal-head > .modal-title > .icon { width: 20px; height: 20px; }
