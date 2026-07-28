@@ -78,14 +78,54 @@
         <svg class="icon" aria-hidden="true"><use href="#i-tokens"/></svg><span>Work</span></a>
     </div>
 
-    {{/* The project tree is navigation furniture, not a work surface (D-7).
-         Native <details>, so disclosure survives an HTMX swap untouched. */}}
-    {{if .Tree}}
+    {{/* The project structure rail: it does not nest, it scopes (round 5). The
+         scope always follows the page — it is the nearest ancestor initiative of
+         whatever is being viewed — so there is no rail state to hold, and every
+         name gets the full width at any depth. */}}
+    {{with .Nav}}
     <div class="nav-group">
       <p class="nav-group-label">Project structure</p>
-      <div class="tree">
-        {{range .Tree}}{{template "nav-tree-node" .}}{{end}}
+
+      {{/* The trail: any ancestor is one click, and it answers "where am I"
+           without navigating. A trail, not a back button. */}}
+      {{with .Path}}
+      <div class="tree-path">
+        {{range .}}<a class="tree-crumb" href="{{.URL}}">{{if .Kind}}<svg class="icon icon-xs" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>{{end}}{{.Label}}</a><svg class="icon icon-xs crumb-sep" aria-hidden="true"><use href="#i-crumb-sep"/></svg>{{end}}
       </div>
+      {{end}}
+
+      {{/* Where we are. At the root this is the project and the way home; inside
+           an initiative it is that initiative's own page. */}}
+      <a class="tree-scope{{if not .AtRoot}} tree-scope--nested{{end}}" href="{{.Scope.URL}}">
+        <svg class="icon icon-sm icon-entity" data-entity="{{.Scope.Kind}}" aria-hidden="true"><use href="#i-{{.Scope.Kind}}"/></svg>
+        <span class="tree-scope-name">{{.Scope.Label}}</span>
+      </a>
+
+      {{/* The children of that scope, one level of inset, always. The right edge
+           carries one thing per row type: an initiative gets the drill arrow, a
+           feature gets its state dot — never both. */}}
+      {{with .Children}}
+      <div class="tree">
+        {{range .}}
+        <div class="tree-row">
+          <a class="tree-leaf" href="{{.URL}}" {{if .Here}}aria-current="page"{{end}}>
+            <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+            <span class="tree-label">{{.Name}}</span>
+          </a>
+          {{if .HasChildren}}
+          {{/* A link, not a button: the arrow navigates (the rail re-renders
+               because the page changed), so a button would need script to do
+               anything at all. */}}
+          <a class="tree-into" href="{{.URL}}" aria-label="Show what is inside {{.Name}}">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+          </a>
+          {{else if .State}}
+          <span class="state-dot" data-state="{{.State}}" role="img" aria-label="{{stateLabel .State}}"></span>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+      {{end}}
     </div>
     {{end}}
   </div>
@@ -96,33 +136,6 @@
   </div>
 </nav>
 {{end}}
-
-{{define "nav-tree-node"}}
-{{if .Children}}
-<details {{if .Open}}open{{end}}>
-  <summary>
-    <svg class="icon icon-sm twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
-    <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
-    <span class="tree-label">{{.Name}}</span>
-  </summary>
-  <div>
-    {{/* A branch needs its own page reachable too, not just its children. */}}
-    <a class="tree-leaf" href="{{.URL}}" {{if .Here}}aria-current="page"{{end}}>
-      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
-      <span class="tree-label u-dim">Overview</span>
-    </a>
-    {{range .Children}}{{template "nav-tree-node" .}}{{end}}
-  </div>
-</details>
-{{else}}
-<a class="tree-leaf" href="{{.URL}}" {{if .Here}}aria-current="page"{{end}}>
-  <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
-  <span class="tree-label">{{.Name}}</span>
-  {{if .State}}<span class="state-dot u-push" data-state="{{.State}}" role="img" aria-label="{{stateLabel .State}}"></span>{{end}}
-</a>
-{{end}}
-{{end}}
-
 
 {{/* ---------- Breadcrumbs (the only "up" control) ---------- */}}
 

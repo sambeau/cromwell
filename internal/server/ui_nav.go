@@ -2,116 +2,153 @@ package server
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"cromwell/internal/store"
 )
 
-// The navigation tree in the rail (DESIGN-008 §8): the project's initiatives and
-// features, as *navigation furniture* rather than a work surface (D-7). Browsing
-// proper is one page at a time, by breadcrumb and by a page's own list of
-// children; this exists so you can jump sideways without going up first.
+// The project-structure rail (DESIGN-008 §8, design round 5). It does not nest;
+// it *scopes*. A nested tree cost ~29px of indent per level, so a name had 187px
+// at the root and 71px four levels down — unusable on a project of any real
+// depth. Scoped, every name gets the full width at any depth, and depth is free.
 //
-// It is deliberately shallow work: the roll-up tree — sizes, tiers, the honest
-// "?" for unestimated work — is the analytical view, and that belongs to Stage B.
+// The one rule that keeps this simple: **the rail has no location of its own.
+// The scope follows the page.** It always shows the nearest ancestor initiative
+// of whatever is being viewed, plus that initiative's children. There is no
+// independent rail state to persist, reconcile, or "reveal current item" into.
+//
+// The scope is therefore derived from the page's breadcrumbs — which are built
+// from the entity's path — and never from client-side state. Anything held in
+// JavaScript would be lost by the first HTMX swap that replaced the rail, and a
+// shared link would not reproduce it.
 
-// navNode is one line in the rail's tree. A node with children renders as a
-// native <details> so disclosure survives an HTMX swap with no JavaScript; a
-// leaf renders as a link carrying its lifecycle state as a dot.
+// navNode is one row in the rail: a child of the current scope.
 type navNode struct {
-	Kind     string // "initiative" | "feature" — also selects the icon
-	Name     string
-	URL      string
-	State    string // feature lifecycle state; empty for initiatives
-	Here     bool   // this node is the page being viewed
-	Open     bool   // an ancestor of the current page, so it starts expanded
+	Kind        string // "initiative" | "feature" — selects the icon
+	Name        string
+	URL         string
+	State       string // feature lifecycle state; empty for initiatives
+	Here        bool   // this row is the page being viewed
+	HasChildren bool   // an initiative, so it gets the drill arrow
+}
+
+// navScope is the whole rail: the trail of ancestors above the current scope,
+// the scope itself, and its children one level deep.
+type navScope struct {
+	Path     []crumb // ancestors above the scope; empty at the root
+	Scope    crumb   // where we are: the project, or an initiative
+	AtRoot   bool    // the scope is the project itself
 	Children []navNode
 }
 
-// navTree builds the rail's tree. The crumbs of the current page tell it which
-// branches to open and which leaf to mark, so the tree always shows where you
-// are without a second lookup.
-func (s *Server) navTree(ctx context.Context, crumbs []crumb) ([]navNode, error) {
-	onPath := make(map[string]bool, len(crumbs))
-	for _, c := range crumbs {
-		if c.URL != "" {
-			onPath[c.URL] = true
+// navTree builds the rail for the page described by these breadcrumbs. The scope
+// is the last crumb that names an initiative; failing that, the project.
+func (s *Server) navTree(ctx context.Context, crumbs []crumb) (*navScope, error) {
+	// Find the nearest initiative in the trail. For an initiative page that is
+	// the page itself; for a feature or a document under one, it is the parent.
+	scopeIdx := -1
+	for i, c := range crumbs {
+		if c.Kind == "initiative" {
+			scopeIdx = i
 		}
-		if c.Here && c.URL != "" {
-			onPath[c.URL] = true
-		}
-	}
-	here := ""
-	if n := len(crumbs); n > 0 && crumbs[n-1].Here {
-		here = crumbs[n-1].URL
 	}
 
-	roots, err := store.RootInitiatives(ctx, s.Store.Pool)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]navNode, 0, len(roots))
-	for i := range roots {
-		node, err := s.navNodeFor(ctx, roots[i], onPath, here)
+	out := &navScope{}
+	if scopeIdx < 0 {
+		// At (or effectively at) the project root: the scope is the project and
+		// the children are the top-level initiatives.
+		out.AtRoot = true
+		out.Scope = crumb{Label: "Project", URL: "/ui/project", Kind: "project"}
+		roots, err := store.RootInitiatives(ctx, s.Store.Pool)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, node)
+		here := currentURL(crumbs)
+		for i := range roots {
+			node, err := s.navChildFor(ctx, roots[i], here)
+			if err != nil {
+				return nil, err
+			}
+			out.Children = append(out.Children, node)
+		}
+		return out, nil
+	}
+
+	out.Scope = crumbs[scopeIdx]
+	out.Path = append(out.Path, crumbs[:scopeIdx]...)
+	// The trail's own crumbs are links; the scope is rendered separately.
+	for i := range out.Path {
+		out.Path[i].Here = false
+	}
+
+	in, err := s.initiativeByURL(ctx, out.Scope.URL)
+	if err != nil || in == nil {
+		return out, err
+	}
+	here := currentURL(crumbs)
+
+	kids, err := store.ChildInitiatives(ctx, s.Store.Pool, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range kids {
+		node, err := s.navChildFor(ctx, kids[i], here)
+		if err != nil {
+			return nil, err
+		}
+		out.Children = append(out.Children, node)
+	}
+
+	path := strings.TrimPrefix(out.Scope.URL, "/ui/i/")
+	feats, err := store.FeaturesForInitiative(ctx, s.Store.Pool, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range feats {
+		u := "/ui/f/" + path + "/" + feats[i].Slug
+		out.Children = append(out.Children, navNode{
+			Kind:  "feature",
+			Name:  feats[i].Name,
+			URL:   u,
+			State: string(feats[i].State),
+			Here:  u == here,
+		})
 	}
 	return out, nil
 }
 
-// navNodeFor builds one initiative's node and, recursively, everything under it.
-func (s *Server) navNodeFor(ctx context.Context, in store.Initiative, onPath map[string]bool, here string) (navNode, error) {
+// navChildFor builds one child-initiative row. It carries the drill arrow,
+// because an initiative always has an inside to go to.
+func (s *Server) navChildFor(ctx context.Context, in store.Initiative, here string) (navNode, error) {
 	path, err := s.initiativePath(ctx, in.ID)
 	if err != nil {
 		return navNode{}, err
 	}
-	url := "/ui/i/" + path
-	node := navNode{Kind: "initiative", Name: in.Name, URL: url}
-
-	kids, err := store.ChildInitiatives(ctx, s.Store.Pool, in.ID)
-	if err != nil {
-		return navNode{}, err
-	}
-	for i := range kids {
-		child, err := s.navNodeFor(ctx, kids[i], onPath, here)
-		if err != nil {
-			return navNode{}, err
-		}
-		node.Children = append(node.Children, child)
-	}
-
-	feats, err := store.FeaturesForInitiative(ctx, s.Store.Pool, in.ID)
-	if err != nil {
-		return navNode{}, err
-	}
-	for i := range feats {
-		fURL := "/ui/f/" + path + "/" + feats[i].Slug
-		node.Children = append(node.Children, navNode{
-			Kind:  "feature",
-			Name:  feats[i].Name,
-			URL:   fURL,
-			State: string(feats[i].State),
-			Here:  fURL == here,
-		})
-	}
-
-	node.Here = url == here
-	// Open this branch when the current page is inside it, so the tree arrives
-	// already showing where you are.
-	node.Open = onPath[url] || node.Here || anyOpen(node.Children)
-	return node, nil
+	u := "/ui/i/" + path
+	return navNode{Kind: "initiative", Name: in.Name, URL: u, Here: u == here, HasChildren: true}, nil
 }
 
-func anyOpen(nodes []navNode) bool {
-	for _, n := range nodes {
-		if n.Here || n.Open || anyOpen(n.Children) {
-			return true
+// initiativeByURL resolves a rail scope back to its initiative. The URL was
+// built from the entity's own slug path, so this is a lookup, not a parse of
+// anything a user typed.
+func (s *Server) initiativeByURL(ctx context.Context, url string) (*store.Initiative, error) {
+	p := strings.TrimPrefix(url, "/ui/i/")
+	if p == "" || p == url {
+		return nil, nil
+	}
+	return s.Store.InitiativeBySlugPath(ctx, strings.Split(p, "/"))
+}
+
+// currentURL is the address of the page being viewed, so the rail can mark it.
+func currentURL(crumbs []crumb) string {
+	for i := len(crumbs) - 1; i >= 0; i-- {
+		if crumbs[i].Here {
+			return crumbs[i].URL
 		}
 	}
-	return false
+	return ""
 }
 
 // --- headed: views telling the shell their title and breadcrumb trail --------
@@ -124,6 +161,7 @@ func anyOpen(nodes []navNode) bool {
 
 func (p *entityPage) headTitle() string   { return p.Title }
 func (p *entityPage) headCrumbs() []crumb { return p.Breadcrumbs }
+
 func (p entityDocPage) headTitle() string { return p.Document.Title }
 func (p entityDocPage) headCrumbs() []crumb {
 	return p.Breadcrumbs
@@ -148,6 +186,6 @@ func (p taskPage) headCrumbs() []crumb {
 	return append(c, crumb{Label: p.Task.Title, Kind: "task", Here: true})
 }
 
-// milestoneRef is the id-to-URL helper the templates use for click-through.
+// milestoneURL and roadmapURL are the id-to-URL helpers for click-through.
 func milestoneURL(id uuid.UUID) string { return "/ui/m/" + id.String() }
 func roadmapURL(id uuid.UUID) string   { return "/ui/r/" + id.String() }

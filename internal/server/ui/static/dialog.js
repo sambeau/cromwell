@@ -71,4 +71,34 @@
     var summary = open.querySelector('summary');
     if (summary) summary.focus();
   });
+
+  // --- 3. Arrow keys in the project-structure rail -------------------------
+  //
+  // The rail scopes rather than nests, so drilling in and stepping back out are
+  // the two moves it has. Without these it is mouse-only: the drill arrow is a
+  // link you can tab to, but "go in / go up" should be on the arrow keys where
+  // anyone who has used a tree will look for them. (Design round 5 asks for it.)
+  //
+  // Both are ordinary navigations, because the scope follows the page — there is
+  // no rail state to change independently.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    var el = document.activeElement;
+    if (!el || !el.closest) return;
+    var row = el.closest('.tree-row');
+    var inRail = row || el.closest('.tree-scope, .tree-path');
+    if (!inRail) return;
+
+    if (e.key === 'ArrowRight') {
+      // Into the focused row, if it has an inside to go to.
+      var into = row && row.querySelector('.tree-into');
+      if (into) { e.preventDefault(); into.click(); }
+      return;
+    }
+    // Up one level: the nearest ancestor in the trail, else the scope itself.
+    var crumbs = document.querySelectorAll('.tree-path .tree-crumb');
+    var up = crumbs.length ? crumbs[crumbs.length - 1]
+                           : document.querySelector('.tree-scope--nested');
+    if (up) { e.preventDefault(); up.click(); }
+  });
 })();

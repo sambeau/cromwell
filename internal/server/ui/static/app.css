@@ -681,34 +681,88 @@ code, kbd, samp, pre, .t-mono { font-family: var(--font-mono); font-size: 0.92em
   font-weight: var(--fw-semibold);
 }
 
-/* Project tree — nested native <details>, so it works with zero JS and
-   survives HTMX fragment swaps. */
-.tree { font-size: var(--fs-sm); }
-.tree details > summary {
-  list-style: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--c-text-2);
-  min-height: 28px;
+/* Project structure — scoped, not nested.
+
+   A fixed-width rail cannot hold an unbounded hierarchy. Nesting cost 29px a
+   level, so a name had 187px at the root and 71px at depth four; "Checkpoint
+   questions" is 20 characters and stopped fitting at depth three. Scoping to
+   one initiative at a time makes depth free — every name gets the same 187px
+   however deep in the project it sits.
+
+   THE SCOPE FOLLOWS THE PAGE. The rail always shows the nearest ancestor
+   initiative of whatever you are viewing. That is the whole reason this is
+   simple: there is no second cursor to keep in sync with the page, no way for
+   the two to disagree, and no "reveal current item" control to build. The
+   drill arrow is a shortcut, not a mode.
+
+   Consequence for the server: the scope is derived from the current entity,
+   so it must come out of the URL. Do not hold it in client-side state — the
+   first HTMX swap that replaces the rail would lose it, and a shared link
+   would not reproduce it. */
+
+/* The ancestors, as a trail. A single back arrow only undoes one level; four
+   levels down, getting home would be four clicks and four page loads. */
+.tree-path {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+  padding: 0 var(--sp-2) var(--sp-1);
 }
-.tree details > summary::-webkit-details-marker { display: none; }
-.tree details > summary:hover { background: var(--c-surface-2); color: var(--c-text); }
-.tree .twisty { color: var(--c-text-3); transition: transform var(--dur) var(--ease); flex: none; }
-.tree details[open] > summary > .twisty { transform: rotate(90deg); }
-.tree .tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree details > div { padding-left: var(--sp-4); border-left: var(--bw) solid var(--c-line); margin-left: 13px; }
-.tree .tree-leaf {
+.tree-crumb {
+  display: inline-flex; align-items: center; gap: 4px;
+  max-width: 18ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  padding: 2px 4px; border-radius: var(--r-xs);
+  font-size: var(--fs-2xs); color: var(--c-text-3); text-decoration: none;
+}
+a.tree-crumb:hover { background: var(--c-surface-2); color: var(--c-text-2); text-decoration: none; }
+
+/* Where you are. At the root this is the project and doubles as the way
+   home; inside an initiative it is that initiative, and links to its page. */
+.tree-scope {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm); font-weight: var(--fw-semibold);
+  color: var(--c-text); text-decoration: none;
+}
+.tree-scope:hover { background: var(--c-surface-2); text-decoration: none; }
+.tree-scope-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-scope--nested {
+  border-bottom: var(--bw) solid var(--c-line);
+  border-radius: 0;
+  margin-bottom: var(--sp-2);
+}
+
+/* Children of the current scope. One level of inset, always. */
+.tree { font-size: var(--fs-sm); }
+.tree-row { display: flex; align-items: center; }
+.tree-row .tree-leaf { flex: 1 1 auto; min-width: 0; }
+.tree-leaf {
   display: flex; align-items: center; gap: var(--sp-2);
   padding: var(--sp-2); padding-left: calc(var(--sp-2) + 15px);
   border-radius: var(--r-sm);
   color: var(--c-text-2); text-decoration: none; min-height: 28px;
 }
-.tree .tree-leaf:hover { background: var(--c-surface-2); color: var(--c-text); text-decoration: none; }
-.tree .tree-leaf[aria-current="page"] { background: var(--c-accent-soft); color: var(--c-accent-text); font-weight: var(--fw-semibold); }
+.tree-leaf:hover { background: var(--c-surface-2); color: var(--c-text); text-decoration: none; }
+.tree-leaf[aria-current="page"] {
+  background: var(--c-accent-soft); color: var(--c-accent-text);
+  font-weight: var(--fw-semibold);
+}
+.tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Drill in. Revealed on hover and focus so the resting state is one clean
+   column of state dots — but a hover affordance does not exist on touch, so
+   it is permanent wherever hover is unavailable. */
+.tree-into {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex: none;
+  border: 0; background: none; border-radius: var(--r-sm);
+  color: var(--c-text-3); cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.tree-row:hover .tree-into,
+.tree-into:focus-visible { opacity: 1; }
+.tree-into:hover { background: var(--c-surface-3); color: var(--c-text); }
+@media (hover: none) { .tree-into { opacity: 1; } }
 
 .nav-foot {
   flex: none;
@@ -1959,10 +2013,9 @@ dialog.modal::backdrop { background: var(--c-overlay); }
 
 
 /* ===== Project addition ==================================================
-   One rule from the round-1 note absent from the delivered stylesheet in
-   rounds 2, 3 and 4 (round 2's §7 records it as adopted; the rule is missing
-   and the examples still carry the markup that breaks). Flagged back each time;
-   kept here so the bug does not return.
+   One rule from the round-1 note absent from the delivered stylesheet in every
+   round since (round 2's §7 records it as adopted; the rule is missing and the
+   examples still carry the markup that breaks). Flagged back each time.
 
    Where a small .t-meta label opens with an icon ("Belongs to X", "Planned in
    Y", the actor in the navigation footer), the mark must stay on the label's

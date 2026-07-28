@@ -433,7 +433,7 @@ type pageData struct {
 	Actor  string
 	Title  string
 	Crumbs []crumb
-	Tree   []navNode
+	Nav    *navScope
 	Data   any
 	// AssetV busts the browser cache when the embedded CSS or JS changes.
 	AssetV string
@@ -453,8 +453,8 @@ func (s *Server) page(ctx context.Context, active string, data any) pageData {
 		p.Title = h.headTitle()
 		p.Crumbs = h.headCrumbs()
 	}
-	if tree, err := s.navTree(ctx, p.Crumbs); err == nil {
-		p.Tree = tree
+	if nav, err := s.navTree(ctx, p.Crumbs); err == nil {
+		p.Nav = nav
 	} else {
 		// The tree is navigation furniture; losing it must never cost the page.
 		s.Log.Warn("ui nav tree", "err", err)
