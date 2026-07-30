@@ -278,6 +278,14 @@ Sam reports retrospectives being valuable for — complete the cycle, then go ba
 and pick up what was noted along the way. Logging them against the task costs
 nothing now and feeds C-9.
 
+**Known gap after the C-1 implementation (2026-07-30).** Severity is enforced on
+both review paths but only *recorded* on one. Code review audits dropped minors
+as `task.review_minor_findings`. Document review does not: `document_comments`
+has no severity column, so a reviewer's classification decides the verdict at
+parse time and is then lost, and minor findings on an *approved* document are
+not persisted at all. Closing it needs a migration, so it is its own small
+piece rather than a quiet addition — recorded here as **C-1a**.
+
 ### 3.4 Rubber-stamp approval is half-defended
 
 The MAST taxonomy names rubber-stamp approval (FM-3.1) as **the single most
