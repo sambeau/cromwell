@@ -360,6 +360,10 @@ func Decide(ev bus.Event, snap Snapshot) []Action {
 		return decideCheckpointResponded(e, snap)
 	case bus.FeatureStarted:
 		return []Action{DispatchReadyTasks{FeatureID: e.FeatureID}}
+	case bus.FeatureCreated:
+		return []Action{ReconcileAuthoring{OwnerType: "feature", OwnerID: e.FeatureID}}
+	case bus.FeatureDescribed:
+		return []Action{ReconcileAuthoring{OwnerType: "feature", OwnerID: e.FeatureID}}
 	}
 	return nil
 }

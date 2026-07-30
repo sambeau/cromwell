@@ -188,6 +188,68 @@ func (h *harness) reviseAndApproveDesign(path, amendment string) {
 	h.approveDesignAsHuman(revPath)
 }
 
+// TestFeatureTriggersUnderApprovedDesign is SPEC-009 FR-4.3/FR-4.4: approve
+// the design once, then keep planning — a described feature created under it
+// is specced on creation, an undescribed one is left in silence (FR-4.5), and
+// giving it a description releases it.
+func TestFeatureTriggersUnderApprovedDesign(t *testing.T) {
+	h := newHarness(t)
+	h.enableAuthoringChain()
+	ctx := context.Background()
+
+	if code, out := h.call("POST", "/api/initiatives", map[string]string{"slug": "pf", "name": "Platform"}); code != 201 {
+		t.Fatalf("create initiative: %d %v", code, out)
+	}
+	designPath := "docs/design/pf.md"
+	h.registerDoc(designPath, "design", "initiative", "pf", cascadeDesignV1)
+	h.approveDesignAsHuman(designPath)
+
+	countWriteSpec := func(feature string) int {
+		f, err := h.srv.featureByPath(ctx, "pf/"+feature)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, err := store.CountDispatchesForRef(ctx, h.srv.Store.Pool, "feature", f.ID, "write-spec")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// A described feature created under the approved design is specced now.
+	if code, out := h.call("POST", "/api/features", map[string]string{
+		"initiative_path": "pf", "slug": "told", "name": "The told behaviour",
+		"description": "Everything the told behaviour must do."}); code != 201 {
+		t.Fatalf("create described feature: %d %v", code, out)
+	}
+	h.eventually("write-spec dispatched for the described feature", func() bool {
+		return countWriteSpec("told") == 1
+	})
+
+	// An undescribed feature is silence: no dispatch, no checkpoint (FR-4.5).
+	if code, out := h.call("POST", "/api/features", map[string]string{
+		"initiative_path": "pf", "slug": "stub", "name": "The stub behaviour"}); code != 201 {
+		t.Fatalf("create undescribed feature: %d %v", code, out)
+	}
+	stub, err := h.srv.featureByPath(ctx, "pf/stub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := countWriteSpec("stub"); got != 0 {
+		t.Fatalf("an undescribed feature must not be dispatched; got %d", got)
+	}
+
+	// Describing it through the UI action is the release.
+	if code, body := h.postForm("/ui/entity/describe", map[string]string{
+		"ref_type": "feature", "id": stub.ID.String(),
+		"description": "Now the stub behaviour is real."}); code != 200 {
+		t.Fatalf("describe: %d\n%s", code, truncate(body, 300))
+	}
+	h.eventually("write-spec dispatched once the feature is described", func() bool {
+		return countWriteSpec("stub") == 1
+	})
+}
+
 // TestDesignRevisionCascade is SPEC-009 FR-9's acceptance, both halves:
 // revising a design over three specced features raises exactly one checkpoint
 // listing the three specs; answering invalidate on two supersedes those two

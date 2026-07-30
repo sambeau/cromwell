@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"cromwell/internal/bus"
 	"cromwell/internal/store"
 )
 
@@ -123,6 +124,7 @@ func (s *Server) mcpCreateFeature(r *http.Request, args map[string]any) (any, er
 		return nil, err
 	}
 	s.notifyEntityChanged("feature", f.ID)
+	s.Bus.Publish(bus.FeatureCreated{FeatureID: f.ID})
 	path := initPath + "/" + slug
 	return map[string]any{
 		"path": path, "name": f.Name, "description": f.Description,
@@ -183,6 +185,10 @@ func (s *Server) mcpUpdateFeature(r *http.Request, args map[string]any) (any, er
 		return nil, err
 	}
 	s.notifyEntityChanged("feature", f.ID)
+	// Describing a feature is an authoring trigger (SPEC-009 FR-4.3).
+	if description != nil && *description != "" {
+		s.Bus.Publish(bus.FeatureDescribed{FeatureID: f.ID})
+	}
 	updated, err := store.GetFeature(ctx, s.Store.Pool, f.ID)
 	if err != nil {
 		return nil, err

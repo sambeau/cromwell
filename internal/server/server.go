@@ -235,6 +235,7 @@ func (s *Server) heartbeat(ctx context.Context) {
 		case <-t.C:
 			s.Dispatcher.StallSweep(ctx)
 			s.Dispatcher.RetrySweep(ctx)
+			s.ReconcileAuthoringSweep(ctx)
 			s.GCWorktrees(ctx)
 			s.Dispatcher.Kick()
 		}

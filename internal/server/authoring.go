@@ -58,17 +58,28 @@ func (s *Server) specReady(ctx context.Context, f *store.Feature) lifecycle.Gate
 // safe to call at any time on any feature — which is what lets the heartbeat
 // use it as a safety net.
 func (s *Server) reconcileFeatureAuthoring(ctx context.Context, featureID uuid.UUID) error {
+	purpose, err := s.neededAuthoring(ctx, featureID)
+	if err != nil || purpose == "" {
+		return err
+	}
+	return s.queueAuthoring(ctx, purpose, featureID)
+}
+
+// neededAuthoring evaluates the two invariants for a feature and names the
+// authoring purpose that would restore them, or "" when both hold (or the
+// feature is not in a state the invariants govern).
+func (s *Server) neededAuthoring(ctx context.Context, featureID uuid.UUID) (string, error) {
 	f, err := store.GetFeature(ctx, s.Store.Pool, featureID)
 	if err != nil {
 		if err == store.ErrNotFound {
-			return nil
+			return "", nil
 		}
-		return err
+		return "", err
 	}
 	// A feature past the forming stage has a contract already; re-authoring
 	// one mid-flight is the revision cascade's job, not this one.
 	if f.State != lifecycle.FeatIdea {
-		return nil
+		return "", nil
 	}
 
 	// Invariant 1 — the spec.
@@ -80,24 +91,66 @@ func (s *Server) reconcileFeatureAuthoring(ctx context.Context, featureID uuid.U
 		// entirely normal, and a checkpoint here would be noise at exactly the
 		// moment the system should be quiet (FR-4.5).
 		if f.Description == "" {
-			return nil
+			return "", nil
 		}
 		if g := s.specReady(ctx, f); !g.Pass {
-			return nil
+			return "", nil
 		}
-		return s.queueAuthoring(ctx, "write-spec", f.ID)
+		return "write-spec", nil
 	}
 
 	// Invariant 2 — the dev-plan, once the spec is approved.
 	if spec.State != lifecycle.DocApproved {
-		return nil
+		return "", nil
 	}
 	if _, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "dev_plan", "feature", f.ID); err == nil {
-		return nil // already has one; nothing to restore
+		return "", nil // already has one; nothing to restore
 	} else if err != store.ErrNotFound {
-		return err
+		return "", err
 	}
-	return s.queueAuthoring(ctx, "write-dev-plan", f.ID)
+	return "write-dev-plan", nil
+}
+
+// ReconcileAuthoringSweep is the heartbeat's safety net (FR-4.7): every
+// forming feature whose invariants are unsatisfied and whose needed purpose
+// has never been attempted gets its dispatch, so a lost trigger event cannot
+// strand a feature. Never-attempted is the boundary on purpose: a failed
+// authoring dispatch already has a dispatch-failure checkpoint governing its
+// retry, and a sweep that re-enqueued it every thirty seconds would override
+// a human's answer to that question.
+func (s *Server) ReconcileAuthoringSweep(ctx context.Context) {
+	rows, err := s.Store.Pool.Query(ctx, `SELECT id FROM features WHERE state = 'idea'`)
+	if err != nil {
+		s.Log.Error("authoring sweep", "err", err)
+		return
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			s.Log.Error("authoring sweep", "err", err)
+			return
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		s.Log.Error("authoring sweep", "err", err)
+		return
+	}
+	for _, id := range ids {
+		purpose, err := s.neededAuthoring(ctx, id)
+		if err != nil || purpose == "" {
+			continue
+		}
+		n, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "feature", id, purpose)
+		if err != nil || n > 0 {
+			continue
+		}
+		if err := s.queueAuthoring(ctx, purpose, id); err != nil {
+			s.Log.Error("authoring sweep", "feature", id, "err", err)
+		}
+	}
 }
 
 // reconcileAuthoringScope expands an owner into the features it releases and

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"cromwell/internal/bus"
 	"cromwell/internal/lifecycle"
 	"cromwell/internal/sizing"
 	"cromwell/internal/store"
@@ -103,6 +104,12 @@ func (s *Server) handleEntityDescribe(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.renderEntity(w, r, refType, id, "", err.Error())
 		return
+	}
+	// A feature gaining a description is an authoring trigger (SPEC-009
+	// FR-4.3): under an approved design, describing it is what releases its
+	// spec. An emptied description is not.
+	if refType == "feature" && desc != nil && *desc != "" {
+		s.Bus.Publish(bus.FeatureDescribed{FeatureID: id})
 	}
 	s.renderEntity(w, r, refType, id, "The description was updated.", "")
 }
@@ -393,14 +400,17 @@ func (s *Server) handleEntityFeatureCreate(w http.ResponseWriter, r *http.Reques
 		s.renderEntity(w, r, "initiative", initID, "", "A short slug and a name are both required to create a feature.")
 		return
 	}
+	var f *store.Feature
 	err = s.Store.WithTx(r.Context(), func(tx pgx.Tx) error {
-		_, e := store.CreateFeature(r.Context(), tx, initID, slug, name, strings.TrimSpace(r.FormValue("description")), s.uiActor())
+		var e error
+		f, e = store.CreateFeature(r.Context(), tx, initID, slug, name, strings.TrimSpace(r.FormValue("description")), s.uiActor())
 		return e
 	})
 	if err != nil {
 		s.renderEntity(w, r, "initiative", initID, "", err.Error())
 		return
 	}
+	s.Bus.Publish(bus.FeatureCreated{FeatureID: f.ID})
 	s.renderEntity(w, r, "initiative", initID, "Feature created: "+name+".", "")
 }
 

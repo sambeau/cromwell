@@ -92,6 +92,24 @@ type FeatureStarted struct {
 
 func (FeatureStarted) EventKind() string { return "feature.started" }
 
+// FeatureCreated and FeatureDescribed are the authoring invariant's two
+// entity-side triggers (SPEC-009 FR-4.3, FR-4.4): a feature created or
+// given a description under an already-approved design should be specced
+// now, not when the next document event happens along. Published after the
+// creating transaction commits. They are latency, not correctness — the
+// heartbeat sweep repairs a lost one.
+type FeatureCreated struct {
+	FeatureID uuid.UUID
+}
+
+func (FeatureCreated) EventKind() string { return "feature.created" }
+
+type FeatureDescribed struct {
+	FeatureID uuid.UUID
+}
+
+func (FeatureDescribed) EventKind() string { return "feature.described" }
+
 // CheckpointRaised is a presentation-only signal that a checkpoint has just
 // been created (DESIGN-007 §6, FR-8.2). Checkpoint creation emits no workflow
 // event — the rule engine acts on responses, not raises — so this never enters

@@ -217,6 +217,7 @@ func (s *Server) handleCreateFeature(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err)
 		return
 	}
+	s.Bus.Publish(bus.FeatureCreated{FeatureID: f.ID})
 	writeJSON(w, 201, f)
 }
 
