@@ -162,6 +162,8 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 		return err
 	case rules.EvaluateContractGate:
 		return s.evaluateContractGate(ctx, a.FeatureID)
+	case rules.ReconcileAuthoring:
+		return s.reconcileAuthoringScope(ctx, a.OwnerType, a.OwnerID)
 	case rules.ReindexDocument:
 		return s.reindexDocument(ctx, a.DocID)
 	case rules.ArchiveInitiative:

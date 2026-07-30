@@ -18,11 +18,17 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"cromwell/internal/config"
 	"cromwell/internal/lifecycle"
 	"cromwell/internal/store"
 )
@@ -93,6 +99,31 @@ func (s *Server) reconcileFeatureAuthoring(ctx context.Context, featureID uuid.U
 	return s.queueAuthoring(ctx, "write-dev-plan", f.ID)
 }
 
+// reconcileAuthoringScope expands an owner into the features it releases and
+// restores the invariants over each. An initiative reaches only its *direct*
+// child features: G0's one-level rule lives here as much as in the gate, so a
+// design approved at the top of a tree never specs work under a sub-initiative
+// whose own design nobody has approved (FR-3.2).
+func (s *Server) reconcileAuthoringScope(ctx context.Context, ownerType string, ownerID uuid.UUID) error {
+	switch ownerType {
+	case "feature":
+		return s.reconcileFeatureAuthoring(ctx, ownerID)
+	case "initiative":
+		features, err := store.FeaturesForInitiative(ctx, s.Store.Pool, ownerID)
+		if err != nil {
+			return err
+		}
+		for i := range features {
+			if err := s.reconcileFeatureAuthoring(ctx, features[i].ID); err != nil {
+				return err
+			}
+		}
+	}
+	// A design owned by the project releases nothing on its own: a project is
+	// not an initiative, and its features live below one.
+	return nil
+}
+
 // queueAuthoring enqueues an authoring dispatch for a feature. The idempotency
 // key counts the dispatches this feature has already had for the purpose, so a
 // replayed event — or a heartbeat reconciling the same invariant a second time
@@ -104,10 +135,13 @@ func (s *Server) queueAuthoring(ctx context.Context, purpose string, featureID u
 	}
 	role := cfg.Assignments[purpose]
 	if role == "" {
-		// A project that has not bound the purpose to a role cannot author.
-		// That is a configuration problem for a human, not a silent stall.
-		return s.configErrorCheckpoint(ctx, "feature", featureID,
-			fmt.Errorf("no role is assigned to %q in config.yaml, so nothing can write this document", purpose))
+		// A project that has not assigned an authoring role has not opted into
+		// the chain, and its humans write these documents by hand as they
+		// always have. That is a working project, not a broken one — so this
+		// is silence, not a checkpoint. Raising one here would mean every
+		// project that predates the authoring chain started complaining the
+		// moment it upgraded.
+		return nil
 	}
 	model, err := s.modelForPurpose(cfg, purpose, role)
 	if err != nil {
@@ -122,4 +156,105 @@ func (s *Server) queueAuthoring(ctx context.Context, purpose string, featureID u
 		_, err = store.EnqueueDispatch(ctx, tx, purpose, role, model, "feature", featureID, key)
 		return err
 	})
+}
+
+// AuthoredDocument is the payload of a submit_document outcome.
+type AuthoredDocument struct {
+	Body      string `json:"body"`
+	Reasoning string `json:"reasoning"`
+}
+
+// validateAuthoredDocument returns the dispatch's outcome validator, closing
+// over the manifest so a structurally-wrong document is rejected *within the
+// agent's turn* and it can correct and resubmit (FR-6.4). Rejecting after the
+// dispatch instead would mean a whole new dispatch to fix a missing heading.
+//
+// Links are not checked here: the file does not exist yet, so a link checker
+// would fail every relative reference. They are checked on submission, once
+// the document is on disk where its neighbours are.
+func validateAuthoredDocument(m *config.Manifest) func(json.RawMessage) error {
+	return func(raw json.RawMessage) error {
+		var out AuthoredDocument
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return fmt.Errorf("document outcome: %w", err)
+		}
+		if strings.TrimSpace(out.Body) == "" {
+			return fmt.Errorf("document outcome: the body is empty — submit the whole file, front matter included")
+		}
+		report := lifecycle.Validate(m, out.Body, func(string) bool { return true })
+		if report.Valid {
+			return nil
+		}
+		var b strings.Builder
+		b.WriteString("the document does not match the required structure:\n")
+		for _, iss := range report.Issues {
+			fmt.Fprintf(&b, "- %s: %s\n", iss.Check, iss.Detail)
+		}
+		b.WriteString("Fix these and call submit_document again.")
+		return errors.New(b.String())
+	}
+}
+
+// fileAuthoredDocument writes an authored document into the repository,
+// registers it, and submits it for review — one path, so a document can never
+// exist on disk without a row, or as a row pointing at nothing.
+//
+// The agent chose none of this: not the path, not the owner, not the moment it
+// is committed. That is the standing convention for implicit context (vision
+// §8), and it is why submit_document takes a body and nothing else.
+func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, docType, body, actor string) error {
+	f, err := store.GetFeature(ctx, s.Store.Pool, featureID)
+	if err != nil {
+		return err
+	}
+	path, err := s.authoredDocPath(ctx, f, docType)
+	if err != nil {
+		return err
+	}
+	abs := filepath.Join(s.RepoRoot, path)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+		return err
+	}
+	if _, err := s.RegisterDocForOwner(ctx, path, docType, "feature", &f.ID, actor); err != nil {
+		return err
+	}
+	// Committing is for durability and history, not for detection: the git
+	// hook only ever sees commits, and an agent's write is uncommitted at the
+	// moment it happens, so the notification comes from SubmitDoc's own
+	// transition rather than from git (FR-7.2).
+	s.commitDocument(path, fmt.Sprintf("cromwell: %s authored for %s", docType, f.Slug))
+	_, _, err = s.SubmitDoc(ctx, path, actor)
+	return err
+}
+
+// authoredDocPath is where a document of a type lives for a feature. Specs and
+// dev-plans sit beside the design they translate, under a docs/ tree keyed by
+// the initiative path, so a person browsing the repository finds a feature's
+// papers together.
+func (s *Server) authoredDocPath(ctx context.Context, f *store.Feature, docType string) (string, error) {
+	initPath, err := s.initiativePath(ctx, f.InitiativeID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join("docs", initPath, f.Slug, docType+".md"), nil
+}
+
+// commitDocument commits one path with cromwell as the author. A failure is
+// logged rather than raised: the document is registered and submitted either
+// way, and a repository that cannot be committed to is a problem for a person,
+// not a reason to lose the work.
+func (s *Server) commitDocument(path, message string) {
+	if _, err := gitIn(s.RepoRoot, "add", "--", path); err != nil {
+		s.Log.Warn("could not stage authored document", "path", path, "err", err)
+		return
+	}
+	if _, err := gitIn(s.RepoRoot, "commit", "-m", message, "--author", "cromwell <cromwell@localhost>", "--", path); err != nil {
+		s.Log.Warn("could not commit authored document", "path", path, "err", err)
+	}
 }

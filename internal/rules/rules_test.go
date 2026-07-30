@@ -105,10 +105,10 @@ func TestSpecApprovalEvaluatesG1(t *testing.T) {
 		DocID: d.ID, From: lifecycle.DocReviewing, To: lifecycle.DocApproved,
 		Event: lifecycle.DocApprove,
 	}, snap)
-	if len(actions) != 1 {
-		t.Fatalf("want EvaluateContractGate: %+v", actions)
+	if len(actions) != 2 {
+		t.Fatalf("want [reconcile authoring, EvaluateContractGate]: %+v", actions)
 	}
-	if g := actions[0].(EvaluateContractGate); g.FeatureID != feat.ID {
+	if g := actions[1].(EvaluateContractGate); g.FeatureID != feat.ID {
 		t.Errorf("wrong feature: %+v", g)
 	}
 

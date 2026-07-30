@@ -71,6 +71,22 @@ type EvaluateContractGate struct {
 
 func (EvaluateContractGate) ActionKind() string { return "evaluate_contract_gate" }
 
+// ReconcileAuthoring restores the authoring invariants over an owner's scope
+// (SPEC-009 FR-4): every feature G0 admits and that has a description has a
+// current spec, and every feature with an approved spec has a current
+// dev-plan. The scope is a feature, or an initiative's direct child features —
+// expanded by the server, because a rule may not reach the store.
+//
+// It is deliberately an invariant rather than "write a spec now": the same
+// action is safe to run at any moment on any scope, which is what lets the
+// heartbeat use it to recover from a lost event.
+type ReconcileAuthoring struct {
+	OwnerType string // "feature" or "initiative"
+	OwnerID   uuid.UUID
+}
+
+func (ReconcileAuthoring) ActionKind() string { return "reconcile_authoring" }
+
 // ReindexDocument re-parses and re-indexes a registered document's file.
 type ReindexDocument struct {
 	DocID uuid.UUID
@@ -291,7 +307,20 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 		return actions
 
 	case lifecycle.DocApproved:
-		if snap.Doc == nil || snap.Doc.OwnerType != "feature" || snap.OwnerFeature == nil {
+		if snap.Doc == nil {
+			return nil
+		}
+		// A design reaching approved is gate 1: the single act that means
+		// "ready to spec". The scope is whatever owns the design — the
+		// feature itself, or the initiative's direct child features — and
+		// the server expands it, since a rule may not reach the store
+		// (SPEC-009 FR-4.3).
+		if snap.Doc.Type == "design" {
+			return []Action{ReconcileAuthoring{
+				OwnerType: snap.Doc.OwnerType, OwnerID: snap.Doc.OwnerID,
+			}}
+		}
+		if snap.Doc.OwnerType != "feature" || snap.OwnerFeature == nil {
 			return nil
 		}
 		f := snap.OwnerFeature
@@ -302,6 +331,12 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 			var actions []Action
 			if snap.Doc.Type == "dev_plan" {
 				actions = append(actions, DecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID})
+			}
+			// An approved spec is what releases the dev-plan invariant. Without
+			// this the chain stalls one step past gate 1: G1 needs both halves
+			// of the contract and nothing would ever write the second.
+			if snap.Doc.Type == "spec" {
+				actions = append(actions, ReconcileAuthoring{OwnerType: "feature", OwnerID: f.ID})
 			}
 			actions = append(actions, EvaluateContractGate{FeatureID: f.ID})
 			return actions

@@ -65,6 +65,13 @@ assignments:
   review-code: code-reviewer
   verify-feature: verifier
   estimate: estimator
+  # The authoring chain (SPEC-009). Uncomment either line to have Cromwell
+  # write that document for you: approving a design writes the
+  # specification, and an approved specification writes the dev-plan. An
+  # unassigned purpose simply does not run, so leaving these commented means
+  # you write those documents by hand, as before.
+  # write-spec: spec-author
+  # write-dev-plan: dev-plan-author
 
 # Tool-host command whitelist (DESIGN-006 §4.6). Edit these to your project's
 # build and test commands; implementers and the verifier may run only these.

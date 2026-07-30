@@ -12,6 +12,7 @@ import (
 
 	"cromwell/internal/config"
 	"cromwell/internal/dispatch"
+	"cromwell/internal/lifecycle"
 	"cromwell/internal/provider"
 	"cromwell/internal/rules"
 	"cromwell/internal/store"
@@ -31,6 +32,8 @@ func (s *Server) Plan(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, e
 		return s.planVerify(ctx, d)
 	case "estimate":
 		return s.planEstimate(ctx, d)
+	case "write-spec", "write-dev-plan":
+		return s.planAuthor(ctx, d)
 	default:
 		// review-spec, review-dev-plan: read-only document review (phase 1).
 		system, user, turnCap, err := s.buildReview(ctx, d)
@@ -395,3 +398,132 @@ func gitIn(dir string, args ...string) (string, error) {
 	out, err := cmd.Output()
 	return string(out), err
 }
+
+// planAuthor builds a write-spec or write-dev-plan plan (SPEC-009 FR-5.3,
+// FR-5.4). Authoring is read-only with respect to the worktree — documents
+// live in the main repository, never in one — so the plan carries a nil
+// ToolCtx exactly as document review and estimation do.
+//
+// One agent, one document, one pass. Parallelising a single act of sequential
+// reasoning measured 39–70% worse; the fan-out that helps is across features,
+// and it happens above this, in reconcileAuthoringScope (NFR-3).
+func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, error) {
+	cfg, err := s.freshConfig()
+	if err != nil {
+		return nil, err
+	}
+	f, err := store.GetFeature(ctx, s.Store.Pool, d.RefID)
+	if err != nil {
+		return nil, err
+	}
+	role, skillBody, err := s.roleAndSkill(d.Role)
+	if err != nil {
+		return nil, err
+	}
+	docType := "spec"
+	if d.Purpose == "write-dev-plan" {
+		docType = "dev_plan"
+	}
+	manifest, err := config.LoadManifest(s.CompartmentRoot, docType)
+	if err != nil {
+		return nil, err
+	}
+	path, err := s.initiativePath(ctx, f.InitiativeID)
+	if err != nil {
+		return nil, err
+	}
+
+	var b strings.Builder
+	b.WriteString("# Project\n\n" + filepath.Base(s.RepoRoot) + "\n")
+	b.WriteString("\n# The feature to write for\n\n")
+	fmt.Fprintf(&b, "%s (%s), under initiative %s\n", f.Name, f.Slug, path)
+	if f.Description != "" {
+		b.WriteString("\n" + strings.TrimSpace(f.Description) + "\n")
+	}
+
+	// The approved designs this document is a translation of: the feature's
+	// own, then its ancestors', each with provenance (vision §10).
+	designs, err := s.approvedDesigns(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	if len(designs) == 0 {
+		b.WriteString("\n# Design\n\nNo approved design is attached. Write only what the feature's description and the documents below support, and put anything you had to decide into Open questions.\n")
+	}
+	for _, dd := range designs {
+		fmt.Fprintf(&b, "\n# Approved design (%s)\n\n%s\n", dd.Path, dd.Body)
+	}
+
+	if d.Purpose == "write-dev-plan" {
+		spec, _, err := s.contractBodies(ctx, f.ID)
+		if err != nil {
+			return nil, err
+		}
+		b.WriteString("\n# The approved specification you are decomposing\n\n" + spec + "\n")
+	}
+
+	// The structure comes from the manifest rather than the template file,
+	// so what the author is told to produce and what validation will check
+	// are the same thing by construction.
+	b.WriteString("\n# The structure this document must have\n\n")
+	fmt.Fprintf(&b, "Front matter with: %s.\n\n", strings.Join(manifest.FrontMatter.Required, ", "))
+	b.WriteString("Sections, as level-2 headings")
+	if manifest.Sections.Order == "strict" {
+		b.WriteString(", in this order")
+	}
+	b.WriteString(":\n\n")
+	for _, sec := range manifest.Sections.Required {
+		b.WriteString("- " + sec.Heading + " (required)\n")
+	}
+	for _, sec := range manifest.Sections.Optional {
+		b.WriteString("- " + sec.Heading + " (optional — omit it entirely rather than leaving it empty)\n")
+	}
+	for _, r := range manifest.Rules {
+		switch r.Kind {
+		case "min_list_items":
+			fmt.Fprintf(&b, "\n%s must contain at least %d list item(s).\n", r.Section, r.Min)
+		case "table_parses":
+			fmt.Fprintf(&b, "\n%s must be a Markdown table with these columns, in order: %s. The engine parses this table into real tasks, so the ids and the column names are load-bearing.\n",
+				r.Section, strings.Join(r.Columns, ", "))
+		}
+	}
+	b.WriteString("\n# Your task\n\n")
+	fmt.Fprintf(&b, "Write the %s for this feature, following the template's sections exactly, and call submit_document once with the whole file. Set the front matter's owner to `%s`.\n",
+		strings.ReplaceAll(docType, "_", "-"), path+"/"+f.Slug)
+
+	turnCap := cfg.Dispatch.TurnCap
+	if role.Limits != nil && role.Limits.TurnCap > 0 {
+		turnCap = role.Limits.TurnCap
+	}
+	return &dispatch.Plan{
+		System: roleSystemPrompt(role, skillBody), User: b.String(), TurnCap: turnCap,
+		Tools:           []provider.ToolDef{dispatch.DocumentOutcomeTool()},
+		OutcomeTool:     "submit_document",
+		ValidateOutcome: validateAuthoredDocument(manifest),
+	}, nil
+}
+
+// approvedDesigns returns the approved design documents that bear on a
+// feature: its own, then its ancestor initiatives', outermost last so the
+// nearest design reads closest to the task.
+func (s *Server) approvedDesigns(ctx context.Context, f *store.Feature) ([]docBody, error) {
+	var out []docBody
+	add := func(ownerType string, id uuid.UUID) error {
+		d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "design", ownerType, id)
+		if err != nil || d.State != lifecycle.DocApproved {
+			return nil
+		}
+		body, rerr := s.readDocFile(d.Path)
+		if rerr != nil {
+			return nil
+		}
+		out = append(out, docBody{Path: d.Path, Body: strings.TrimSpace(string(body))})
+		return nil
+	}
+	if err := add("feature", f.ID); err != nil {
+		return nil, err
+	}
+	return out, add("initiative", f.InitiativeID)
+}
+
+type docBody struct{ Path, Body string }

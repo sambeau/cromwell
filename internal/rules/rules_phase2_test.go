@@ -28,18 +28,25 @@ func TestDevPlanApprovalDecomposesThenGates(t *testing.T) {
 	}
 }
 
-func TestSpecApprovalOnlyGates(t *testing.T) {
+// An approved spec does two things: it releases the dev-plan invariant (which
+// is what carries the chain past gate 1 — without it G1 could never be met,
+// because nothing would ever write the second half of the contract) and it
+// re-evaluates G1 itself.
+func TestSpecApprovalReleasesTheDevPlanAndGates(t *testing.T) {
 	docID, featID := uuid.New(), uuid.New()
 	snap := Snapshot{
 		Doc:          &DocSnap{ID: docID, Type: "spec", State: lifecycle.DocApproved, OwnerType: "feature", OwnerID: featID},
 		OwnerFeature: &FeatureSnap{ID: featID, State: lifecycle.FeatIdea},
 	}
 	actions := Decide(bus.DocumentTransitioned{To: lifecycle.DocApproved, From: lifecycle.DocReviewing}, snap)
-	if len(actions) != 1 {
-		t.Fatalf("spec approval should only gate: %+v", actions)
+	if len(actions) != 2 {
+		t.Fatalf("want [reconcile authoring, gate]: %+v", actions)
 	}
-	if _, ok := actions[0].(EvaluateContractGate); !ok {
-		t.Errorf("want EvaluateContractGate: %+v", actions[0])
+	if r, ok := actions[0].(ReconcileAuthoring); !ok || r.OwnerType != "feature" || r.OwnerID != featID {
+		t.Errorf("action 0 should release the dev-plan invariant: %+v", actions[0])
+	}
+	if _, ok := actions[1].(EvaluateContractGate); !ok {
+		t.Errorf("action 1 should evaluate G1: %+v", actions[1])
 	}
 }
 

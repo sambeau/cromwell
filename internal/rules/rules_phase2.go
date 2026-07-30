@@ -249,6 +249,27 @@ type TaskSnap struct {
 // is not a phase-2 execution purpose, so the phase-1 document path runs.
 func decideDispatchSucceededPhase2(purpose string, dispatchID uuid.UUID, actor string, outcome json.RawMessage, snap Snapshot) ([]Action, bool) {
 	switch purpose {
+	case "write-spec", "write-dev-plan":
+		if snap.RefFeature == nil {
+			return nil, true
+		}
+		var out struct {
+			Body string `json:"body"`
+		}
+		if err := json.Unmarshal(outcome, &out); err != nil || strings.TrimSpace(out.Body) == "" {
+			// The outcome validator already rejected an empty body inside the
+			// agent's turn, so reaching here means something unexpected.
+			return []Action{unparseableCheckpoint("feature", snap.RefFeature.ID, dispatchID,
+				fmt.Errorf("authoring outcome had no document body"))}, true
+		}
+		docType := "spec"
+		if purpose == "write-dev-plan" {
+			docType = "dev_plan"
+		}
+		return []Action{FileAuthoredDocument{
+			FeatureID: snap.RefFeature.ID, DocType: docType, Body: out.Body, Actor: actor,
+		}}, true
+
 	case "implement-task":
 		if snap.Task == nil {
 			return nil, true
@@ -334,3 +355,15 @@ func unparseableCheckpoint(refType string, refID, dispatchID uuid.UUID, err erro
 		Context:  map[string]any{"dispatch_id": dispatchID.String(), "error": err.Error()},
 	}
 }
+
+// FileAuthoredDocument writes, registers and submits a document an authoring
+// agent produced (SPEC-009 FR-6). The body has already passed the structural
+// check inside the agent's turn; this is the filing.
+type FileAuthoredDocument struct {
+	FeatureID uuid.UUID
+	DocType   string
+	Body      string
+	Actor     string
+}
+
+func (FileAuthoredDocument) ActionKind() string { return "file_authored_document" }
