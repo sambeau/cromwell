@@ -466,8 +466,10 @@ func TestUIInboxRespond(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("ui respond: %d\n%s", code, after)
 	}
-	// The returned fragment is the refreshed (now clear) inbox.
-	mustContain(t, "inbox cleared fragment", after, "Inbox clear")
+	// The returned fragment is the refreshed (now clear) inbox. Assert on the
+	// empty state's title rather than its prose, which is written for a human
+	// and will be reworded again.
+	mustContain(t, "inbox cleared fragment", after, "Nothing is waiting for you")
 
 	h.eventually("doc approved after UI respond", func() bool {
 		return h.docState(specPath) == lifecycle.DocApproved

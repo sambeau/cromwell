@@ -184,7 +184,7 @@ func TestDependencyOrdering(t *testing.T) {
 	h.mock.RespondToolUse("write_file", `{"path":"b.go","content":"package main\n\nfunc Bee() {}\n"}`, provider.Usage{Input: 20, Output: 5})
 	h.mock.RespondOutcome("submit_implementation", `{"summary":"b.go"}`, provider.Usage{Input: 10, Output: 5})
 	h.mock.RespondOutcome("submit_review", `{"verdict":"approve","reasoning":"ok"}`, provider.Usage{Input: 10, Output: 5})
-	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 20, Output: 5})
+	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true,"evidence":"the feature builds and its file is present"}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 20, Output: 5})
 
 	if code, out := h.call("POST", "/api/features/start", map[string]string{"path": "auth/login"}); code != 200 {
 		t.Fatalf("start: %d %v", code, out)
@@ -217,7 +217,7 @@ func TestCodeReviewRequestChanges(t *testing.T) {
 	h.mock.RespondToolUse("write_file", `{"path":"greet.go","content":"package main\n\nfunc Greet() string { return \"hi\" }\n"}`, provider.Usage{Input: 20, Output: 5})
 	h.mock.RespondOutcome("submit_implementation", `{"summary":"v2 with Greet"}`, provider.Usage{Input: 10, Output: 5})
 	h.mock.RespondOutcome("submit_review", `{"verdict":"approve","reasoning":"now correct"}`, provider.Usage{Input: 10, Output: 5})
-	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 10, Output: 5})
+	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true,"evidence":"the feature builds and its file is present"}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 10, Output: 5})
 
 	h.call("POST", "/api/features/start", map[string]string{"path": "auth/login"})
 	h.eventually("done after rework", func() bool { return h.featureState("auth/login") == lifecycle.FeatDone })
@@ -366,7 +366,7 @@ func TestParallelToolCalls(t *testing.T) {
 	}, provider.Usage{Input: 30, Output: 10})
 	h.mock.RespondOutcome("submit_implementation", `{"summary":"two files"}`, provider.Usage{Input: 10, Output: 5})
 	h.mock.RespondOutcome("submit_review", `{"verdict":"approve","reasoning":"ok"}`, provider.Usage{Input: 10, Output: 5})
-	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 10, Output: 5})
+	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true,"evidence":"the feature builds and its file is present"}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 10, Output: 5})
 
 	if code, out := h.call("POST", "/api/features/start", map[string]string{"path": "auth/login"}); code != 200 {
 		t.Fatalf("start: %d %v", code, out)
@@ -398,7 +398,7 @@ func TestMergeConflict(t *testing.T) {
 	h.mock.RespondToolUse("write_file", `{"path":"README.md","content":"# branch version\n"}`, provider.Usage{Input: 20, Output: 5})
 	h.mock.RespondOutcome("submit_implementation", `{"summary":"readme"}`, provider.Usage{Input: 10, Output: 5})
 	h.mock.RespondOutcome("submit_review", `{"verdict":"approve","reasoning":"ok"}`, provider.Usage{Input: 10, Output: 5})
-	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 10, Output: 5})
+	h.mock.RespondOutcome("submit_verification", `{"criteria":[{"id":"AC1","met":true,"evidence":"the feature builds and its file is present"}],"verdict":"approve","reasoning":"met"}`, provider.Usage{Input: 10, Output: 5})
 
 	if code, out := h.call("POST", "/api/features/start", map[string]string{"path": "auth/login"}); code != 200 {
 		t.Fatalf("start: %d %v", code, out)
