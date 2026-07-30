@@ -78,7 +78,7 @@ func TestUIBrowseAndDrive(t *testing.T) {
 
 	// A unit estimate so the roll-ups show tokens + tier (FR-2.1).
 	if code, _ := h.call("POST", "/api/estimate/set", map[string]any{
-		"ref": "auth/login", "tokens": 1200}); code >= 300 {
+		"ref": "auth/login", "tokens": 12000}); code >= 300 {
 		t.Fatalf("estimate set: %d", code)
 	}
 	// A milestone the feature belongs to, so the "part of" section renders (FR-8.2).
@@ -109,8 +109,8 @@ func TestUIBrowseAndDrive(t *testing.T) {
 	_, initPage := h.getUI("/ui/i/auth")
 	mustContain(t, "child feature", initPage, "Login form")
 	mustContain(t, "child link", initPage, `href="/ui/f/auth/login"`)
-	mustContain(t, "size tier", initPage, "tier-")
-	mustContain(t, "tokens", initPage, "1.2k")
+	mustContain(t, "size tier", initPage, `data-tier=`)
+	mustContain(t, "tokens", initPage, "12k")
 
 	// FR-1.2: the feature page's breadcrumb carries its ancestry, each crumb a
 	// link to that ancestor's page.
@@ -126,7 +126,7 @@ func TestUIBrowseAndDrive(t *testing.T) {
 
 	// FR-3.1: the feature has a spec but no design document, so the body is the
 	// clear empty state that offers to attach one — not a blank panel.
-	mustContain(t, "empty body state", featPage, "no design document yet")
+	mustContain(t, "empty body state", featPage, "no design document here yet")
 	// FR-3.2: all its documents are listed regardless.
 	mustContain(t, "documents section", featPage, "login.md")
 
@@ -267,12 +267,12 @@ func TestUIEntityActions(t *testing.T) {
 	// FR-5.1: setting an estimate through the page drives RecordEstimate, and a
 	// bad input is surfaced inline rather than as a 500 (FR-2.2).
 	_, est := h.postForm("/ui/entity/estimate", map[string]string{
-		"ref_type": "feature", "id": f.ID.String(), "tokens": "1500"})
-	mustContain(t, "estimate applied", est, "1.5k")
-	mustContain(t, "estimate tier", est, "tier-rough")
+		"ref_type": "feature", "id": f.ID.String(), "tokens": "24000"})
+	mustContain(t, "estimate applied", est, "24k")
+	mustContain(t, "estimate tier", est, `data-tier="rough"`)
 	_, cited := h.postForm("/ui/entity/estimate", map[string]string{
-		"ref_type": "feature", "id": f.ID.String(), "tokens": "1500", "cite_corpus": "1"})
-	mustContain(t, "considered tier", cited, "tier-considered")
+		"ref_type": "feature", "id": f.ID.String(), "tokens": "24000", "cite_corpus": "1"})
+	mustContain(t, "considered tier", cited, `data-tier="considered"`)
 	code, bad := h.postForm("/ui/entity/estimate", map[string]string{
 		"ref_type": "feature", "id": f.ID.String(), "tokens": "0"})
 	if code != 200 {
@@ -343,7 +343,7 @@ func TestUIMilestoneAndRoadmapPages(t *testing.T) {
 	h := newHarness(t)
 	h.setupFeatureWithSpec() // auth/login
 
-	h.call("POST", "/api/estimate/set", map[string]any{"ref": "auth/login", "tokens": 1200})
+	h.call("POST", "/api/estimate/set", map[string]any{"ref": "auth/login", "tokens": 12000})
 	h.call("POST", "/api/milestones", map[string]string{"name": "First release"})
 	h.call("POST", "/api/milestones/members", map[string]string{
 		"milestone": "First release", "ref": "auth/login", "action": "add"})
@@ -368,7 +368,7 @@ func TestUIMilestoneAndRoadmapPages(t *testing.T) {
 	}
 	mustContain(t, "milestone name", mp, "First release")
 	mustContain(t, "ticked count", mp, "0 of 1")
-	mustContain(t, "token figure", mp, "1.2k")
+	mustContain(t, "token figure", mp, "12k")
 	mustContain(t, "checklist member", mp, "Login form")
 	mustContain(t, "member links through", mp, `href="/ui/f/auth/login"`)
 
@@ -397,7 +397,7 @@ func TestUIMilestoneAndRoadmapPages(t *testing.T) {
 func TestUIWorkViewIsTokensOnly(t *testing.T) {
 	h := newHarness(t)
 	h.setupFeatureWithSpec()
-	h.call("POST", "/api/estimate/set", map[string]any{"ref": "auth/login", "tokens": 1200})
+	h.call("POST", "/api/estimate/set", map[string]any{"ref": "auth/login", "tokens": 12000})
 
 	code, work := h.getUI("/ui/work")
 	if code != 200 {
@@ -406,7 +406,7 @@ func TestUIWorkViewIsTokensOnly(t *testing.T) {
 	mustContain(t, "work in tokens", work, "tokens")
 	mustContain(t, "by initiative", work, "By initiative")
 	mustContain(t, "by feature", work, "By feature")
-	mustContain(t, "the figure", work, "1.2k")
+	mustContain(t, "the figure", work, "12k")
 
 	// The old money-denominated URL redirects rather than 404s.
 	req, _ := http.NewRequest("GET", h.api.URL+"/ui/cost", nil)
