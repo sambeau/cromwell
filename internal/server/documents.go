@@ -381,6 +381,19 @@ func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, st
 				Name: f.Name, Slug: f.Slug, Description: f.Description,
 				InitiativePath: strings.Join(pathParts, "/"),
 			}
+			// The feature's own approved design leads the background: the
+			// fidelity bar (SPEC-009 FR-8) asks the reviewer to account for
+			// every design decision, and a design attached to the feature
+			// itself — not an ancestor initiative — must reach the prompt too.
+			if own, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "design", "feature", f.ID); err == nil &&
+				own.State == lifecycle.DocApproved && own.ID != doc.ID {
+				if body, rerr := s.readDocFile(own.Path); rerr == nil {
+					in.AncestorDocs = append(in.AncestorDocs, content.AttachedDoc{
+						Path: own.Path, Title: own.Title, Type: own.Type,
+						ApprovedAt: own.ApprovedAt, Body: string(body),
+					})
+				}
+			}
 			docs, err := store.ApprovedDocsOwnedBy(ctx, s.Store.Pool, "initiative", ancestorIDs)
 			if err != nil {
 				return "", "", 0, err

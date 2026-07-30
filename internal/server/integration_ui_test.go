@@ -654,10 +654,14 @@ func TestUIDesignReviewIsHumanDecided(t *testing.T) {
 		}
 	}
 
-	// The page shows the decision controls and the reviewer's comments.
+	// The page shows the decision controls and the reviewer's comments, and
+	// carries the live-refresh wiring that keeps it current when an agent
+	// writes or reviews the document (SPEC-009 FR-7).
 	_, page := h.getUI("/ui/d/" + designPath)
 	mustContain(t, "human decision controls", page, "waiting for your decision")
 	mustContain(t, "reviewer comment on the page", page, "browser-only surface")
+	mustContain(t, "live refresh container", page, `id="doc-live"`)
+	mustContain(t, "live refresh trigger", page, `hx-trigger="sse:changed"`)
 
 	// The person asks for changes; the document goes back to its author.
 	code, page := h.postForm("/ui/document/review", map[string]string{

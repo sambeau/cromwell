@@ -766,6 +766,22 @@
 
 {{define "page-entity-document"}}{{template "pagetop" .}}
 {{with .Data}}
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
+
+{{/* Everything below the banners refreshes itself on the live signal
+     (SPEC-009 FR-7): when an agent writes or reviews this document, the open
+     page follows — state badge, decision controls, body and comments alike.
+     The banners stay outside so an action's notice is not swept away by the
+     refresh its own event causes. */}}
+<div id="doc-live" hx-get="/ui/d/{{.Document.Path}}" hx-trigger="sse:changed"
+     hx-select="#doc-live" hx-swap="outerHTML">
 <div class="page-head">
   <div class="page-head-top">
     <span class="page-head-icon">
@@ -787,15 +803,6 @@
     </div>
   </div>
 </div>
-
-{{if .Notice}}
-<div class="banner banner--success" role="status">
-  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
-{{end}}
-{{if .Error}}
-<div class="banner banner--error" role="alert">
-  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
-{{end}}
 
 {{/* This document is edited in the author's own editor and committed to git;
      the page re-renders itself when the file changes (§5.5). */}}
@@ -888,5 +895,6 @@
   </div>
 </section>
 {{end}}
+</div>{{/* #doc-live */}}
 {{end}}
 {{template "pagebottom" .}}{{end}}
