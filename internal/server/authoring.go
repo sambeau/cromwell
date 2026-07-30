@@ -30,6 +30,7 @@ import (
 
 	"cromwell/internal/config"
 	"cromwell/internal/lifecycle"
+	"cromwell/internal/rules"
 	"cromwell/internal/store"
 )
 
@@ -147,7 +148,7 @@ func (s *Server) queueAuthoring(ctx context.Context, purpose string, featureID u
 	if err != nil {
 		return s.configErrorCheckpoint(ctx, "feature", featureID, err)
 	}
-	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		n, err := store.CountDispatchesForRef(ctx, tx, "feature", featureID, purpose)
 		if err != nil {
 			return err
@@ -156,6 +157,306 @@ func (s *Server) queueAuthoring(ctx context.Context, purpose string, featureID u
 		_, err = store.EnqueueDispatch(ctx, tx, purpose, role, model, "feature", featureID, key)
 		return err
 	})
+	if err == nil {
+		// Kick after commit, as every enqueue path must — a queued dispatch
+		// nobody kicks waits for an unrelated event to happen along.
+		s.Dispatcher.Kick()
+	}
+	return err
+}
+
+// ---- The revision cascade (SPEC-009 FR-9) ----
+
+// affectedSpec is one spec a design revision bears on: the feature, its
+// current approved spec, and enough display context for the checkpoint.
+type affectedSpec struct {
+	Feature *store.Feature
+	Spec    *store.Document
+}
+
+// affectedSpecs returns the current approved specs in a design's G0 scope —
+// the same one-level expansion the reconciler uses. A spec still in draft or
+// reviewing is deliberately not affected (SPEC-009 §6 open question 2, decided
+// here): it has no downstream derivations to invalidate, and its pending
+// review reads against the revised design — FR-8's coverage bar is its
+// correction mechanism.
+func (s *Server) affectedSpecs(ctx context.Context, ownerType string, ownerID uuid.UUID) ([]affectedSpec, error) {
+	var features []store.Feature
+	switch ownerType {
+	case "feature":
+		f, err := store.GetFeature(ctx, s.Store.Pool, ownerID)
+		if err != nil {
+			if err == store.ErrNotFound {
+				return nil, nil
+			}
+			return nil, err
+		}
+		features = []store.Feature{*f}
+	case "initiative":
+		var err error
+		features, err = store.FeaturesForInitiative(ctx, s.Store.Pool, ownerID)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, nil
+	}
+	var out []affectedSpec
+	for i := range features {
+		f := features[i]
+		spec, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", f.ID)
+		if err == store.ErrNotFound {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if spec.State == lifecycle.DocApproved {
+			out = append(out, affectedSpec{Feature: &features[i], Spec: spec})
+		}
+	}
+	return out, nil
+}
+
+// cascadeDesignRevision runs after a successor design is approved. One
+// affected spec is invalidated without a question (FR-9.1); two or more raise
+// a single design-revision checkpoint listing every one (FR-9.2). The count
+// is of specs, never designs (FR-9.2b).
+func (s *Server) cascadeDesignRevision(ctx context.Context, a rules.CascadeDesignRevision) error {
+	affected, err := s.affectedSpecs(ctx, a.OwnerType, a.OwnerID)
+	if err != nil {
+		return err
+	}
+	switch len(affected) {
+	case 0:
+		return nil
+	case 1:
+		return s.invalidateSpecForRevision(ctx, affected[0], a.DesignDocID, "orchestrator")
+	}
+
+	ownerName := a.OwnerType
+	if a.OwnerType == "initiative" {
+		if path, err := s.initiativePath(ctx, a.OwnerID); err == nil {
+			ownerName = path
+		}
+	} else if a.OwnerType == "feature" {
+		if f, err := store.GetFeature(ctx, s.Store.Pool, a.OwnerID); err == nil {
+			ownerName = f.Name
+		}
+	}
+	list := make([]map[string]any, 0, len(affected))
+	for _, af := range affected {
+		list = append(list, map[string]any{
+			"spec_doc_id":   af.Spec.ID.String(),
+			"spec_path":     af.Spec.Path,
+			"feature_id":    af.Feature.ID.String(),
+			"feature_name":  af.Feature.Name,
+			"feature_state": string(af.Feature.State),
+		})
+	}
+	var cp *store.Checkpoint
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		var e error
+		cp, e = store.CreateCheckpoint(ctx, tx, "design-revision", "document", a.DesignDocID,
+			fmt.Sprintf("The design for %s has been revised. Decide for each specification below whether it still stands: keep it, or invalidate it so a fresh one is written against the revised design.", ownerName),
+			map[string]any{"design_doc_id": a.DesignDocID.String(), "affected": list})
+		return e
+	})
+	if err == nil && cp != nil {
+		s.notifyCheckpointRaised(cp)
+	}
+	return err
+}
+
+// applyDesignRevision executes an answered design-revision checkpoint:
+// invalidate the named specs; the kept ones are already recorded on the
+// checkpoint's answer (FR-9.5). Already-superseded specs are skipped so a
+// replayed answer is harmless.
+func (s *Server) applyDesignRevision(ctx context.Context, a rules.ApplyDesignRevision) error {
+	for _, specID := range a.Invalidate {
+		spec, err := store.GetDocument(ctx, s.Store.Pool, specID)
+		if err != nil {
+			if err == store.ErrNotFound {
+				continue
+			}
+			return err
+		}
+		if spec.State != lifecycle.DocApproved || spec.OwnerType != "feature" || spec.OwnerID == nil {
+			continue
+		}
+		f, err := store.GetFeature(ctx, s.Store.Pool, *spec.OwnerID)
+		if err != nil {
+			if err == store.ErrNotFound {
+				continue
+			}
+			return err
+		}
+		if err := s.invalidateSpecForRevision(ctx, affectedSpec{Feature: f, Spec: spec}, a.DesignDocID, a.Actor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// invalidateSpecForRevision makes one feature's spec no longer current, in the
+// way its state allows:
+//
+// A forming (idea) feature takes the mechanical path (FR-9.4, FR-9.4a): the
+// spec and its approved dev-plan are superseded and their files archived in
+// one transaction and one server-authored commit. Superseding precedes the
+// replacement deliberately — the reverse of approval-time takeover (SPEC-009
+// §6 open question 1) — which is what lets the reconciler author the fresh
+// spec. A dev-plan still in draft or reviewing cannot legally supersede and is
+// left alone: once the replacement spec is approved its review continues
+// against it.
+//
+// An in-flight (active or review) feature must not lose its current spec —
+// work is running against it. Instead the invalidation opens a successor
+// draft, exactly as a human revision would, and dispatches write-spec to fill
+// it. Submitting that successor fires the existing MarkRevisionInFlight path
+// unchanged (FR-9.6): two checkpoints in sequence, because they are two
+// different decisions.
+func (s *Server) invalidateSpecForRevision(ctx context.Context, af affectedSpec, designDocID uuid.UUID, actor string) error {
+	f, spec := af.Feature, af.Spec
+
+	if f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview {
+		if _, err := s.ReviseDoc(ctx, spec.Path, actor); err != nil {
+			return err
+		}
+		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			return store.Audit(ctx, tx, actor, "design.revision_cascade", "document", &spec.ID,
+				map[string]any{"design": designDocID.String(), "feature": f.ID.String(), "route": "successor"})
+		})
+		if err != nil {
+			return err
+		}
+		return s.queueAuthoring(ctx, "write-spec", f.ID)
+	}
+
+	// The mechanical path. Archive targets are computed first so the row
+	// updates and the file moves agree.
+	var moves []archivedMove
+
+	devPlan, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "dev_plan", "feature", f.ID)
+	if err != nil && err != store.ErrNotFound {
+		return err
+	}
+	hasDevPlan := err == nil && devPlan.State == lifecycle.DocApproved
+
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		payload := map[string]any{"cause": "design-revision", "design": designDocID.String()}
+		if err := store.TransitionDocument(ctx, tx, spec, lifecycle.DocSupersede, "lifecycle-engine", payload); err != nil {
+			return err
+		}
+		to := archiveTarget(spec)
+		moves = append(moves, archivedMove{spec.Path, to})
+		if err := store.UpdateDocumentPath(ctx, tx, spec.ID, to); err != nil {
+			return err
+		}
+		if hasDevPlan {
+			// A dev-plan is a decomposition of one spec; when that spec goes,
+			// it goes — 1:1 and mechanical, no checkpoint (FR-9.4a).
+			if err := store.TransitionDocument(ctx, tx, devPlan, lifecycle.DocSupersede, "lifecycle-engine",
+				map[string]any{"cause": "design-revision", "spec": spec.ID.String()}); err != nil {
+				return err
+			}
+			to := archiveTarget(devPlan)
+			moves = append(moves, archivedMove{devPlan.Path, to})
+			if err := store.UpdateDocumentPath(ctx, tx, devPlan.ID, to); err != nil {
+				return err
+			}
+		}
+		if err := store.Audit(ctx, tx, actor, "design.revision_cascade", "document", &spec.ID,
+			map[string]any{"design": designDocID.String(), "feature": f.ID.String(), "route": "supersede",
+				"dev_plan_superseded": hasDevPlan}); err != nil {
+			return err
+		}
+		// A ready feature has just lost its contract; it is an idea again,
+		// which is what lets the authoring invariant write it a fresh spec.
+		// Its tasks are kept — decomposition reconciles by local id when the
+		// replacement dev-plan arrives, and work that happened is never
+		// erased silently.
+		if f.State == lifecycle.FeatReady {
+			return store.TransitionFeature(ctx, tx, f, lifecycle.FeatContractInvalidated, "lifecycle-engine",
+				map[string]any{"cause": "design-revision", "design": designDocID.String()})
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := s.archiveInvalidatedFiles(moves); err != nil {
+		// Rows and files have diverged; surface loudly, as approval-time
+		// takeover does.
+		s.Log.Error("revision cascade file archive failed", "spec", spec.ID, "err", err)
+		var cp *store.Checkpoint
+		if e := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			var cerr error
+			cp, cerr = store.CreateCheckpoint(ctx, tx, "document-integrity", "document", spec.ID,
+				"An invalidated specification was superseded but its file could not be archived; repo files need manual reconciliation.",
+				map[string]any{"error": err.Error()})
+			return cerr
+		}); e == nil {
+			s.notifyCheckpointRaised(cp)
+		}
+	}
+	return nil
+}
+
+// archivedMove is one file's journey to docs/_superseded/.
+type archivedMove struct{ from, to string }
+
+// archiveInvalidatedFiles moves invalidated documents under docs/_superseded/
+// in one server-authored commit. The short-id suffix keeps two features'
+// authored spec.md files from colliding there.
+func (s *Server) archiveInvalidatedFiles(moves []archivedMove) error {
+	if len(moves) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Join(s.RepoRoot, "docs/_superseded"), 0o755); err != nil {
+		return err
+	}
+	for _, m := range moves {
+		if _, err := gitIn(s.RepoRoot, "mv", m.from, m.to); err != nil {
+			return fmt.Errorf("git mv %s %s: %w", m.from, m.to, err)
+		}
+	}
+	if _, err := gitIn(s.RepoRoot, "commit", "-m", "cromwell: design revision invalidated documents; archived",
+		"--author", "cromwell <cromwell@localhost>"); err != nil {
+		return fmt.Errorf("archive commit: %w", err)
+	}
+	return nil
+}
+
+// pendingDesignRevisionFor reports whether a pending design-revision
+// checkpoint lists the feature among its affected specs — a filter over
+// PendingCheckpoints, as openReviewCheckpoint is.
+func (s *Server) pendingDesignRevisionFor(ctx context.Context, featureID uuid.UUID) (bool, error) {
+	pending, err := s.Store.PendingCheckpoints(ctx)
+	if err != nil {
+		return false, err
+	}
+	want := featureID.String()
+	for _, cp := range pending {
+		if cp.Kind != "design-revision" {
+			continue
+		}
+		var cctx struct {
+			Affected []struct {
+				FeatureID string `json:"feature_id"`
+			} `json:"affected"`
+		}
+		if err := json.Unmarshal(cp.Context, &cctx); err != nil {
+			continue
+		}
+		for _, a := range cctx.Affected {
+			if a.FeatureID == want {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // AuthoredDocument is the payload of a submit_document outcome.
@@ -207,10 +508,31 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 	if err != nil {
 		return err
 	}
-	path, err := s.authoredDocPath(ctx, f, docType)
-	if err != nil {
+
+	// If the feature already holds a current draft of this type, the dispatch
+	// exists to fill it: the revision cascade opens a successor draft for an
+	// in-flight feature (FR-9.6) and the authored body belongs in that
+	// document, at its path, keeping the supersedes link that lets
+	// MarkRevisionInFlight and approval-time takeover run unchanged. A current
+	// document in any other state means the invariant should never have
+	// dispatched; refuse rather than plant a second live spec.
+	path := ""
+	register := true
+	if cur, err := store.CurrentDocForOwner(ctx, s.Store.Pool, docType, "feature", f.ID); err == nil {
+		if cur.State != lifecycle.DocDraft {
+			return fmt.Errorf("the feature already has a current %s in %s; nothing to author", docType, cur.State)
+		}
+		path = cur.Path
+		register = false
+	} else if err != store.ErrNotFound {
 		return err
 	}
+	if register {
+		if path, err = s.authoredDocPath(ctx, f, docType); err != nil {
+			return err
+		}
+	}
+
 	abs := filepath.Join(s.RepoRoot, path)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return err
@@ -221,8 +543,10 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
 		return err
 	}
-	if _, err := s.RegisterDocForOwner(ctx, path, docType, "feature", &f.ID, actor); err != nil {
-		return err
+	if register {
+		if _, err := s.RegisterDocForOwner(ctx, path, docType, "feature", &f.ID, actor); err != nil {
+			return err
+		}
 	}
 	// Committing is for durability and history, not for detection: the git
 	// hook only ever sees commits, and an agent's write is uncommitted at the

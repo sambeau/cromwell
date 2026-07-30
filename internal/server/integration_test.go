@@ -637,8 +637,10 @@ func TestRevisionSupersession(t *testing.T) {
 	if live != 1 || superseded != 1 {
 		t.Errorf("live=%d superseded=%d; want 1/1", live, superseded)
 	}
-	if _, err := os.Stat(filepath.Join(h.root, "docs/_superseded/login.md")); err != nil {
-		t.Error("predecessor file should be archived under docs/_superseded/")
+	// The archive name carries the superseded row's short id so repeated
+	// revisions never collide in docs/_superseded/.
+	if matches, _ := filepath.Glob(filepath.Join(h.root, "docs/_superseded/login-*.md")); len(matches) != 1 {
+		t.Errorf("predecessor file should be archived under docs/_superseded/ with its short id; found %v", matches)
 	}
 	content, err := os.ReadFile(filepath.Join(h.root, specPath))
 	if err != nil || !strings.Contains(string(content), "thirty minutes") {

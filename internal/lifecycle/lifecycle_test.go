@@ -63,7 +63,8 @@ func TestDocumentTransitionMatrix(t *testing.T) {
 
 func TestFeatureTransitionMatrix(t *testing.T) {
 	states := []FeatureState{FeatIdea, FeatReady, FeatActive, FeatReview, FeatDone, FeatAbandoned}
-	events := []FeatureEvent{FeatContractApproved, FeatStart, FeatTasksComplete, FeatVerified, FeatAbandon}
+	events := []FeatureEvent{FeatContractApproved, FeatStart, FeatTasksComplete, FeatVerified,
+		FeatRework, FeatAbandon, FeatContractInvalidated}
 
 	legal := map[FeatureState]map[FeatureEvent]FeatureState{
 		FeatIdea: {
@@ -71,8 +72,13 @@ func TestFeatureTransitionMatrix(t *testing.T) {
 			FeatAbandon:          FeatAbandoned,
 		},
 		FeatReady: {
-			FeatStart:   FeatActive,
-			FeatAbandon: FeatAbandoned,
+			FeatStart: FeatActive,
+			// The revision cascade's inverse of contract_approved (SPEC-009
+			// FR-9.4): a ready feature whose contract is invalidated is an
+			// idea again, and only from ready — invalidating mid-flight goes
+			// through the successor path instead.
+			FeatContractInvalidated: FeatIdea,
+			FeatAbandon:             FeatAbandoned,
 		},
 		FeatActive: {
 			FeatTasksComplete: FeatReview,
@@ -80,6 +86,7 @@ func TestFeatureTransitionMatrix(t *testing.T) {
 		},
 		FeatReview: {
 			FeatVerified: FeatDone,
+			FeatRework:   FeatActive,
 			FeatAbandon:  FeatAbandoned,
 		},
 		FeatDone:      {}, // terminal

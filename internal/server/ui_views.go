@@ -43,6 +43,10 @@ func answerOptions(kind string) []string {
 		return []string{"approve", "abandon"}
 	case "revision-in-flight":
 		return []string{"continue", "pause"}
+	case "design-revision":
+		// Answered per spec through a purpose-built form (SPEC-009 FR-9.2a),
+		// not with a verb; the inbox template branches on the kind.
+		return nil
 	case "budget":
 		return []string{"proceed"}
 	default:

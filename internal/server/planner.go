@@ -408,12 +408,18 @@ func (s *Server) taskDiff(worktreeRoot, baseCommit string) string {
 	return out
 }
 
-// gitIn runs a git command in dir and returns stdout.
+// gitIn runs a git command in dir and returns stdout. A failure's error
+// carries git's stderr — "exit status 128" alone diagnoses nothing.
 func gitIn(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
-	return string(out), err
+	if err != nil {
+		return string(out), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return string(out), nil
 }
 
 // planAuthor builds a write-spec or write-dev-plan plan (SPEC-009 FR-5.3,

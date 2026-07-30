@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -690,6 +691,17 @@ func (s *Server) handleFragCalibration(w http.ResponseWriter, r *http.Request) {
 type inboxItem struct {
 	store.Checkpoint
 	Options []string
+	// RevisionSpecs is set only for a design-revision checkpoint (SPEC-009
+	// FR-9.2a): the affected specs, each answered keep-or-invalidate on its
+	// own line. Every other kind answers with one verb from Options.
+	RevisionSpecs []revisionSpecView
+}
+
+// revisionSpecView is one line of the design-revision form.
+type revisionSpecView struct {
+	SpecDocID   string `json:"spec_doc_id"`
+	SpecPath    string `json:"spec_path"`
+	FeatureName string `json:"feature_name"`
 }
 
 func (s *Server) inboxItems(r *http.Request) ([]inboxItem, error) {
@@ -699,7 +711,16 @@ func (s *Server) inboxItems(r *http.Request) ([]inboxItem, error) {
 	}
 	items := make([]inboxItem, 0, len(pending))
 	for _, cp := range pending {
-		items = append(items, inboxItem{Checkpoint: cp, Options: answerOptions(cp.Kind)})
+		item := inboxItem{Checkpoint: cp, Options: answerOptions(cp.Kind)}
+		if cp.Kind == "design-revision" {
+			var cctx struct {
+				Affected []revisionSpecView `json:"affected"`
+			}
+			if err := json.Unmarshal(cp.Context, &cctx); err == nil {
+				item.RevisionSpecs = cctx.Affected
+			}
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -746,11 +767,6 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad checkpoint id", http.StatusBadRequest)
 		return
 	}
-	verb := strings.TrimSpace(r.FormValue("verb"))
-	if verb == "" {
-		http.Error(w, "an answer is required", http.StatusBadRequest)
-		return
-	}
 	// The kind determines the payload schema; look it up rather than trust the
 	// form (the form's kind is presentational only).
 	ctx := r.Context()
@@ -759,7 +775,23 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	response := responseFor(cpBefore.Kind, verb, strings.TrimSpace(r.FormValue("reason")))
+	var response map[string]any
+	if cpBefore.Kind == "design-revision" {
+		// The one per-item answer (SPEC-009 FR-9.2a): a keep-or-invalidate
+		// decision for every spec the checkpoint listed, no verb.
+		response, err = designRevisionResponse(cpBefore, r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	} else {
+		verb := strings.TrimSpace(r.FormValue("verb"))
+		if verb == "" {
+			http.Error(w, "an answer is required", http.StatusBadRequest)
+			return
+		}
+		response = responseFor(cpBefore.Kind, verb, strings.TrimSpace(r.FormValue("reason")))
+	}
 
 	actor := s.uiActor()
 	var cp *store.Checkpoint
@@ -780,6 +812,39 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "frag-inbox", items)
+}
+
+// designRevisionResponse builds the per-spec answer payload from the posted
+// form: one decision_<spec-id> field per affected spec, keep or invalidate.
+// Every listed spec must be answered — a spec silently unanswered would be a
+// spec silently kept, which is the exact silence the checkpoint exists to
+// prevent.
+func designRevisionResponse(cp *store.Checkpoint, r *http.Request) (map[string]any, error) {
+	var cctx struct {
+		Affected []struct {
+			SpecDocID string `json:"spec_doc_id"`
+		} `json:"affected"`
+	}
+	if err := json.Unmarshal(cp.Context, &cctx); err != nil {
+		return nil, fmt.Errorf("this checkpoint's context could not be read: %v", err)
+	}
+	invalidate := []string{}
+	keep := []string{}
+	for _, a := range cctx.Affected {
+		switch strings.TrimSpace(r.FormValue("decision_" + a.SpecDocID)) {
+		case "keep":
+			keep = append(keep, a.SpecDocID)
+		case "invalidate":
+			invalidate = append(invalidate, a.SpecDocID)
+		default:
+			return nil, fmt.Errorf("answer keep or invalidate for every specification listed")
+		}
+	}
+	response := map[string]any{"invalidate": invalidate, "keep": keep}
+	if reason := strings.TrimSpace(r.FormValue("reason")); reason != "" {
+		response["reason"] = reason
+	}
+	return response, nil
 }
 
 // --- Documents ---

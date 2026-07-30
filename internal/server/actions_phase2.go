@@ -20,9 +20,9 @@ import (
 func (s *Server) executePhase2(ctx context.Context, action rules.Action) (bool, error) {
 	switch a := action.(type) {
 	case rules.DecomposeDevPlan:
-		return true, s.decomposeDevPlan(ctx, a.FeatureID, a.DevPlanDocID, false)
+		return true, s.decomposeDevPlan(ctx, a.FeatureID, a.DevPlanDocID)
 	case rules.ReDecomposeDevPlan:
-		return true, s.decomposeDevPlan(ctx, a.FeatureID, a.DevPlanDocID, true)
+		return true, s.decomposeDevPlan(ctx, a.FeatureID, a.DevPlanDocID)
 	case rules.DispatchReadyTasks:
 		return true, s.dispatchReadyTasks(ctx, a.FeatureID)
 	case rules.CompleteImplementation:
@@ -48,9 +48,12 @@ func (s *Server) executePhase2(ctx context.Context, action rules.Action) (bool, 
 }
 
 // decomposeDevPlan creates or reconciles tasks from a dev-plan's task table
-// (DESIGN-005 §4). On first decomposition every row is created; on revision
-// the plan reconciles non-destructively (DP-4).
-func (s *Server) decomposeDevPlan(ctx context.Context, featureID, devPlanID uuid.UUID, redecompose bool) error {
+// (DESIGN-005 §4). It always reconciles against whatever tasks exist —
+// reconciling with none is creation — so a replayed decomposition is a no-op
+// rather than a duplicate set, and a feature the revision cascade returned to
+// idea keeps its tasks matched by local id when the replacement plan arrives
+// (DP-4, SPEC-009 FR-9.4a).
+func (s *Server) decomposeDevPlan(ctx context.Context, featureID, devPlanID uuid.UUID) error {
 	doc, err := store.GetDocument(ctx, s.Store.Pool, devPlanID)
 	if err != nil {
 		return err
@@ -64,12 +67,9 @@ func (s *Server) decomposeDevPlan(ctx context.Context, featureID, devPlanID uuid
 		return fmt.Errorf("dev-plan task table did not parse at decomposition (should have failed validation): %w", err)
 	}
 
-	var existing []lifecycle.ExistingTask
-	if redecompose {
-		existing, err = store.ExistingTasksForPlan(ctx, s.Store.Pool, featureID)
-		if err != nil {
-			return err
-		}
+	existing, err := store.ExistingTasksForPlan(ctx, s.Store.Pool, featureID)
+	if err != nil {
+		return err
 	}
 	plan := lifecycle.PlanDecomposition(rows, existing)
 

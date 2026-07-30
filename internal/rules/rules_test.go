@@ -2,6 +2,7 @@ package rules
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -183,6 +184,71 @@ func TestSpecApprovalEvaluatesG1(t *testing.T) {
 	snap.OwnerFeature = &FeatureSnap{ID: feat.ID, State: lifecycle.FeatReady}
 	if actions := Decide(bus.DocumentTransitioned{To: lifecycle.DocApproved, From: lifecycle.DocReviewing}, snap); len(actions) != 0 {
 		t.Errorf("ready feature should not re-evaluate G1: %+v", actions)
+	}
+}
+
+// SPEC-009 FR-9: a successor design's approval runs the revision cascade
+// before the reconciler; a first design runs the reconciler alone.
+func TestSuccessorDesignApprovalRunsCascade(t *testing.T) {
+	d, snap := docSnap(lifecycle.DocApproved)
+	d.Type = "design"
+	d.OwnerType = "initiative"
+	ev := bus.DocumentTransitioned{
+		DocID: d.ID, From: lifecycle.DocReviewing, To: lifecycle.DocApproved,
+		Event: lifecycle.DocApprove,
+	}
+
+	actions := Decide(ev, snap)
+	if len(actions) != 1 {
+		t.Fatalf("first design: want reconcile only, got %+v", actions)
+	}
+	if _, ok := actions[0].(ReconcileAuthoring); !ok {
+		t.Fatalf("first design: want ReconcileAuthoring, got %T", actions[0])
+	}
+
+	d.IsSuccessor = true
+	actions = Decide(ev, snap)
+	if len(actions) != 2 {
+		t.Fatalf("successor design: want [cascade, reconcile], got %+v", actions)
+	}
+	c, ok := actions[0].(CascadeDesignRevision)
+	if !ok || c.DesignDocID != d.ID || c.OwnerType != "initiative" || c.OwnerID != d.OwnerID {
+		t.Errorf("cascade action wrong: %+v", actions[0])
+	}
+	if _, ok := actions[1].(ReconcileAuthoring); !ok {
+		t.Errorf("cascade must be followed by reconcile: %T", actions[1])
+	}
+}
+
+// SPEC-009 FR-9.2a / FR-9.4: the answered checkpoint applies exactly the
+// invalidations the question asked about — an id the context never listed is
+// dropped — and reconciles afterwards so replacements are written.
+func TestDesignRevisionAnswer(t *testing.T) {
+	d, snap := docSnap(lifecycle.DocApproved)
+	d.Type = "design"
+	d.OwnerType = "initiative"
+	spec1, spec2, stranger := uuid.New(), uuid.New(), uuid.New()
+
+	actions := Decide(bus.CheckpointResponded{
+		Kind: "design-revision", RefType: "document", RefID: d.ID,
+		Context: json.RawMessage(fmt.Sprintf(
+			`{"affected":[{"spec_doc_id":"%s"},{"spec_doc_id":"%s"}]}`, spec1, spec2)),
+		Response: json.RawMessage(fmt.Sprintf(
+			`{"invalidate":["%s","%s"],"keep":["%s"]}`, spec1, stranger, spec2)),
+		RespondedBy: "sam",
+	}, snap)
+	if len(actions) != 2 {
+		t.Fatalf("want [apply, reconcile], got %+v", actions)
+	}
+	a, ok := actions[0].(ApplyDesignRevision)
+	if !ok || a.DesignDocID != d.ID || a.Actor != "sam" {
+		t.Fatalf("apply action wrong: %+v", actions[0])
+	}
+	if len(a.Invalidate) != 1 || a.Invalidate[0] != spec1 {
+		t.Errorf("only asked-about specs may be invalidated: %+v", a.Invalidate)
+	}
+	if _, ok := actions[1].(ReconcileAuthoring); !ok {
+		t.Errorf("apply must be followed by reconcile: %T", actions[1])
 	}
 }
 

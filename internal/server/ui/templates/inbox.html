@@ -59,6 +59,45 @@
   </div>
   {{end}}
 
+  {{if .RevisionSpecs}}
+  {{/* The one per-item answer (SPEC-009 FR-9.2a): a keep-or-invalidate
+       decision for every specification the revision touches. Every row must
+       be answered — an unanswered spec would be a silently kept one. */}}
+  <form class="checkpoint-answers" hx-post="/ui/respond" hx-target="#inbox-list" hx-swap="innerHTML">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <div class="revision-spec-list">
+      {{$cpid := .ID}}
+      {{range .RevisionSpecs}}
+      <fieldset class="revision-spec">
+        <legend class="visually-hidden">Decision for the specification of {{.FeatureName}}</legend>
+        <div class="revision-spec-doc">
+          <span class="revision-spec-feature">{{.FeatureName}}</span>
+          <a class="t-meta u-nowrap" href="/ui/d/{{.SpecPath}}"><code>{{.SpecPath}}</code></a>
+        </div>
+        <div class="revision-spec-choice">
+          <label class="revision-choice">
+            <input type="radio" name="decision_{{.SpecDocID}}" value="keep" required>
+            <span><b>Keep it</b> — the revision does not change what this specification says</span>
+          </label>
+          <label class="revision-choice">
+            <input type="radio" name="decision_{{.SpecDocID}}" value="invalidate" required>
+            <span><b>Invalidate it</b> — a fresh specification is written against the revised design</span>
+          </label>
+        </div>
+      </fieldset>
+      {{end}}
+    </div>
+    <div class="field u-mt-4">
+      <label class="field-label" for="reason-{{$cpid}}">Add a reason <span class="opt">optional, and it goes on the record</span></label>
+      <input class="input" id="reason-{{$cpid}}" type="text" name="reason"
+             placeholder="Why you decided this way">
+    </div>
+    <div class="u-mt-4">
+      <button class="btn btn--primary" type="submit">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg>Record these decisions</button>
+    </div>
+  </form>
+  {{else}}
   <form class="checkpoint-answers" hx-post="/ui/respond" hx-target="#inbox-list" hx-swap="innerHTML">
     <input type="hidden" name="id" value="{{.ID}}">
     <div class="checkpoint-answer-list">
@@ -78,6 +117,7 @@
              placeholder="Why you decided this way">
     </div>
   </form>
+  {{end}}
 </article>
 {{end}}
 {{else}}

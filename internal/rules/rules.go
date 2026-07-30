@@ -87,6 +87,32 @@ type ReconcileAuthoring struct {
 
 func (ReconcileAuthoring) ActionKind() string { return "reconcile_authoring" }
 
+// CascadeDesignRevision evaluates the revision cascade after a successor
+// design is approved (SPEC-009 FR-9). The server counts the current approved
+// specs in the design's G0 scope: exactly one is invalidated without a
+// question — the design changed and there is only one candidate, so asking
+// "which of these one specs?" carries no information (FR-9.1) — and two or
+// more raise a single design-revision checkpoint listing them all (FR-9.2).
+type CascadeDesignRevision struct {
+	DesignDocID uuid.UUID
+	OwnerType   string
+	OwnerID     uuid.UUID
+}
+
+func (CascadeDesignRevision) ActionKind() string { return "cascade_design_revision" }
+
+// ApplyDesignRevision carries an answered design-revision checkpoint's
+// invalidate list (FR-9.4). Keeps need no action: the response on the
+// checkpoint row is the record that the revision was considered and
+// deliberately left those specs standing (FR-9.5).
+type ApplyDesignRevision struct {
+	DesignDocID uuid.UUID
+	Invalidate  []uuid.UUID
+	Actor       string
+}
+
+func (ApplyDesignRevision) ActionKind() string { return "apply_design_revision" }
+
 // RecordReviewComments files a comments-only review outcome (SPEC-009
 // FR-2.2): the reviewer's comments and reasoning go onto the document's
 // thread, and the document stays exactly where it was. This is the whole of
@@ -367,9 +393,21 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 		// the server expands it, since a rule may not reach the store
 		// (SPEC-009 FR-4.3).
 		if snap.Doc.Type == "design" {
-			return []Action{ReconcileAuthoring{
+			reconcile := ReconcileAuthoring{
 				OwnerType: snap.Doc.OwnerType, OwnerID: snap.Doc.OwnerID,
-			}}
+			}
+			// A successor design first runs the revision cascade (FR-9), then
+			// reconciles — in that order, so a spec the cascade just
+			// invalidated is re-authored in the same pass. Features whose
+			// specs await the checkpoint's answer still hold current specs,
+			// so the reconciler leaves them alone until the human decides.
+			if snap.Doc.IsSuccessor {
+				return []Action{CascadeDesignRevision{
+					DesignDocID: snap.Doc.ID,
+					OwnerType:   snap.Doc.OwnerType, OwnerID: snap.Doc.OwnerID,
+				}, reconcile}
+			}
+			return []Action{reconcile}
 		}
 		if snap.Doc.OwnerType != "feature" || snap.OwnerFeature == nil {
 			return nil
@@ -519,6 +557,24 @@ type RevisionResponse struct {
 	Continue bool `json:"continue"`
 }
 
+// DesignRevisionResponse is the payload of a design-revision checkpoint
+// answer (SPEC-009 FR-9.2a): a decision per affected spec rather than one
+// verb. Keep is carried so the record shows every spec was answered, not
+// merely the invalidated ones.
+type DesignRevisionResponse struct {
+	Invalidate []string `json:"invalidate"`
+	Keep       []string `json:"keep,omitempty"`
+}
+
+// designRevisionContext is the checkpoint's stored context: the specs the
+// cascade found affected. Only ids named here may be invalidated by the
+// answer — the response cannot reach a spec the question never asked about.
+type designRevisionContext struct {
+	Affected []struct {
+		SpecDocID string `json:"spec_doc_id"`
+	} `json:"affected"`
+}
+
 // DeadlockResponse is the payload of a review-deadlock checkpoint answer:
 // the reviewer and implementer could not converge within the round cap, so a
 // human either takes the code as it stands or stops work on the task.
@@ -587,6 +643,35 @@ func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Actio
 			return nil
 		}
 		return []Action{ClearSpecStale{FeatureID: e.RefID, Continue: r.Continue}}
+	case "design-revision":
+		var r DesignRevisionResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil || snap.Doc == nil {
+			return nil
+		}
+		// Only specs the checkpoint asked about may be invalidated.
+		var cctx designRevisionContext
+		if err := json.Unmarshal(e.Context, &cctx); err != nil {
+			return nil
+		}
+		asked := map[string]bool{}
+		for _, a := range cctx.Affected {
+			asked[a.SpecDocID] = true
+		}
+		var invalidate []uuid.UUID
+		for _, raw := range r.Invalidate {
+			id, err := uuid.Parse(raw)
+			if err != nil || !asked[raw] {
+				continue
+			}
+			invalidate = append(invalidate, id)
+		}
+		// Apply, then reconcile the design's scope so every invalidated spec
+		// is re-authored against the revised design (FR-9.4). An all-keep
+		// answer still reconciles, harmlessly: every feature has its spec.
+		return []Action{
+			ApplyDesignRevision{DesignDocID: snap.Doc.ID, Invalidate: invalidate, Actor: e.RespondedBy},
+			ReconcileAuthoring{OwnerType: snap.Doc.OwnerType, OwnerID: snap.Doc.OwnerID},
+		}
 	case "gate-override":
 		var r OverrideResponse
 		if err := json.Unmarshal(e.Response, &r); err != nil || !r.Override {

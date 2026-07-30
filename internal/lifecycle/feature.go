@@ -37,6 +37,13 @@ const (
 	FeatRework FeatureEvent = "rework"
 	// FeatAbandon is always human, always with a reason (DESIGN-003 §6).
 	FeatAbandon FeatureEvent = "abandon"
+	// FeatContractInvalidated is contract_approved's inverse, fired only by
+	// the engine when the revision cascade supersedes a ready feature's
+	// contract (SPEC-009 FR-9.4): a feature whose spec no longer stands is an
+	// idea again, which is what lets the authoring invariant write it a fresh
+	// one. Never human-triggered — a person who wants a feature out of ready
+	// abandons it or revises its documents.
+	FeatContractInvalidated FeatureEvent = "contract_invalidated"
 )
 
 var featTransitions = map[FeatureState]map[FeatureEvent]FeatureState{
@@ -45,8 +52,9 @@ var featTransitions = map[FeatureState]map[FeatureEvent]FeatureState{
 		FeatAbandon:          FeatAbandoned,
 	},
 	FeatReady: {
-		FeatStart:   FeatActive,
-		FeatAbandon: FeatAbandoned,
+		FeatStart:               FeatActive,
+		FeatContractInvalidated: FeatIdea,
+		FeatAbandon:             FeatAbandoned,
 	},
 	FeatActive: {
 		FeatTasksComplete: FeatReview,

@@ -38,6 +38,14 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 	if f.State != lifecycle.FeatReady {
 		return nil, fmt.Errorf("feature %s is %s, not ready (a feature starts only from ready)", path, f.State)
 	}
+	// A pending design-revision question blocks the start (SPEC-009 FR-9.3):
+	// until it is answered, this feature's design and specification disagree,
+	// and starting work would build against reasoning the design has revised.
+	if blocked, err := s.pendingDesignRevisionFor(ctx, f.ID); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, fmt.Errorf("feature %s cannot start yet: its design was revised and a question in the Inbox asks whether the specification still stands — answer it first", path)
+	}
 	branch := "cromwell/" + path
 	relPath := filepath.Join(".cromwell", "worktrees", store.ShortID("feat", f.ID))
 

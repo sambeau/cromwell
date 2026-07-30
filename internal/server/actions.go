@@ -175,6 +175,10 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 		return s.evaluateContractGate(ctx, a.FeatureID)
 	case rules.ReconcileAuthoring:
 		return s.reconcileAuthoringScope(ctx, a.OwnerType, a.OwnerID)
+	case rules.CascadeDesignRevision:
+		return s.cascadeDesignRevision(ctx, a)
+	case rules.ApplyDesignRevision:
+		return s.applyDesignRevision(ctx, a)
 	case rules.ReindexDocument:
 		return s.reindexDocument(ctx, a.DocID)
 	case rules.ArchiveInitiative:
@@ -275,6 +279,7 @@ func (s *Server) approveDocument(ctx context.Context, docID uuid.UUID, actor str
 	}
 
 	from := doc.State
+	var archived string
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocApprove, actor, nil); err != nil {
 			return err
@@ -285,7 +290,10 @@ func (s *Server) approveDocument(ctx context.Context, docID uuid.UUID, actor str
 				map[string]any{"superseded_by": doc.ID.String()}); err != nil {
 				return err
 			}
-			archived := filepath.Join("docs/_superseded", filepath.Base(canonicalPath))
+			// The archive name carries the superseded row's short id: a
+			// document revised twice — or two documents sharing a basename —
+			// must not collide in docs/_superseded/.
+			archived = archiveTarget(predecessor)
 			if err := store.UpdateDocumentPath(ctx, tx, predecessor.ID, archived); err != nil {
 				return err
 			}
@@ -300,7 +308,7 @@ func (s *Server) approveDocument(ctx context.Context, docID uuid.UUID, actor str
 	}
 
 	if predecessor != nil {
-		if err := s.takeOverCanonicalPath(doc.Path, canonicalPath); err != nil {
+		if err := s.takeOverCanonicalPath(doc.Path, canonicalPath, archived); err != nil {
 			// Files and states have diverged; the catch-up scan will keep
 			// flagging it. Surface loudly.
 			s.Log.Error("revision file takeover failed", "doc", doc.ID, "err", err)
@@ -325,15 +333,27 @@ func (s *Server) approveDocument(ctx context.Context, docID uuid.UUID, actor str
 	return nil
 }
 
+// archiveTarget is where a superseded document's file rests: under
+// docs/_superseded/, its basename suffixed with the row's id tail so that
+// repeated revisions and same-named documents never collide there. The tail,
+// not the head: ids are UUIDv7, whose leading characters are the timestamp
+// and collide for rows created in the same instant (the same reason ShortID
+// reads the tail).
+func archiveTarget(d *store.Document) string {
+	ext := filepath.Ext(d.Path)
+	base := strings.TrimSuffix(filepath.Base(d.Path), ext)
+	s := d.ID.String()
+	return filepath.Join("docs/_superseded", fmt.Sprintf("%s-%s%s", base, s[len(s)-8:], ext))
+}
+
 // takeOverCanonicalPath performs the revision file operations in one
 // server-authored commit (DESIGN-003 §5): predecessor archived under
 // docs/_superseded/, successor moved to the canonical path.
-func (s *Server) takeOverCanonicalPath(successorPath, canonicalPath string) error {
+func (s *Server) takeOverCanonicalPath(successorPath, canonicalPath, archived string) error {
 	archiveDir := filepath.Join(s.RepoRoot, "docs/_superseded")
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return err
 	}
-	archived := filepath.Join("docs/_superseded", filepath.Base(canonicalPath))
 	steps := [][]string{
 		{"git", "mv", canonicalPath, archived},
 		{"git", "mv", successorPath, canonicalPath},
