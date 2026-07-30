@@ -71,7 +71,7 @@ func TestUITemplatesParseAndRender(t *testing.T) {
 			{Label: "Authentication", URL: "/ui/i/auth"}, {Label: "Login form", Here: true}},
 		HasBody: true, Body: renderMarkdown("## Design\n\nThe form has two fields.\n"),
 		BodyDoc:  &docCard{ID: uuid.New(), Title: "Login design", Type: "design", State: "approved", URL: "/ui/d/docs/login.md", IsPrimary: true},
-		CanStart: false, StartReason: featureStartReason("idea"), CanAbandon: true,
+		CanStart: false, StartReason: featureStartReason("idea", true, false), CanAbandon: true,
 		Documents: []docCard{{ID: uuid.New(), Title: "Login spec", Type: "spec", State: "approved", URL: "/ui/d/docs/spec.md"}},
 		MemberOf:  []milestoneCard{sampleMilestoneCard()},
 		Activity:  []store.AuditEvent{{OccurredAt: now, Actor: "operator", Kind: "feature.created"}},
@@ -180,7 +180,7 @@ func TestGatedActionShowsPlainReason(t *testing.T) {
 	page := &entityPage{
 		Kind: "feature", RefType: "feature", ID: uuid.New(), Title: "Login form",
 		Breadcrumbs: []crumb{{Label: "Project", URL: "/ui/project"}},
-		State:       "idea", CanStart: false, StartReason: featureStartReason("idea"), CanAbandon: true,
+		State:       "idea", CanStart: false, StartReason: featureStartReason("idea", true, false), CanAbandon: true,
 	}
 	var buf bytes.Buffer
 	if err := tmpl.t.ExecuteTemplate(&buf, "page-entity", pageData{Active: "browse", Actor: "op", Data: page}); err != nil {
@@ -249,4 +249,32 @@ func gatedEntityDocPage(p entityDocPage) entityDocPage {
 	cp := p
 	cp.docPageData = gatedDocPage(p.docPageData)
 	return cp
+}
+
+// A feature whose specification is approved but whose dev-plan is missing was
+// told "work can start once this feature's specification is approved" — an
+// instruction to do the thing already done, leaving the reader stuck. The
+// reason must name the half of the contract that is actually missing.
+func TestFeatureStartReasonNamesTheMissingHalf(t *testing.T) {
+	cases := []struct {
+		name                          string
+		specApproved, devPlanApproved bool
+		wantContains, wantAbsent      string
+	}{
+		{"neither approved", false, false, "specification and an approved dev-plan", ""},
+		{"spec missing", false, true, "specification is approved", "dev-plan is approved."},
+		{"dev-plan missing", true, false, "dev-plan is approved", "once this feature's specification is approved"},
+		{"both approved", true, true, "moment away", "once this"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := featureStartReason("idea", c.specApproved, c.devPlanApproved)
+			if !strings.Contains(got, c.wantContains) {
+				t.Errorf("reason %q should mention %q", got, c.wantContains)
+			}
+			if c.wantAbsent != "" && strings.Contains(got, c.wantAbsent) {
+				t.Errorf("reason %q must not say %q — it is already true", got, c.wantAbsent)
+			}
+		})
+	}
 }

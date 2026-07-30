@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"cromwell/internal/config"
+	"cromwell/internal/lifecycle"
 	"cromwell/internal/sizing"
 	"cromwell/internal/store"
 )
@@ -553,7 +554,11 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 	page.CanAbandon = !page.IsTerminal
 	page.CanStart = f.State == "ready"
 	if !page.CanStart && !page.IsTerminal {
-		page.StartReason = featureStartReason(string(f.State))
+		// Read the contract the same way evaluateContractGate does, so the
+		// page never disagrees with the gate it is explaining.
+		specApproved := s.currentDocApproved(ctx, "spec", f.ID)
+		devPlanApproved := s.currentDocApproved(ctx, "dev_plan", f.ID)
+		page.StartReason = featureStartReason(string(f.State), specApproved, devPlanApproved)
 	}
 
 	body, bodyDoc, ok := s.bodyFor(ctx, "feature", &f.ID)
@@ -580,10 +585,33 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 
 // featureStartReason explains, in plain words, why a feature cannot be started
 // yet given its state (FR-2.2).
-func featureStartReason(state string) string {
+// currentDocApproved reports whether a feature's current document of a type is
+// approved, matching evaluateContractGate's reading: a missing document is not
+// an error, it is simply not approved.
+func (s *Server) currentDocApproved(ctx context.Context, docType string, featureID uuid.UUID) bool {
+	d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, docType, "feature", featureID)
+	return err == nil && d.State == lifecycle.DocApproved
+}
+
+// featureStartReason explains, in the words a person needs, why "Start work"
+// is unavailable. For a feature still forming that means naming the half of
+// the contract that is actually missing: saying "once the specification is
+// approved" to someone looking at an approved specification tells them to do
+// something they have already done, and leaves them stuck.
+func featureStartReason(state string, specApproved, devPlanApproved bool) string {
 	switch state {
 	case "idea":
-		return "Work can start once this feature's specification is approved, which moves it to ready. It is still an idea."
+		switch {
+		case !specApproved && !devPlanApproved:
+			return "Work can start once this feature has an approved specification and an approved dev-plan. Neither is approved yet, so it is still an idea."
+		case !specApproved:
+			return "Work can start once this feature's specification is approved. Its dev-plan is approved; the specification is not, so it is still an idea."
+		case !devPlanApproved:
+			return "Work can start once this feature's dev-plan is approved. Its specification is approved, but a dev-plan decomposes that specification into the tasks agents build, and this feature does not have an approved one yet."
+		}
+		// Both halves approved but still an idea: the gate has not been
+		// re-evaluated yet, and the heartbeat will pick it up.
+		return "This feature's specification and dev-plan are both approved. It is a moment away from being ready to start."
 	case "active":
 		return "This feature is already in active development."
 	case "review":

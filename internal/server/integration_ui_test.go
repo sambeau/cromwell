@@ -122,7 +122,11 @@ func TestUIBrowseAndDrive(t *testing.T) {
 	// FR-2.2: the start action is disabled with a plain-words reason (the spec
 	// is not approved, so the feature is still an idea).
 	mustContain(t, "gated start", featPage, "disabled")
-	mustContain(t, "gate reason", featPage, "specification is approved")
+	// The reason names both halves of the contract. Neither is approved in
+	// this fixture, and a reason that named only the spec would leave a
+	// reader with an approved spec stuck (see TestFeatureStartReason...).
+	mustContain(t, "gate reason", featPage, "approved specification")
+	mustContain(t, "gate reason names the dev-plan", featPage, "dev-plan")
 
 	// FR-3.1: the feature has a spec but no design document, so the body is the
 	// clear empty state that offers to attach one — not a blank panel.
