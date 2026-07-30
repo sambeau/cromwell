@@ -213,22 +213,26 @@ type Comment struct {
 	Author     string
 	SectionRef string
 	Body       string
-	Resolved   bool
-	CreatedAt  time.Time
+	// Severity is the finding's classification ("major" | "minor"), empty
+	// for comments that are not classified findings — a design reviewer's
+	// comments and a human's reasons (C-1a).
+	Severity  string
+	Resolved  bool
+	CreatedAt time.Time
 }
 
-func InsertComment(ctx context.Context, tx pgx.Tx, docID uuid.UUID, dispatchID *uuid.UUID, author, sectionRef, body string) error {
+func InsertComment(ctx context.Context, tx pgx.Tx, docID uuid.UUID, dispatchID *uuid.UUID, author, sectionRef, body, severity string) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO document_comments (id, document_id, dispatch_id, author, section_ref, body)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		NewID(), docID, dispatchID, author, nullable(sectionRef), body)
+		INSERT INTO document_comments (id, document_id, dispatch_id, author, section_ref, body, severity)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		NewID(), docID, dispatchID, author, nullable(sectionRef), body, nullable(severity))
 	return err
 }
 
 // CommentsForDocument returns the comment thread, unresolved first-class:
 // they persist across resubmission (DESIGN-001 §5).
 func CommentsForDocument(ctx context.Context, q Querier, docID uuid.UUID, unresolvedOnly bool) ([]Comment, error) {
-	sql := `SELECT id, document_id, dispatch_id, author, COALESCE(section_ref, ''), body, resolved, created_at
+	sql := `SELECT id, document_id, dispatch_id, author, COALESCE(section_ref, ''), body, COALESCE(severity, ''), resolved, created_at
 		FROM document_comments WHERE document_id = $1`
 	if unresolvedOnly {
 		sql += ` AND NOT resolved`
@@ -242,7 +246,7 @@ func CommentsForDocument(ctx context.Context, q Querier, docID uuid.UUID, unreso
 	var out []Comment
 	for rows.Next() {
 		var c Comment
-		if err := rows.Scan(&c.ID, &c.DocumentID, &c.DispatchID, &c.Author, &c.SectionRef, &c.Body, &c.Resolved, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.DocumentID, &c.DispatchID, &c.Author, &c.SectionRef, &c.Body, &c.Severity, &c.Resolved, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

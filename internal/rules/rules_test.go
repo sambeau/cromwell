@@ -68,12 +68,14 @@ func TestVerdicts(t *testing.T) {
 		}
 	}
 
-	// approve
-	actions := Decide(ev(`{"verdict":"approve","reasoning":"clear and testable"}`), snap)
+	// approve — a minor finding rides along and is recorded, not discarded
+	// (C-1a, audit §3.3a).
+	actions := Decide(ev(`{"verdict":"approve","comments":[{"body":"typo","severity":"minor"}],"reasoning":"clear and testable"}`), snap)
 	if len(actions) != 1 {
 		t.Fatalf("approve: %+v", actions)
 	}
-	if a := actions[0].(ApproveDocument); a.DocID != d.ID || a.Actor != "spec-reviewer" {
+	if a := actions[0].(ApproveDocument); a.DocID != d.ID || a.Actor != "spec-reviewer" ||
+		len(a.Comments) != 1 || a.Comments[0].Severity != SeverityMinor {
 		t.Errorf("approve action wrong: %+v", a)
 	}
 

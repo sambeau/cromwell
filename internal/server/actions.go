@@ -155,7 +155,7 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 	case rules.QueueReview:
 		return s.queueReview(ctx, a)
 	case rules.ApproveDocument:
-		return s.approveDocument(ctx, a.DocID, a.Actor)
+		return s.approveDocument(ctx, a)
 	case rules.ReturnForChanges:
 		return s.returnForChanges(ctx, a)
 	case rules.RecordReviewComments:
@@ -262,8 +262,11 @@ func (s *Server) configErrorCheckpoint(ctx context.Context, refType string, refI
 // approveDocument executes the approve transition; if the document revises a
 // predecessor, the same transaction supersedes it (DESIGN-003 §5) and the
 // lifecycle engine performs the repo file operations in a server-authored
-// commit.
-func (s *Server) approveDocument(ctx context.Context, docID uuid.UUID, actor string) error {
+// commit. Findings that rode along on the approval — a reviewer's minors, a
+// human's remarks — join the comment thread in the same transaction rather
+// than being discarded (C-1a).
+func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) error {
+	docID, actor := a.DocID, a.Actor
 	doc, err := store.GetDocument(ctx, s.Store.Pool, docID)
 	if err != nil {
 		return err
@@ -283,6 +286,11 @@ func (s *Server) approveDocument(ctx context.Context, docID uuid.UUID, actor str
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocApprove, actor, nil); err != nil {
 			return err
+		}
+		for _, c := range a.Comments {
+			if err := store.InsertComment(ctx, tx, doc.ID, a.DispatchID, actor, c.SectionRef, c.Body, c.Severity); err != nil {
+				return err
+			}
 		}
 		if predecessor != nil {
 			// Supersede atomically with the successor's approval (L-2).
@@ -386,7 +394,14 @@ func (s *Server) returnForChanges(ctx context.Context, a rules.ReturnForChanges)
 			return err
 		}
 		for _, c := range a.Comments {
-			if err := store.InsertComment(ctx, tx, doc.ID, a.DispatchID, a.Actor, c.SectionRef, c.Body); err != nil {
+			// An agent finding is stored at its effective severity — empty
+			// reads as major, the fail-closed rule — while a human's comment
+			// (no dispatch) is not a classified finding and stays unmarked.
+			severity := c.Severity
+			if a.DispatchID != nil && severity == "" {
+				severity = rules.SeverityMajor
+			}
+			if err := store.InsertComment(ctx, tx, doc.ID, a.DispatchID, a.Actor, c.SectionRef, c.Body, severity); err != nil {
 				return err
 			}
 		}
@@ -411,12 +426,15 @@ func (s *Server) returnForChanges(ctx context.Context, a rules.ReturnForChanges)
 func (s *Server) recordReviewComments(ctx context.Context, a rules.RecordReviewComments) error {
 	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if a.Reasoning != "" {
-			if err := store.InsertComment(ctx, tx, a.DocID, a.DispatchID, a.Actor, "", a.Reasoning); err != nil {
+			if err := store.InsertComment(ctx, tx, a.DocID, a.DispatchID, a.Actor, "", a.Reasoning, ""); err != nil {
 				return err
 			}
 		}
 		for _, c := range a.Comments {
-			if err := store.InsertComment(ctx, tx, a.DocID, a.DispatchID, a.Actor, c.SectionRef, c.Body); err != nil {
+			// A design reviewer's comments gate nothing, so they carry no
+			// severity (C-1a): classification belongs to findings that decide
+			// whether work goes back.
+			if err := store.InsertComment(ctx, tx, a.DocID, a.DispatchID, a.Actor, c.SectionRef, c.Body, ""); err != nil {
 				return err
 			}
 		}
@@ -439,7 +457,7 @@ func (s *Server) HumanApproveDocument(ctx context.Context, docID uuid.UUID, acto
 	if !s.humanApprovalType(doc.Type) {
 		return fmt.Errorf("a %s is decided by its agent reviewer; it comes to you only when the reviewer escalates", doc.Type)
 	}
-	return s.approveDocument(ctx, docID, actor)
+	return s.approveDocument(ctx, rules.ApproveDocument{DocID: docID, Actor: actor})
 }
 
 // HumanReturnDocument is the request-changes half of FR-2.3: the document goes

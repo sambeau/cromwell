@@ -886,6 +886,7 @@
           <div class="comment-head">
             <span class="comment-author">{{.Author}}</span>
             {{if .SectionRef}}<span class="comment-time">on {{.SectionRef}}</span>{{end}}
+            {{if .Severity}}<span class="badge" data-state="{{if eq .Severity "major"}}abandoned{{else}}idea{{end}}"><span class="badge-text">{{.Severity}}</span></span>{{end}}
           </div>
           <div class="comment-body"><p>{{.Body}}</p></div>
         </div>

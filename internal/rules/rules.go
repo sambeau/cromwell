@@ -35,6 +35,11 @@ func (QueueReview) ActionKind() string { return "queue_review" }
 type ApproveDocument struct {
 	DocID uuid.UUID
 	Actor string
+	// Comments are findings that rode along on the approval — an agent
+	// reviewer's minors, or a human's remarks on an escalation — recorded on
+	// the thread rather than discarded (C-1a, audit §3.3a).
+	Comments   []ReviewComment
+	DispatchID *uuid.UUID
 }
 
 func (ApproveDocument) ActionKind() string { return "approve_document" }
@@ -493,7 +498,10 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 	}
 	switch outcome.Verdict {
 	case "approve":
-		return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.Role}}
+		return []Action{ApproveDocument{
+			DocID: snap.Doc.ID, Actor: e.Role,
+			Comments: outcome.MinorComments(), DispatchID: &dispatchID,
+		}}
 	case "request_changes":
 		return []Action{ReturnForChanges{
 			DocID:      snap.Doc.ID,
@@ -600,7 +608,7 @@ func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Actio
 			}
 			switch r.Decision {
 			case "approve":
-				return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.RespondedBy}}
+				return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
 			case "request_changes":
 				return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
 			}
