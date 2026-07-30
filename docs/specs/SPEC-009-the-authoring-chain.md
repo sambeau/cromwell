@@ -1,7 +1,9 @@
 # SPEC-009: The Authoring Chain — Stage 1
 
-**Status:** **Draft — not approved, not binding.** Authored by Claude (Opus 5).
-An authoring consistency review follows; the approval decision is Sam's.
+**Status:** **Approved and binding — 2026-07-30** (Sam, after the authoring
+consistency review). Authored by Claude (Opus 5); the approval decision was
+Sam's, as [REVIEW-009](../reviews/REVIEW-009-authoring-chain-package.md) §7
+required.
 **Date:** 2026-07-30
 **Parent design:** [DESIGN-009](../design/DESIGN-009-the-authoring-half.md)
 (the authoring half: G0 as a computed spec-ready gate, the two human gates, the

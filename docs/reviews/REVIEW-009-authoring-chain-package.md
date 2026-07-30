@@ -1,6 +1,6 @@
 # REVIEW-009: Consistency Review of the Authoring-Chain Package
 
-**Status:** Complete — **awaiting Sam's approval**, which is recorded in §5.
+**Status:** Complete — **SPEC-009 approved by Sam, 2026-07-30.**
 **Date:** 2026-07-30
 **Reviewer:** Claude (Opus 5), authoring review — I wrote both documents under
 review, so this is not and cannot be the approval gate.

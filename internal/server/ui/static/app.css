@@ -2036,3 +2036,15 @@ dialog.modal::backdrop { background: var(--c-overlay); }
    size whose thin strokes rasterise with visible breaks. Pinned to an integer
    inside the same 18–23px stroke band, so the weight stays correct. */
 .modal-head > .modal-title > .icon { width: 20px; height: 20px; }
+
+/* The reset sets `img, svg { display: block }`, which is invisible wherever an
+   icon sits in a flex row and wrong wherever it does not. `.modal-title` is a
+   heading — a plain block — so its leading icon took a line of its own and the
+   title wrapped beneath it. Their pattern library nests the icon inside the
+   title and gives it no display rule, so their own modals render this way too;
+   it is fed back rather than worked around in the markup.
+
+   `flex`, never `inline-flex`: the title is `flex: 1 1 auto` inside
+   `.modal-head` and has to keep growing, or the close button stops being
+   pushed to the right edge. */
+.modal-title { display: flex; align-items: center; gap: var(--sp-2); }
