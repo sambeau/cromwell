@@ -1,0 +1,17 @@
+type: design
+reviewer_role: design-reviewer
+front_matter:
+  required: [title, type, owner]
+sections:
+  order: strict
+  required:
+    - heading: What this is for
+    - heading: The shape of it
+    - heading: Decisions
+  optional:
+    - heading: What this does not cover
+    - heading: Open questions
+rules:
+  - kind: min_list_items
+    section: Decisions
+    min: 1

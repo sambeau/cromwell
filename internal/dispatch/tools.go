@@ -121,3 +121,41 @@ func ProfileToolDefs(names []string) []provider.ToolDef {
 	}
 	return defs
 }
+
+// DocumentOutcomeTool completes an authoring dispatch (SPEC-009 FR-6). The
+// agent returns the document body and nothing else: it does not choose a path,
+// does not touch git, and cannot half-create a document. Path and owner come
+// from the orchestrator, which is the standing convention for implicit context
+// (vision §8).
+func DocumentOutcomeTool() provider.ToolDef {
+	return provider.ToolDef{
+		Name: "submit_document",
+		Description: "Submit the finished document. Give the whole file, front matter included, exactly as it should be written. " +
+			"This completes your work — call it once. If the document fails validation you will be told why and can submit a corrected one.",
+		InputSchema: obj(map[string]any{
+			"body":      str("The complete document, starting with its YAML front matter"),
+			"reasoning": str("How you arrived at it, and anything a reader should know — open questions you left, decisions you had to make"),
+		}, "body", "reasoning"),
+	}
+}
+
+// CommentsOutcomeTool completes a design review (SPEC-009 FR-2.2). It has no
+// verdict field, deliberately: a design is approved by a human, and a reviewer
+// with no way to express a verdict cannot be handed that authority by a later
+// change. This is the same confinement-by-omission the MCP facet uses.
+func CommentsOutcomeTool() provider.ToolDef {
+	return provider.ToolDef{
+		Name:        "submit_comments",
+		Description: "Submit your comments on this design. There is no verdict: a human decides whether the design is approved. Call this once.",
+		InputSchema: obj(map[string]any{
+			"comments": map[string]any{
+				"type": "array",
+				"items": obj(map[string]any{
+					"section_ref": str("Heading of the section the comment is about; leave empty for the whole document"),
+					"body":        str("What you found, specifically"),
+				}, "body"),
+			},
+			"reasoning": str("Your overall reading of the design — what you checked, and what stands"),
+		}, "reasoning"),
+	}
+}

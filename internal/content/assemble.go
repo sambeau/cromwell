@@ -35,8 +35,11 @@ type CommentContext struct {
 }
 
 type ReviewPromptInput struct {
-	RoleIdentity     string
-	SkillBody        string
+	// System is the whole system prompt, assembled by the caller: identity,
+	// vocabulary, anti-patterns, then the skill's procedure. Assembling it in
+	// one place keeps every dispatch purpose on the same shape (SPEC-009
+	// FR-10.4).
+	System           string
 	ProjectName      string
 	AncestorDocs     []AttachedDoc // approved docs on ancestor initiatives
 	Feature          *FeatureContext
@@ -50,11 +53,7 @@ type ReviewPromptInput struct {
 // dispatch (FR-5.3).
 func AssembleReviewPrompt(in ReviewPromptInput) (system, user string) {
 	var sys strings.Builder
-	sys.WriteString(strings.TrimSpace(in.RoleIdentity))
-	if in.SkillBody != "" {
-		sys.WriteString("\n\n# Procedure\n\n")
-		sys.WriteString(strings.TrimSpace(in.SkillBody))
-	}
+	sys.WriteString(strings.TrimSpace(in.System))
 
 	var u strings.Builder
 	u.WriteString("# Project\n\n")

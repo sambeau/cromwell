@@ -43,13 +43,35 @@ var readOnlyPurposes = []string{"review-code", "verify-feature"}
 // (F-9). The outcome tool is part of the dispatch purpose, defined in code —
 // never listed in Tools (F-5).
 type Role struct {
-	Name      string  `yaml:"-"`
-	Model     string  `yaml:"model"`
-	Skill     string  `yaml:"skill"`
-	Identity  string  `yaml:"identity"`
-	Tools     []string `yaml:"tools"`
-	ToolHints string  `yaml:"tool_hints"`
-	Limits    *Limits `yaml:"limits"`
+	Name string `yaml:"-"`
+	// Identity is the role's job title, kept short. The reasoning that used
+	// to live in a paragraph of prose belongs in an anti-pattern's Because
+	// clause, where the research says it generalises to adjacent cases
+	// (SPEC-009 FR-10.2).
+	Model    string `yaml:"model"`
+	Skill    string `yaml:"skill"`
+	Identity string `yaml:"identity"`
+	// Vocabulary is the routing signal: 15–30 precise domain terms that
+	// determine which knowledge the model reaches for. This is the single
+	// highest-ROI element of a prompt per the research, and Cromwell had
+	// none of it before SPEC-009 (audit §3.1).
+	Vocabulary []string `yaml:"vocabulary"`
+	// AntiPatterns are named failure modes. Naming one activates expert
+	// knowledge where an unnamed problem gets a generic answer.
+	AntiPatterns []AntiPattern `yaml:"anti_patterns"`
+	Tools        []string      `yaml:"tools"`
+	ToolHints    string        `yaml:"tool_hints"`
+	Limits       *Limits       `yaml:"limits"`
+}
+
+// AntiPattern is one named failure mode. Because is load-bearing: a rule with
+// a reason generalises to cases the author never listed, and a rule without
+// one cannot be evaluated or pruned later.
+type AntiPattern struct {
+	Name    string `yaml:"name"`
+	Detect  string `yaml:"detect"`
+	Because string `yaml:"because"`
+	Resolve string `yaml:"resolve"`
 }
 
 type Limits struct {
@@ -74,6 +96,19 @@ func LoadRole(root, name string) (*Role, error) {
 	}
 	if strings.TrimSpace(r.Identity) == "" {
 		errs = append(errs, errf(rel, "identity", "required"))
+	}
+	// Both new fields are optional so the roles that predate SPEC-009 keep
+	// loading unchanged (FR-10.3). What is not optional is an anti-pattern
+	// that is half-written: one missing its name or its reason is worse than
+	// absent, because it consumes attention budget and teaches nothing.
+	for i, ap := range r.AntiPatterns {
+		where := fmt.Sprintf("anti_patterns[%d]", i)
+		if strings.TrimSpace(ap.Name) == "" {
+			errs = append(errs, errf(rel, where+".name", "required — an unnamed anti-pattern routes to generic advice"))
+		}
+		if strings.TrimSpace(ap.Because) == "" {
+			errs = append(errs, errf(rel, where+".because", "required — a rule without a reason cannot generalise or be pruned"))
+		}
 	}
 	return &r, join(errs)
 }

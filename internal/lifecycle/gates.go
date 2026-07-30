@@ -10,6 +10,7 @@ import "fmt"
 type Gate string
 
 const (
+	GateG0 Gate = "G0" // spec-ready: a feature's design is approved, so it may be specced
 	GateG1 Gate = "G1" // contract-approved: guards feature idea → ready
 	GateG2 Gate = "G2" // tasks-complete: guards feature active → review
 	GateG3 Gate = "G3" // verified: guards feature review → done
@@ -21,6 +22,29 @@ type GateResult struct {
 	Gate   Gate
 	Pass   bool
 	Reason string // human-readable; becomes the audit payload
+}
+
+// G0 — spec-ready. A feature may be specced when its own primary design
+// document is approved, or its *immediate parent* initiative's is (SPEC-009
+// FR-3). Approving a design is the single act that means "ready to spec";
+// there is no separate readiness flag, because a gate is an expression over
+// current state (DESIGN-003 §8).
+//
+// Inheritance stops at one level, and that is the whole point. Product
+// planning is width-first — a broad tree of half-formed sub-initiatives with
+// half-written designs — so a top-level design releasing everything beneath it
+// would spec work nobody has thought about yet. Each level of the tree is an
+// explicit decision.
+func G0(ownDesignApproved, parentDesignApproved bool) GateResult {
+	pass := ownDesignApproved || parentDesignApproved
+	reason := "the initiative's design is approved, so its features are ready to spec"
+	switch {
+	case ownDesignApproved:
+		reason = "this feature's own design is approved"
+	case !pass:
+		reason = "no approved design — a feature is ready to spec once its own design, or its initiative's, is approved"
+	}
+	return GateResult{Gate: GateG0, Pass: pass, Reason: reason}
 }
 
 // G1 — contract-approved. Phase 1 passes devPlanRequired=false (SPEC-001

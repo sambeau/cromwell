@@ -106,7 +106,7 @@ func (s *Server) planEstimate(ctx context.Context, d *store.Dispatch) (*dispatch
 		turnCap = role.Limits.TurnCap
 	}
 	return &dispatch.Plan{
-		System: identityWithSkill(role.Identity, skillBody), User: b.String(), TurnCap: turnCap,
+		System: roleSystemPrompt(role, skillBody), User: b.String(), TurnCap: turnCap,
 		Tools:           []provider.ToolDef{dispatch.EstimateOutcomeTool()},
 		OutcomeTool:     "submit_estimate",
 		ValidateOutcome: validateEstimate,
@@ -210,7 +210,7 @@ func (s *Server) planImplement(ctx context.Context, d *store.Dispatch) (*dispatc
 	}
 	tools := append(dispatch.ProfileToolDefs(role.Tools), dispatch.ImplementationOutcomeTool())
 	return &dispatch.Plan{
-		System: identityWithSkill(role.Identity, skillBody), User: b.String(), TurnCap: turnCap,
+		System: roleSystemPrompt(role, skillBody), User: b.String(), TurnCap: turnCap,
 		Tools: tools, OutcomeTool: "submit_implementation", ToolCtx: tctx,
 	}, nil
 }
@@ -254,7 +254,7 @@ func (s *Server) planCodeReview(ctx context.Context, d *store.Dispatch) (*dispat
 	}
 	tools := append(dispatch.ProfileToolDefs(role.Tools), dispatch.ReviewOutcomeTool())
 	return &dispatch.Plan{
-		System: identityWithSkill(role.Identity, skillBody), User: b.String(), TurnCap: turnCap,
+		System: roleSystemPrompt(role, skillBody), User: b.String(), TurnCap: turnCap,
 		Tools: tools, OutcomeTool: "submit_review", ValidateOutcome: validateReview, ToolCtx: tctx,
 	}, nil
 }
@@ -296,7 +296,7 @@ func (s *Server) planVerify(ctx context.Context, d *store.Dispatch) (*dispatch.P
 	}
 	tools := append(dispatch.ProfileToolDefs(role.Tools), dispatch.VerificationOutcomeTool())
 	return &dispatch.Plan{
-		System: identityWithSkill(role.Identity, skillBody), User: b.String(), TurnCap: turnCap,
+		System: roleSystemPrompt(role, skillBody), User: b.String(), TurnCap: turnCap,
 		Tools: tools, OutcomeTool: "submit_verification", ValidateOutcome: validateVerification, ToolCtx: tctx,
 	}, nil
 }
@@ -319,12 +319,38 @@ func (s *Server) roleAndSkill(roleName string) (*config.Role, string, error) {
 	return role, skillBody, nil
 }
 
-func identityWithSkill(identity, skillBody string) string {
-	s := strings.TrimSpace(identity)
-	if skillBody != "" {
-		s += "\n\n# Procedure\n\n" + strings.TrimSpace(skillBody)
+// roleSystemPrompt assembles the system half: identity, then the vocabulary
+// payload, then the anti-patterns, then the skill's procedure (SPEC-009
+// FR-10.4). The order is deliberate and doubly motivated — stable content
+// first keeps the provider's prompt cache warm, and constraints early with the
+// artefact under work last is what the attention research asks for. Both want
+// the same thing here (audit §2.7).
+func roleSystemPrompt(role *config.Role, skillBody string) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(role.Identity))
+	if len(role.Vocabulary) > 0 {
+		b.WriteString("\n\n# Vocabulary\n\nThe terms this work is conducted in:\n\n")
+		for _, v := range role.Vocabulary {
+			b.WriteString("- " + strings.TrimSpace(v) + "\n")
+		}
 	}
-	return s
+	if len(role.AntiPatterns) > 0 {
+		b.WriteString("\n# Anti-patterns\n\nNamed failure modes. Each says how to spot it, why it matters, and what to do instead.\n")
+		for _, ap := range role.AntiPatterns {
+			fmt.Fprintf(&b, "\n**%s**\n", strings.TrimSpace(ap.Name))
+			if d := strings.TrimSpace(ap.Detect); d != "" {
+				b.WriteString("- Detect: " + d + "\n")
+			}
+			b.WriteString("- Because: " + strings.TrimSpace(ap.Because) + "\n")
+			if r := strings.TrimSpace(ap.Resolve); r != "" {
+				b.WriteString("- Resolve: " + r + "\n")
+			}
+		}
+	}
+	if skillBody != "" {
+		b.WriteString("\n# Procedure\n\n" + strings.TrimSpace(skillBody))
+	}
+	return b.String()
 }
 
 // contractBodies returns the feature's current approved spec and dev-plan

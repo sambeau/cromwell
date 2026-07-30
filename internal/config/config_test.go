@@ -222,3 +222,52 @@ func TestVerifierCannotMutate(t *testing.T) {
 		t.Errorf("verifier with a mutating tool should error naming file and tool: %v", err)
 	}
 }
+
+// The role schema gained a vocabulary payload and named anti-patterns
+// (SPEC-009 FR-10). Both are optional so roles predating them keep loading,
+// but a half-written anti-pattern is rejected: one without a name routes to
+// generic advice, and one without a reason cannot generalise or be pruned.
+func TestRoleVocabularyAndAntiPatterns(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "roles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, "roles", name+".yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write("full", `
+model: m
+identity: "Senior requirements engineer"
+vocabulary: ["acceptance criterion", "boundary condition"]
+anti_patterns:
+  - name: "Untestable Requirement"
+    detect: "subjective language with no measurable criterion"
+    because: "a requirement nobody can check passes every review and fails every deployment"
+    resolve: "replace the adjective with a threshold"
+`)
+	r, err := LoadRole(dir, "full")
+	if err != nil {
+		t.Fatalf("a fully-formed role must load: %v", err)
+	}
+	if len(r.Vocabulary) != 2 || len(r.AntiPatterns) != 1 || r.AntiPatterns[0].Because == "" {
+		t.Errorf("fields did not round-trip: %+v", r)
+	}
+
+	// A role written before SPEC-009 has neither field and must still load.
+	write("legacy", "model: m\nidentity: \"Senior code reviewer\"\n")
+	if _, err := LoadRole(dir, "legacy"); err != nil {
+		t.Errorf("both fields are optional: %v", err)
+	}
+
+	write("nameless", "model: m\nidentity: i\nanti_patterns:\n  - because: \"x\"\n")
+	if _, err := LoadRole(dir, "nameless"); err == nil {
+		t.Error("an anti-pattern with no name must be rejected")
+	}
+	write("reasonless", "model: m\nidentity: i\nanti_patterns:\n  - name: \"X\"\n")
+	if _, err := LoadRole(dir, "reasonless"); err == nil {
+		t.Error("an anti-pattern with no because must be rejected")
+	}
+}
