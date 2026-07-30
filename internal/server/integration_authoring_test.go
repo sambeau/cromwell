@@ -248,6 +248,30 @@ func TestFeatureTriggersUnderApprovedDesign(t *testing.T) {
 	h.eventually("write-spec dispatched once the feature is described", func() bool {
 		return countWriteSpec("stub") == 1
 	})
+
+	// NFR-2 / DoD 4: an authoring dispatch carries a nil ToolCtx. Documents
+	// live in the main repository, never a worktree — the property most
+	// likely to be eroded by a later change, so it is pinned here.
+	told, err := h.srv.featureByPath(ctx, "pf/told")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, purpose := range []string{"write-spec", "write-dev-plan"} {
+		role := "spec-author"
+		if purpose == "write-dev-plan" {
+			role = "dev-plan-author"
+		}
+		plan, err := h.srv.Plan(ctx, &store.Dispatch{Purpose: purpose, Role: role, RefType: "feature", RefID: told.ID})
+		if err != nil {
+			t.Fatalf("plan %s: %v", purpose, err)
+		}
+		if plan.ToolCtx != nil {
+			t.Errorf("%s must carry a nil ToolCtx (NFR-2); got %+v", purpose, plan.ToolCtx)
+		}
+		if plan.OutcomeTool != "submit_document" {
+			t.Errorf("%s outcome tool = %q, want submit_document", purpose, plan.OutcomeTool)
+		}
+	}
 }
 
 // TestDesignRevisionCascade is SPEC-009 FR-9's acceptance, both halves:

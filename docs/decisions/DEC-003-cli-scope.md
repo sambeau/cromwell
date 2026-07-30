@@ -141,3 +141,29 @@ remain are the ones the product is designed around and reviewed against.
   maintenance surface stays, the shaping pressure stays, and the product
   acquires a second answer to "how do I do this?" that it does not stand
   behind.
+
+## Addendum — what SPEC-009 Stage 1 covers (2026-07-30)
+
+SPEC-009's Definition of Done asks for this checklist to record what the
+authoring chain covers of the removal and what it does not:
+
+- **Design approval and request-changes** are UI-covered: the document page's
+  Approve and Ask-for-changes actions (SPEC-009 FR-2.3) are gated, audited
+  service methods with no CLI involvement. This was never a CLI verb — it is
+  new capability — but it removes the last workflow *decision* that had no
+  human surface.
+- **`doc submit` and `doc revise` remain CLI-only for human-written
+  documents.** Agents submit through `submit_document`, and the revision
+  cascade opens successor drafts itself, but a person submitting or revising a
+  document they wrote by hand still uses the CLI. The document-page Submit and
+  Revise actions are Stage 2, and the removal of these verbs waits for them.
+- **`doc add` (registration) is UI- and MCP-covered** since SPEC-007/008; the
+  design template makes no difference to that.
+- **`doc validate` stays uncovered deliberately** (DESIGN-009 SD-3, SPEC-009
+  scope table): validation runs on submit and inside the authoring loop, and a
+  standalone check has no consumer. It closes with the verb's removal, not
+  with a replacement.
+- **`respond` gains no new gap.** The design-revision checkpoint's per-spec
+  answer is a UI form; the CLI's generic respond cannot express it and is not
+  taught to. One more reason the verb's removal is overdue rather than
+  blocked.
