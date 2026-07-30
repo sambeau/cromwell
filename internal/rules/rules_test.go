@@ -97,6 +97,73 @@ func TestVerdicts(t *testing.T) {
 	}
 }
 
+// SPEC-009 FR-2 / DoD 4: no code path lets an agent verdict approve a
+// human-approved document. The comments branch has no case that returns
+// ApproveDocument or ReturnForChanges, and this test holds that door shut:
+// every verdict-shaped payload — including the exact one that approves a
+// spec — fails loudly rather than moving the document.
+func TestAgentVerdictNeverApprovesHumanApprovedDoc(t *testing.T) {
+	d, snap := docSnap(lifecycle.DocReviewing)
+	d.Type = "design"
+	d.HumanApproval = true
+	dispatch := uuid.New()
+	ev := func(outcome string) bus.DispatchSucceeded {
+		return bus.DispatchSucceeded{
+			DispatchID: dispatch, Purpose: "review-design", Role: "design-reviewer",
+			RefType: "document", RefID: d.ID, Outcome: json.RawMessage(outcome),
+		}
+	}
+
+	// The well-formed comments outcome records comments and nothing else.
+	actions := Decide(ev(`{"comments":[{"section_ref":"Decisions","body":"unreasoned"}],"reasoning":"checked against the parent design; one gap"}`), snap)
+	if len(actions) != 1 {
+		t.Fatalf("comments outcome: want 1 action, got %+v", actions)
+	}
+	rc, ok := actions[0].(RecordReviewComments)
+	if !ok {
+		t.Fatalf("want RecordReviewComments, got %T", actions[0])
+	}
+	if rc.DocID != d.ID || rc.Actor != "design-reviewer" || len(rc.Comments) != 1 ||
+		rc.Reasoning == "" || rc.DispatchID == nil || *rc.DispatchID != dispatch {
+		t.Errorf("comments action wrong: %+v", rc)
+	}
+
+	// Verdict-shaped payloads must not move the document, whatever the verdict.
+	for _, outcome := range []string{
+		`{"verdict":"approve","reasoning":"ship it"}`,
+		`{"verdict":"request_changes","comments":[{"body":"x"}],"reasoning":"r"}`,
+		`{"verdict":"escalate","reasoning":"r"}`,
+	} {
+		actions := Decide(ev(outcome), snap)
+		for _, a := range actions {
+			switch a.(type) {
+			case ApproveDocument, ReturnForChanges:
+				t.Fatalf("outcome %s produced a state-moving action %T", outcome, a)
+			}
+		}
+		// It fails loudly, not silently: the verdict is rejected as unusable.
+		if cp, ok := actions[0].(RaiseCheckpoint); !ok || cp.CPKind != "dispatch-failure" {
+			t.Errorf("verdict payload should raise dispatch-failure: %+v", actions)
+		}
+	}
+}
+
+func TestParseCommentsOutcome(t *testing.T) {
+	if _, err := ParseCommentsOutcome(json.RawMessage(`{"comments":[{"body":"x"}],"reasoning":"r"}`)); err != nil {
+		t.Errorf("valid outcome rejected: %v", err)
+	}
+	// Comments may be absent — a clean design's review is its reasoning.
+	if _, err := ParseCommentsOutcome(json.RawMessage(`{"reasoning":"the design holds"}`)); err != nil {
+		t.Errorf("reasoning-only outcome rejected: %v", err)
+	}
+	if _, err := ParseCommentsOutcome(json.RawMessage(`{"verdict":"approve","reasoning":"r"}`)); err == nil {
+		t.Error("a verdict must be rejected, not stripped")
+	}
+	if _, err := ParseCommentsOutcome(json.RawMessage(`{"comments":[{"body":"x"}]}`)); err == nil {
+		t.Error("missing reasoning should be an error")
+	}
+}
+
 func TestSpecApprovalEvaluatesG1(t *testing.T) {
 	d, snap := docSnap(lifecycle.DocApproved)
 	feat := &FeatureSnap{ID: d.OwnerID, State: lifecycle.FeatIdea}

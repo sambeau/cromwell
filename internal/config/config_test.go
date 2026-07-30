@@ -137,6 +137,35 @@ func TestDanglingReferences(t *testing.T) {
 	}
 }
 
+// SPEC-009 FR-2.1: each document type declares who may approve it. Absence
+// means agent — the authority every type had before the field existed — and a
+// value outside agent|human is a config error naming the field.
+func TestManifestApprovalAuthority(t *testing.T) {
+	root := validCompartment(t)
+
+	m, err := LoadManifest(root, "spec")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if m.ApprovedBy != "agent" || m.HumanApproval() {
+		t.Errorf("absent approved_by should default to agent: %+v", m.ApprovedBy)
+	}
+
+	write(t, root, "templates/spec/manifest.yaml", "type: spec\nreviewer_role: spec-reviewer\napproved_by: human\n")
+	m, err = LoadManifest(root, "spec")
+	if err != nil {
+		t.Fatalf("load human: %v", err)
+	}
+	if !m.HumanApproval() {
+		t.Errorf("approved_by: human should read as human approval: %+v", m.ApprovedBy)
+	}
+
+	write(t, root, "templates/spec/manifest.yaml", "type: spec\nreviewer_role: spec-reviewer\napproved_by: committee\n")
+	if _, err := LoadManifest(root, "spec"); err == nil || !strings.Contains(err.Error(), "approved_by") {
+		t.Errorf("unknown authority should be a config error naming the field: %v", err)
+	}
+}
+
 func TestUnknownRuleKind(t *testing.T) {
 	root := validCompartment(t)
 	write(t, root, "templates/spec/manifest.yaml", `type: spec

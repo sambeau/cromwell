@@ -9,6 +9,7 @@ import (
 
 	"cromwell/internal/bus"
 	"cromwell/internal/config"
+	"cromwell/internal/lifecycle"
 	"cromwell/internal/sizing"
 	"cromwell/internal/store"
 )
@@ -96,8 +97,13 @@ type docPageData struct {
 	Body               template.HTML
 	Comments           []store.Comment
 	ReviewCheckpointID *uuid.UUID
-	Notice             string
-	Error              string
+	// HumanDecision is set when the document is in reviewing and its type's
+	// approval belongs to a person (SPEC-009 FR-2.3): the approve and
+	// request-changes controls appear without any checkpoint, because for this
+	// type the human decision is the point rather than the fallback.
+	HumanDecision bool
+	Notice        string
+	Error         string
 }
 
 func (s *Server) documentView(r *http.Request) (*docPageData, error) {
@@ -132,9 +138,12 @@ func (s *Server) documentViewByPath(ctx context.Context, path, notice, errMsg st
 		Notice:   notice,
 		Error:    errMsg,
 	}
-	// Is this document's review human-gated? If an open review-escalation
-	// checkpoint refs it, the review controls appear (SD-4).
-	if cp, err := s.openReviewCheckpoint(ctx, doc.ID); err == nil && cp != nil {
+	// Is this document's review human-gated? A human-approved type always is
+	// while it is in reviewing (SPEC-009 FR-2.3); an agent-approved type is
+	// only when an open review-escalation checkpoint refs it (SD-4).
+	if doc.State == lifecycle.DocReviewing && s.humanApprovalType(doc.Type) {
+		page.HumanDecision = true
+	} else if cp, err := s.openReviewCheckpoint(ctx, doc.ID); err == nil && cp != nil {
 		page.ReviewCheckpointID = &cp.ID
 	}
 	return page, nil

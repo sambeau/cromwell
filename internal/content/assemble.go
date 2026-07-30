@@ -47,6 +47,10 @@ type ReviewPromptInput struct {
 	DocBody          string
 	ValidationReport string // rendered report text
 	Comments         []CommentContext
+	// CommentsOnly marks a review of a human-approved document type (SPEC-009
+	// FR-2.2): the task asks for comments via submit_comments and offers no
+	// verdict, because the approval decision belongs to a person.
+	CommentsOnly bool
 }
 
 // AssembleReviewPrompt renders the system and user strings for a reviewer
@@ -80,7 +84,11 @@ func AssembleReviewPrompt(in ReviewPromptInput) (system, user string) {
 	}
 
 	u.WriteString("\n# Task\n\n")
-	u.WriteString("Review the document below. Complete your review by calling the `submit_review` tool with your verdict — approve, request_changes (with comments), or escalate (with reasoning). Do not finish without calling it.\n")
+	if in.CommentsOnly {
+		u.WriteString("Review the document below. A human decides whether it is approved; your comments are what they will decide with. Complete your review by calling the `submit_comments` tool with your comments and your overall reasoning. Do not finish without calling it.\n")
+	} else {
+		u.WriteString("Review the document below. Complete your review by calling the `submit_review` tool with your verdict — approve, request_changes (with comments), or escalate (with reasoning). Do not finish without calling it.\n")
+	}
 
 	u.WriteString("\n## Validation report\n\n")
 	if strings.TrimSpace(in.ValidationReport) == "" {

@@ -804,13 +804,21 @@
   <div><b>This document is written in your own editor.</b>Edit the file in git and this page updates itself — Cromwell reads it, it does not own it.</div>
 </div>
 
-{{if .ReviewCheckpointID}}
+{{if or .ReviewCheckpointID .HumanDecision}}
 <section class="panel u-mt-4">
   <div class="panel-head">
+    {{if .HumanDecision}}
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> This document is waiting for your decision</h2>
+    {{else}}
     <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> This document is waiting for your review</h2>
+    {{end}}
   </div>
   <div class="panel-body">
+    {{if .HumanDecision}}
+    <p class="t-meta u-mb-4">Documents of this kind are approved by a person — the agent reviewer only comments, and its comments are below. Approving lets the work downstream start; asking for changes sends the document back to its author with your reason.</p>
+    {{else}}
     <p class="t-meta u-mb-4">The agent reviewer could not settle this on its own, so the decision is yours. Approving lets the work downstream start; asking for changes sends your reason back to the author.</p>
+    {{end}}
     <div class="action-row">
       <form method="post" action="/ui/document/review">
         <input type="hidden" name="doc_id" value="{{.Document.ID}}">

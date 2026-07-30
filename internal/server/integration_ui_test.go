@@ -576,6 +576,138 @@ func TestUIDocumentReview(t *testing.T) {
 	})
 }
 
+const validDesign = `---
+title: Platform design
+type: design
+owner: platform
+---
+
+# Platform design
+
+## What this is for
+
+People need to sign in, and nothing in the product works until they can.
+
+## The shape of it
+
+An email field, a password field, and a session cookie on success.
+
+## Decisions
+
+- Sessions are cookies rather than tokens, because the surface is a browser.
+`
+
+// TestUIDesignReviewIsHumanDecided is SPEC-009 FR-2 end to end: a submitted
+// design is reviewed by an agent whose comments appear on the page and carry
+// no verdict, the document stays in reviewing until a person acts, and the
+// person's approve and request-changes actions on the document page are what
+// move it.
+func TestUIDesignReviewIsHumanDecided(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	if code, out := h.call("POST", "/api/initiatives", map[string]string{"slug": "platform", "name": "Platform"}); code != 201 {
+		t.Fatalf("create initiative: %d %v", code, out)
+	}
+	designPath := "docs/design/platform.md"
+	if err := os.MkdirAll(filepath.Join(h.root, "docs/design"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.root, designPath), []byte(validDesign), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := h.call("POST", "/api/docs", map[string]string{
+		"path": designPath, "type": "design", "owner_type": "initiative", "owner_ref": "platform"}); code != 201 {
+		t.Fatalf("register design: %d %v", code, out)
+	}
+
+	// Round 1: the reviewer comments; the document does not move.
+	h.mock.RespondOutcome("submit_comments",
+		`{"comments":[{"section_ref":"Decisions","body":"The cookie decision assumes a browser-only surface"}],"reasoning":"Read against the template; one assumption worth naming"}`,
+		provider.Usage{Input: 700, Output: 90})
+	if code, out := h.call("POST", "/api/docs/submit", map[string]string{"path": designPath}); code != 200 {
+		t.Fatalf("submit design: %d %v", code, out)
+	}
+
+	doc, err := store.LiveDocumentByPath(ctx, h.srv.Store.Pool, designPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.eventually("design reviewer comments recorded", func() bool {
+		comments, err := store.CommentsForDocument(ctx, h.srv.Store.Pool, doc.ID, false)
+		return err == nil && len(comments) == 2 // the reasoning leads the thread
+	})
+	if got := h.docState(designPath); got != lifecycle.DocReviewing {
+		t.Fatalf("a reviewed design must stay in reviewing until a human acts; state = %s", got)
+	}
+
+	// The reviewer was never offered a verdict: its tools are submit_comments
+	// and nothing else (FR-2.2, confinement by omission).
+	if len(h.mock.Requests) == 0 {
+		t.Fatal("no review request reached the provider")
+	}
+	for _, req := range h.mock.Requests {
+		for _, tool := range req.Tools {
+			if tool.Name == "submit_review" {
+				t.Fatal("a design reviewer must not be offered submit_review")
+			}
+		}
+	}
+
+	// The page shows the decision controls and the reviewer's comments.
+	_, page := h.getUI("/ui/d/" + designPath)
+	mustContain(t, "human decision controls", page, "waiting for your decision")
+	mustContain(t, "reviewer comment on the page", page, "browser-only surface")
+
+	// The person asks for changes; the document goes back to its author.
+	code, page := h.postForm("/ui/document/review", map[string]string{
+		"doc_id": doc.ID.String(), "decision": "request_changes", "reason": "Name the session lifetime"})
+	if code != 200 {
+		t.Fatalf("request changes: %d\n%s", code, truncate(page, 400))
+	}
+	mustContain(t, "request-changes notice", page, "Changes were requested")
+	if got := h.docState(designPath); got != lifecycle.DocDraft {
+		t.Fatalf("request changes should return the design to draft; state = %s", got)
+	}
+
+	// Round 2: the author amends, resubmits, and the person approves.
+	amended := validDesign + "- Sessions last twelve hours, matching the working day.\n"
+	if err := os.WriteFile(filepath.Join(h.root, designPath), []byte(amended), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.mock.RespondOutcome("submit_comments",
+		`{"reasoning":"The lifetime is now stated; the design holds"}`,
+		provider.Usage{Input: 700, Output: 60})
+	if code, out := h.call("POST", "/api/docs/submit", map[string]string{"path": designPath}); code != 200 {
+		t.Fatalf("resubmit design: %d %v", code, out)
+	}
+	h.eventually("second review round recorded", func() bool {
+		comments, err := store.CommentsForDocument(ctx, h.srv.Store.Pool, doc.ID, false)
+		return err == nil && len(comments) == 4 // + the human's reason, + round-2 reasoning
+	})
+
+	code, page = h.postForm("/ui/document/review", map[string]string{
+		"doc_id": doc.ID.String(), "decision": "approve"})
+	if code != 200 {
+		t.Fatalf("approve: %d\n%s", code, truncate(page, 400))
+	}
+	mustContain(t, "approve notice", page, "was approved")
+	h.eventually("design approved by the human", func() bool {
+		return h.docState(designPath) == lifecycle.DocApproved
+	})
+
+	// FR-2.4 and the gate in the service method: an agent-approved type cannot
+	// take the direct human path.
+	specPath := h.setupFeatureWithSpec()
+	spec, err := store.LiveDocumentByPath(ctx, h.srv.Store.Pool, specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.srv.HumanApproveDocument(ctx, spec.ID, "sam"); err == nil {
+		t.Fatal("direct human approval must be refused for an agent-approved type")
+	}
+}
+
 // TestUIServesStaticAssets confirms the vendored HTMX + SSE assets are embedded
 // and served (DESIGN-007 CC-1).
 func TestUIServesStaticAssets(t *testing.T) {

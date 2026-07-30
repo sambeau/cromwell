@@ -42,7 +42,7 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		if err != nil {
 			return err
 		}
-		snap.Doc = docSnap(doc)
+		snap.Doc = s.docSnap(doc)
 		if doc.OwnerType == "feature" && doc.OwnerID != nil {
 			f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID)
 			if err == nil {
@@ -106,7 +106,7 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		if err != nil {
 			return snap, err
 		}
-		snap.Doc = docSnap(doc)
+		snap.Doc = s.docSnap(doc)
 	case bus.CheckpointResponded:
 		switch e.RefType {
 		case "document":
@@ -127,16 +127,25 @@ func ignoreNotFound(err error) error {
 	return err
 }
 
-func docSnap(d *store.Document) *rules.DocSnap {
+func (s *Server) docSnap(d *store.Document) *rules.DocSnap {
 	snap := &rules.DocSnap{
 		ID: d.ID, Type: d.Type, State: d.State,
 		ContentHash: d.ContentHash, OwnerType: d.OwnerType, Path: d.Path,
-		IsSuccessor: d.SupersedesID != nil,
+		IsSuccessor:   d.SupersedesID != nil,
+		HumanApproval: s.humanApprovalType(d.Type),
 	}
 	if d.OwnerID != nil {
 		snap.OwnerID = *d.OwnerID
 	}
 	return snap
+}
+
+// humanApprovalType reports whether a document type's approval belongs to a
+// person (SPEC-009 FR-2.1). A type with no manifest defaults to agent
+// approval, which is what every type had before the field existed.
+func (s *Server) humanApprovalType(docType string) bool {
+	m, err := config.LoadManifest(s.CompartmentRoot, docType)
+	return err == nil && m.HumanApproval()
 }
 
 // execute runs one action. Each case is transactional with its audit rows
@@ -149,6 +158,8 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 		return s.approveDocument(ctx, a.DocID, a.Actor)
 	case rules.ReturnForChanges:
 		return s.returnForChanges(ctx, a)
+	case rules.RecordReviewComments:
+		return s.recordReviewComments(ctx, a)
 	case rules.RaiseCheckpoint:
 		var cp *store.Checkpoint
 		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
@@ -369,6 +380,65 @@ func (s *Server) returnForChanges(ctx context.Context, a rules.ReturnForChanges)
 		Event: lifecycle.DocRequestChanges, Actor: a.Actor,
 	})
 	return nil
+}
+
+// recordReviewComments files a comments-only review outcome (SPEC-009
+// FR-2.2). The reviewer's overall reasoning leads the thread — for a clean
+// document it is the whole of the review, "what I checked and that it holds" —
+// followed by its per-section comments. The document's state is deliberately
+// not touched: for a human-approved type the reviewer joins the discussion and
+// a person closes it.
+func (s *Server) recordReviewComments(ctx context.Context, a rules.RecordReviewComments) error {
+	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		if a.Reasoning != "" {
+			if err := store.InsertComment(ctx, tx, a.DocID, a.DispatchID, a.Actor, "", a.Reasoning); err != nil {
+				return err
+			}
+		}
+		for _, c := range a.Comments {
+			if err := store.InsertComment(ctx, tx, a.DocID, a.DispatchID, a.Actor, c.SectionRef, c.Body); err != nil {
+				return err
+			}
+		}
+		return store.Audit(ctx, tx, a.Actor, "document.commented", "document", &a.DocID,
+			map[string]any{"comments": len(a.Comments)})
+	})
+}
+
+// HumanApproveDocument is the human approve action (SPEC-009 FR-2.3): the
+// single place a person moves a human-approved document out of reviewing. The
+// authority gate is here rather than in the handler so no surface can reach
+// the transition without it; everything beneath is the same audited,
+// transactional path an agent verdict uses, and the transition table itself
+// rejects any state but reviewing — there is no force path.
+func (s *Server) HumanApproveDocument(ctx context.Context, docID uuid.UUID, actor string) error {
+	doc, err := store.GetDocument(ctx, s.Store.Pool, docID)
+	if err != nil {
+		return err
+	}
+	if !s.humanApprovalType(doc.Type) {
+		return fmt.Errorf("a %s is decided by its agent reviewer; it comes to you only when the reviewer escalates", doc.Type)
+	}
+	return s.approveDocument(ctx, docID, actor)
+}
+
+// HumanReturnDocument is the request-changes half of FR-2.3: the document goes
+// back to draft with the person's reason attached as a comment for its author.
+func (s *Server) HumanReturnDocument(ctx context.Context, docID uuid.UUID, actor, reason string) error {
+	doc, err := store.GetDocument(ctx, s.Store.Pool, docID)
+	if err != nil {
+		return err
+	}
+	if !s.humanApprovalType(doc.Type) {
+		return fmt.Errorf("a %s is decided by its agent reviewer; it comes to you only when the reviewer escalates", doc.Type)
+	}
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("requesting changes needs a reason the author can act on")
+	}
+	return s.returnForChanges(ctx, rules.ReturnForChanges{
+		DocID: docID, Actor: actor,
+		Comments: []rules.ReviewComment{{Body: strings.TrimSpace(reason)}},
+	})
 }
 
 // evaluateContractGate runs G1 and, on pass, advances the feature — the

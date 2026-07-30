@@ -407,10 +407,12 @@ func (s *Server) handleEntityFeatureCreate(w http.ResponseWriter, r *http.Reques
 // --- Document review from the document page (FR-11, SPEC-006 FR-5 behaviour) ---
 
 // handleEntityDocumentReview approves or requests changes on a human-gated
-// review from the document's own page. It is the same RespondCheckpoint +
-// CheckpointResponded path the inbox uses — a second surface, not a new
-// authority (SPEC-006 SD-4). The document is identified by its id, carried by
-// the page, so no path is typed.
+// review from the document's own page. For an agent-approved type it is the
+// same RespondCheckpoint + CheckpointResponded path the inbox uses — a second
+// surface, not a new authority (SPEC-006 SD-4). For a human-approved type
+// there is no checkpoint to answer: the decision is the human's own, and it
+// goes through the gated service methods directly (SPEC-009 FR-2.3). The
+// document is identified by its id, carried by the page, so no path is typed.
 func (s *Server) handleEntityDocumentReview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.uiError(w, err)
@@ -430,6 +432,10 @@ func (s *Server) handleEntityDocumentReview(w http.ResponseWriter, r *http.Reque
 	}
 	if decision != "approve" && decision != "request_changes" {
 		s.renderDocumentPage(w, r, doc.Path, "", "Choose whether to approve the document or request changes to it.")
+		return
+	}
+	if s.humanApprovalType(doc.Type) {
+		s.handleHumanDocumentDecision(w, r, doc, decision)
 		return
 	}
 	cp, err := s.openReviewCheckpoint(ctx, doc.ID)
@@ -461,6 +467,35 @@ func (s *Server) handleEntityDocumentReview(w http.ResponseWriter, r *http.Reque
 		notice = "Changes were requested; the document goes back to its author."
 	}
 	s.renderDocumentPage(w, r, doc.Path, notice, "")
+}
+
+// handleHumanDocumentDecision is the direct decision path for a human-approved
+// document type (SPEC-009 FR-2.3). The authority gate and the audit live in
+// the service methods; this only carries the form to them and reports back in
+// plain words.
+func (s *Server) handleHumanDocumentDecision(w http.ResponseWriter, r *http.Request, doc *store.Document, decision string) {
+	ctx := r.Context()
+	actor := s.uiActor()
+	if decision == "approve" {
+		if err := s.HumanApproveDocument(ctx, doc.ID, actor); err != nil {
+			s.renderDocumentPage(w, r, doc.Path, "", err.Error())
+			return
+		}
+		// Re-read for the path: approving a revision moves the file to the
+		// canonical path the predecessor held.
+		path := doc.Path
+		if fresh, err := store.GetDocument(ctx, s.Store.Pool, doc.ID); err == nil {
+			path = fresh.Path
+		}
+		s.renderDocumentPage(w, r, path, "The document was approved. Work that was waiting on it can now begin.", "")
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	if err := s.HumanReturnDocument(ctx, doc.ID, actor, reason); err != nil {
+		s.renderDocumentPage(w, r, doc.Path, "", err.Error())
+		return
+	}
+	s.renderDocumentPage(w, r, doc.Path, "Changes were requested; the document goes back to its author with your reason attached.", "")
 }
 
 // renderDocumentPage re-renders a document's page with a notice or error.

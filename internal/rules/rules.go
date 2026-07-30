@@ -87,6 +87,21 @@ type ReconcileAuthoring struct {
 
 func (ReconcileAuthoring) ActionKind() string { return "reconcile_authoring" }
 
+// RecordReviewComments files a comments-only review outcome (SPEC-009
+// FR-2.2): the reviewer's comments and reasoning go onto the document's
+// thread, and the document stays exactly where it was. This is the whole of
+// what a reviewer may do to a human-approved document — there is deliberately
+// no variant of this action that transitions state.
+type RecordReviewComments struct {
+	DocID      uuid.UUID
+	Actor      string
+	DispatchID *uuid.UUID
+	Reasoning  string
+	Comments   []ReviewComment
+}
+
+func (RecordReviewComments) ActionKind() string { return "record_review_comments" }
+
 // ReindexDocument re-parses and re-indexes a registered document's file.
 type ReindexDocument struct {
 	DocID uuid.UUID
@@ -219,6 +234,37 @@ func ParseReviewOutcome(raw json.RawMessage) (*ReviewOutcome, error) {
 	return &o, nil
 }
 
+// CommentsOutcome is the submit_comments outcome tool's payload (SPEC-009
+// FR-2.2): comments and reasoning, and no verdict. The design reviewer joins
+// the discussion; a human closes it.
+type CommentsOutcome struct {
+	Comments  []ReviewComment `json:"comments,omitempty"`
+	Reasoning string          `json:"reasoning"`
+	// Verdict has no meaning here and must be absent. It is parsed only so a
+	// payload that carries one is rejected out loud rather than silently
+	// stripped of it — the drift the confinement-by-omission principle exists
+	// to prevent.
+	Verdict string `json:"verdict,omitempty"`
+}
+
+// ParseCommentsOutcome validates a comments-only review payload. A verdict is
+// an error, not a surplus field: a reviewer of a human-approved document has
+// no approval authority, and an outcome that claims some must fail rather
+// than be quietly ignored.
+func ParseCommentsOutcome(raw json.RawMessage) (*CommentsOutcome, error) {
+	var o CommentsOutcome
+	if err := json.Unmarshal(raw, &o); err != nil {
+		return nil, fmt.Errorf("comments outcome: %w", err)
+	}
+	if o.Verdict != "" {
+		return nil, fmt.Errorf("comments outcome: a verdict %q was given, but this review has no verdict — a human decides whether the document is approved", o.Verdict)
+	}
+	if o.Reasoning == "" {
+		return nil, fmt.Errorf("comments outcome: reasoning is required — say what you checked and what stands")
+	}
+	return &o, nil
+}
+
 // ReviewIdempotencyKey is the deterministic key preventing double dispatch
 // of the same review (DESIGN-002 §8).
 func ReviewIdempotencyKey(docID uuid.UUID, contentHash string) string {
@@ -237,6 +283,11 @@ type DocSnap struct {
 	OwnerID     uuid.UUID
 	Path        string
 	IsSuccessor bool // supersedes_id is set — this doc is a revision (DESIGN-005 §6)
+	// HumanApproval is the type's declared approval authority (SPEC-009
+	// FR-2.1), read from the manifest by the server when it builds the
+	// snapshot. When true, no dispatch outcome may move this document — the
+	// review branch records comments and nothing else.
+	HumanApproval bool
 }
 
 // FeatureSnap is the rule engine's view of a feature row.
@@ -365,6 +416,31 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 	if e.RefType != "document" || snap.Doc == nil {
 		return nil
 	}
+	dispatchID := e.DispatchID
+	// A human-approved type (FR-2.1) takes the comments-only path, and takes it
+	// on the document's declared authority rather than on the shape of the
+	// payload: this branch has no case that returns ApproveDocument, so no
+	// outcome an agent can produce — verdict-shaped or otherwise — moves the
+	// document. Only a human does that (FR-2.3).
+	if snap.Doc.HumanApproval {
+		outcome, err := ParseCommentsOutcome(e.Outcome)
+		if err != nil {
+			return []Action{RaiseCheckpoint{
+				CPKind:   "dispatch-failure",
+				RefType:  e.RefType,
+				RefID:    e.RefID,
+				Question: "Reviewer returned an unusable outcome. Retry or intervene?",
+				Context:  map[string]any{"dispatch_id": e.DispatchID.String(), "error": err.Error()},
+			}}
+		}
+		return []Action{RecordReviewComments{
+			DocID:      snap.Doc.ID,
+			Actor:      e.Role,
+			DispatchID: &dispatchID,
+			Reasoning:  outcome.Reasoning,
+			Comments:   outcome.Comments,
+		}}
+	}
 	outcome, err := ParseReviewOutcome(e.Outcome)
 	if err != nil {
 		// A malformed outcome should have failed the dispatch before it
@@ -377,7 +453,6 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 			Context:  map[string]any{"dispatch_id": e.DispatchID.String(), "error": err.Error()},
 		}}
 	}
-	dispatchID := e.DispatchID
 	switch outcome.Verdict {
 	case "approve":
 		return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.Role}}

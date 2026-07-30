@@ -35,10 +35,22 @@ func (s *Server) Plan(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, e
 	case "write-spec", "write-dev-plan":
 		return s.planAuthor(ctx, d)
 	default:
-		// review-spec, review-dev-plan: read-only document review (phase 1).
+		// review-<type>: read-only document review (phase 1).
 		system, user, turnCap, err := s.buildReview(ctx, d)
 		if err != nil {
 			return nil, err
+		}
+		// A human-approved type gets the comments-only outcome tool (SPEC-009
+		// FR-2.2). The confinement is by omission: the reviewer is never
+		// offered a way to express a verdict, so no later change can hand it
+		// approval authority it was not meant to have.
+		if s.humanApprovalType(strings.TrimPrefix(d.Purpose, "review-")) {
+			return &dispatch.Plan{
+				System: system, User: user, TurnCap: turnCap,
+				Tools:           []provider.ToolDef{dispatch.CommentsOutcomeTool()},
+				OutcomeTool:     "submit_comments",
+				ValidateOutcome: validateComments,
+			}, nil
 		}
 		return &dispatch.Plan{
 			System: system, User: user, TurnCap: turnCap,
@@ -53,6 +65,11 @@ var _ dispatch.Planner = (*Server)(nil)
 
 func validateReview(raw json.RawMessage) error {
 	_, err := rules.ParseReviewOutcome(raw)
+	return err
+}
+
+func validateComments(raw json.RawMessage) error {
+	_, err := rules.ParseCommentsOutcome(raw)
 	return err
 }
 

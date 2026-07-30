@@ -344,10 +344,11 @@ func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, st
 	}
 
 	in := content.ReviewPromptInput{
-		System:      roleSystemPrompt(role, skillBody),
-		ProjectName: filepath.Base(s.RepoRoot),
-		DocPath:     doc.Path,
-		DocBody:     string(raw),
+		System:       roleSystemPrompt(role, skillBody),
+		ProjectName:  filepath.Base(s.RepoRoot),
+		DocPath:      doc.Path,
+		DocBody:      string(raw),
+		CommentsOnly: manifest.HumanApproval(),
 	}
 
 	report := lifecycle.Validate(manifest, string(raw), s.linkChecker(doc.Path))

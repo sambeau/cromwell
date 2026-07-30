@@ -169,12 +169,21 @@ func SplitFrontMatter(content string) (frontMatter, body string, err error) {
 // Manifest is templates/<type>/manifest.yaml (DESIGN-004 §7): validation
 // rules and the type's workflow binding.
 type Manifest struct {
-	Type         string          `yaml:"type"`
-	ReviewerRole string          `yaml:"reviewer_role"`
-	FrontMatter  FrontMatterReqs `yaml:"front_matter"`
-	Sections     SectionReqs     `yaml:"sections"`
-	Rules        []Rule          `yaml:"rules"`
+	Type         string `yaml:"type"`
+	ReviewerRole string `yaml:"reviewer_role"`
+	// ApprovedBy declares who may approve documents of this type (SPEC-009
+	// FR-2.1): "agent" — the reviewer's verdict decides, escalating to a human
+	// when it is unsure — or "human", where the reviewer only comments and a
+	// person moves the document. Empty means "agent", so the manifests that
+	// predate the field keep loading unchanged.
+	ApprovedBy  string          `yaml:"approved_by"`
+	FrontMatter FrontMatterReqs `yaml:"front_matter"`
+	Sections    SectionReqs     `yaml:"sections"`
+	Rules       []Rule          `yaml:"rules"`
 }
+
+// HumanApproval reports whether this type's approval belongs to a person.
+func (m *Manifest) HumanApproval() bool { return m.ApprovedBy == "human" }
 
 type FrontMatterReqs struct {
 	Required []string `yaml:"required"`
@@ -220,6 +229,13 @@ func LoadManifest(root, docType string) (*Manifest, error) {
 	}
 	if m.ReviewerRole == "" {
 		errs = append(errs, errf(rel, "reviewer_role", "required"))
+	}
+	switch m.ApprovedBy {
+	case "agent", "human":
+	case "":
+		m.ApprovedBy = "agent"
+	default:
+		errs = append(errs, errf(rel, "approved_by", "unknown authority %q: agent | human", m.ApprovedBy))
 	}
 	switch m.Sections.Order {
 	case "strict", "any":
