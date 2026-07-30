@@ -37,8 +37,8 @@ func VerificationOutcomeTool() provider.ToolDef {
 				"items": obj(map[string]any{
 					"id":       str("The acceptance-criterion identifier or its text"),
 					"met":      map[string]any{"type": "boolean"},
-					"evidence": str("What you checked to decide"),
-				}, "id", "met"),
+					"evidence": str("What you read, ran or observed to decide — 'test TestLogin covers valid and invalid credentials', not 'looks fine'. Required for every criterion, met or unmet."),
+				}, "id", "met", "evidence"),
 			},
 			"verdict":   map[string]any{"type": "string", "enum": []string{"approve", "request_changes", "escalate"}, "description": "approve: every criterion met. request_changes: one or more unmet. escalate: a human must judge."},
 			"reasoning": str("Why you reached this verdict"),

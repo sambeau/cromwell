@@ -91,6 +91,62 @@ func TestCodeReviewVerdicts(t *testing.T) {
 	}
 }
 
+// The loop terminates on severity, not on a human's patience: minor findings
+// are dropped (and recorded) rather than sent back for another round.
+func TestCodeReviewMinorFindingsDoNotSendWorkBack(t *testing.T) {
+	taskID, dispatchID := uuid.New(), uuid.New()
+	snap := Snapshot{Task: &TaskSnap{ID: taskID, State: lifecycle.TaskReview}}
+	ev := func(o string) bus.DispatchSucceeded {
+		return bus.DispatchSucceeded{DispatchID: dispatchID, Purpose: "review-code", Role: "code-reviewer",
+			RefType: "task", RefID: taskID, Outcome: json.RawMessage(o)}
+	}
+	out := `{"verdict":"approve","comments":[
+		{"body":"name could be clearer","severity":"minor"},
+		{"body":"prefer a switch here","severity":"minor"}],"reasoning":"nothing major"}`
+	a := Decide(ev(out), snap)
+	if len(a) != 1 {
+		t.Fatalf("approve with minors: %+v", a)
+	}
+	ap, ok := a[0].(ApproveTaskCode)
+	if !ok {
+		t.Fatalf("want ApproveTaskCode: %+v", a[0])
+	}
+	if len(ap.DroppedMinor) != 2 {
+		t.Errorf("dropped minor findings must be carried for the record, got %d", len(ap.DroppedMinor))
+	}
+}
+
+// The cap is the backstop for genuine disagreement: majors recurring every
+// round stop being the agents' problem and become a human's.
+func TestCodeReviewRoundCapRaisesDeadlockCheckpoint(t *testing.T) {
+	taskID, dispatchID := uuid.New(), uuid.New()
+	out := `{"verdict":"request_changes","comments":[{"body":"still wrong","severity":"major"}],"reasoning":"again"}`
+	ev := bus.DispatchSucceeded{DispatchID: dispatchID, Purpose: "review-code", Role: "code-reviewer",
+		RefType: "task", RefID: taskID, Outcome: json.RawMessage(out)}
+
+	under := Snapshot{Task: &TaskSnap{ID: taskID, State: lifecycle.TaskReview, ReviewRounds: 2, ReviewRoundCap: 3}}
+	if a := Decide(ev, under); len(a) != 1 {
+		t.Fatalf("under cap: %+v", a)
+	} else if _, ok := a[0].(ReturnTaskCode); !ok {
+		t.Errorf("under the cap the work goes back to the implementer: %+v", a[0])
+	}
+
+	at := Snapshot{Task: &TaskSnap{ID: taskID, State: lifecycle.TaskReview, ReviewRounds: 3, ReviewRoundCap: 3}}
+	if a := Decide(ev, at); len(a) != 1 {
+		t.Fatalf("at cap: %+v", a)
+	} else if cp, ok := a[0].(RaiseCheckpoint); !ok || cp.CPKind != "review-deadlock" {
+		t.Errorf("at the cap a human decides: %+v", a[0])
+	}
+
+	// A cap of zero means unbounded, so an unconfigured project behaves as before.
+	off := Snapshot{Task: &TaskSnap{ID: taskID, State: lifecycle.TaskReview, ReviewRounds: 99, ReviewRoundCap: 0}}
+	if a := Decide(ev, off); len(a) != 1 {
+		t.Fatalf("cap off: %+v", a)
+	} else if _, ok := a[0].(ReturnTaskCode); !ok {
+		t.Errorf("cap 0 disables the backstop: %+v", a[0])
+	}
+}
+
 func TestVerificationVerdicts(t *testing.T) {
 	featID, dispatchID := uuid.New(), uuid.New()
 	snap := Snapshot{RefFeature: &FeatureSnap{ID: featID, State: lifecycle.FeatReview}}
@@ -98,12 +154,12 @@ func TestVerificationVerdicts(t *testing.T) {
 		return bus.DispatchSucceeded{DispatchID: dispatchID, Purpose: "verify-feature", Role: "verifier",
 			RefType: "feature", RefID: featID, Outcome: json.RawMessage(o)}
 	}
-	if a := Decide(ev(`{"verdict":"approve","criteria":[{"id":"AC1","met":true}],"reasoning":"all met"}`), snap); len(a) != 1 {
+	if a := Decide(ev(`{"verdict":"approve","criteria":[{"id":"AC1","met":true,"evidence":"TestLogin covers valid and invalid credentials"}],"reasoning":"all met"}`), snap); len(a) != 1 {
 		t.Fatalf("approve: %+v", a)
 	} else if m, ok := a[0].(MergeFeature); !ok || m.FeatureID != featID {
 		t.Errorf("want MergeFeature: %+v", a[0])
 	}
-	a := Decide(ev(`{"verdict":"request_changes","criteria":[{"id":"AC1","met":true},{"id":"AC2","met":false,"evidence":"lockout not enforced"}],"reasoning":"one gap"}`), snap)
+	a := Decide(ev(`{"verdict":"request_changes","criteria":[{"id":"AC1","met":true,"evidence":"TestLogin passes"},{"id":"AC2","met":false,"evidence":"lockout not enforced"}],"reasoning":"one gap"}`), snap)
 	rf, ok := a[0].(ReturnFeatureForCriteria)
 	if !ok || len(rf.Unmet) != 1 || rf.Unmet[0].ID != "AC2" {
 		t.Errorf("want ReturnFeatureForCriteria with the unmet criterion: %+v", a[0])
@@ -159,5 +215,37 @@ func TestReDecomposeOnRevisedDevPlanApproval(t *testing.T) {
 	}
 	if _, ok := a[0].(ReDecomposeDevPlan); !ok {
 		t.Errorf("want ReDecomposeDevPlan: %+v", a[0])
+	}
+}
+
+// C-2: the verify-feature skill asks for per-criterion evidence and the tool
+// schema carries the field, but nothing used to check it — an approve with an
+// empty criteria array merged the feature. Rubber-stamp approval is the most
+// common quality failure in multi-agent systems, and this was the gate it
+// would have walked through.
+func TestVerificationEvidenceContract(t *testing.T) {
+	cases := []struct {
+		name, payload string
+		wantErr       bool
+	}{
+		{"approve with evidence", `{"verdict":"approve","criteria":[{"id":"AC1","met":true,"evidence":"TestLogin passes"}],"reasoning":"met"}`, false},
+		{"approve with no criteria at all", `{"verdict":"approve","criteria":[],"reasoning":"looks fine"}`, true},
+		{"approve with blank evidence", `{"verdict":"approve","criteria":[{"id":"AC1","met":true,"evidence":"   "}],"reasoning":"met"}`, true},
+		{"approve with evidence absent", `{"verdict":"approve","criteria":[{"id":"AC1","met":true}],"reasoning":"met"}`, true},
+		{"approve while a criterion is unmet", `{"verdict":"approve","criteria":[{"id":"AC1","met":false,"evidence":"not implemented"}],"reasoning":"close enough"}`, true},
+		{"criterion with no id", `{"verdict":"approve","criteria":[{"id":"","met":true,"evidence":"x"}],"reasoning":"met"}`, true},
+		{"request_changes still needs evidence of the gap", `{"verdict":"request_changes","criteria":[{"id":"AC1","met":false}],"reasoning":"gap"}`, true},
+		{"escalate is exempt — it is the honest way out", `{"verdict":"escalate","criteria":[],"reasoning":"criterion is ambiguous"}`, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ParseVerificationOutcome(json.RawMessage(c.payload))
+			if c.wantErr && err == nil {
+				t.Fatalf("expected rejection, got none")
+			}
+			if !c.wantErr && err != nil {
+				t.Fatalf("expected acceptance, got %v", err)
+			}
+		})
 	}
 }

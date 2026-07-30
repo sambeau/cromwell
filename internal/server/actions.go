@@ -59,7 +59,22 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		if err != nil {
 			return err
 		}
-		snap.Task = &rules.TaskSnap{ID: t.ID, FeatureID: t.FeatureID, State: t.State}
+		// Completed code reviews, including the one whose outcome is being
+		// decided: on the Nth request_changes the count is N, so a cap of 3
+		// gives the implementer two revisions and stops on the third
+		// rejection (audit §3.3a).
+		rounds, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "task", t.ID, "review-code")
+		if err != nil {
+			return err
+		}
+		roundCap := 0
+		if cfg, cerr := s.freshConfig(); cerr == nil {
+			roundCap = cfg.Dispatch.MaxReviewRounds
+		}
+		snap.Task = &rules.TaskSnap{
+			ID: t.ID, FeatureID: t.FeatureID, State: t.State,
+			ReviewRounds: rounds, ReviewRoundCap: roundCap,
+		}
 		return nil
 	}
 	loadFeature := func(id uuid.UUID) error {

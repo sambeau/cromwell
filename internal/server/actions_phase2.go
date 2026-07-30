@@ -28,9 +28,11 @@ func (s *Server) executePhase2(ctx context.Context, action rules.Action) (bool, 
 	case rules.CompleteImplementation:
 		return true, s.completeImplementation(ctx, a.TaskID, a.DispatchID, a.Summary)
 	case rules.ApproveTaskCode:
-		return true, s.approveTaskCode(ctx, a.TaskID, a.Actor)
+		return true, s.approveTaskCode(ctx, a.TaskID, a.Actor, a.DroppedMinor)
 	case rules.ReturnTaskCode:
 		return true, s.returnTaskCode(ctx, a)
+	case rules.AbandonTask:
+		return true, s.abandonTask(ctx, a)
 	case rules.MergeFeature:
 		return true, s.mergeFeature(ctx, a.FeatureID, a.Actor)
 	case rules.ReturnFeatureForCriteria:
@@ -259,9 +261,36 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 	return err
 }
 
+// abandonTask stops work on a task a human has given up on after the review
+// loop failed to converge (audit §3.3a). The reason is carried into the
+// transition payload so the audit trail says why.
+func (s *Server) abandonTask(ctx context.Context, a rules.AbandonTask) error {
+	task, err := store.GetTask(ctx, s.Store.Pool, a.TaskID)
+	if err != nil {
+		return err
+	}
+	featureID := task.FeatureID
+	// TaskAbandon is always human and always carries a reason. The inbox's
+	// free-text reason is optional, so fall back to what actually happened
+	// rather than recording an empty one.
+	reason := strings.TrimSpace(a.Reason)
+	if reason == "" {
+		reason = "abandoned at the review round cap: reviewer and implementer did not converge"
+	}
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		return store.TransitionTask(ctx, tx, task, lifecycle.TaskAbandon, a.Actor,
+			map[string]any{"reason": reason})
+	})
+	if err != nil {
+		return err
+	}
+	// The feature may now satisfy G2 — every task terminal — so re-evaluate.
+	return s.evaluateTasksGate(ctx, featureID)
+}
+
 // approveTaskCode records a code-review approval: task → done, readiness
 // re-evaluation, then G2 (DESIGN-006 §5).
-func (s *Server) approveTaskCode(ctx context.Context, taskID uuid.UUID, actor string) error {
+func (s *Server) approveTaskCode(ctx context.Context, taskID uuid.UUID, actor string, droppedMinor []rules.ReviewComment) error {
 	task, err := store.GetTask(ctx, s.Store.Pool, taskID)
 	if err != nil {
 		return err
@@ -270,6 +299,15 @@ func (s *Server) approveTaskCode(ctx context.Context, taskID uuid.UUID, actor st
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionTask(ctx, tx, task, lifecycle.TaskApprove, actor, nil); err != nil {
 			return err
+		}
+		// Minor findings did not send the work back, but they are not
+		// thrown away: they are the material a retrospective picks up
+		// once the cycle is complete (audit §3.3a).
+		if len(droppedMinor) > 0 {
+			if err := store.Audit(ctx, tx, actor, "task.review_minor_findings", "task", &taskID,
+				map[string]any{"comments": droppedMinor}); err != nil {
+				return err
+			}
 		}
 		// Readiness re-evaluation: dependents whose deps are now all done.
 		deps, err := store.ReadyDependents(ctx, tx, featureID, taskID)

@@ -205,3 +205,45 @@ func TestDispatchExhaustedRaisesCheckpoint(t *testing.T) {
 		t.Errorf("exhausted dispatch: %+v", actions)
 	}
 }
+
+// The verdict follows from the findings' severity rather than being a free
+// choice — the rule that both ends the pernickety loop and stops a reviewer
+// approving over the top of a real defect (audit §3.3a).
+func TestReviewVerdictMustMatchSeverity(t *testing.T) {
+	cases := []struct {
+		name, payload string
+		wantErr       bool
+	}{
+		{"approve with no findings", `{"verdict":"approve","reasoning":"clean"}`, false},
+		{"approve over minors", `{"verdict":"approve","comments":[{"body":"tidy","severity":"minor"}],"reasoning":"ok"}`, false},
+		{"approve over a major", `{"verdict":"approve","comments":[{"body":"nil deref","severity":"major"}],"reasoning":"ok"}`, true},
+		{"approve over an unclassified finding", `{"verdict":"approve","comments":[{"body":"nil deref"}],"reasoning":"ok"}`, true},
+		{"changes on a major", `{"verdict":"request_changes","comments":[{"body":"nil deref","severity":"major"}],"reasoning":"bug"}`, false},
+		{"changes on minors alone", `{"verdict":"request_changes","comments":[{"body":"tidy","severity":"minor"}],"reasoning":"nits"}`, true},
+		{"changes with no comments", `{"verdict":"request_changes","reasoning":"bad"}`, true},
+		{"escalate is orthogonal", `{"verdict":"escalate","comments":[{"body":"x","severity":"major"}],"reasoning":"human call"}`, false},
+		{"unknown severity", `{"verdict":"approve","comments":[{"body":"x","severity":"critical"}],"reasoning":"ok"}`, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ParseReviewOutcome(json.RawMessage(c.payload))
+			if c.wantErr && err == nil {
+				t.Fatalf("expected rejection, got none")
+			}
+			if !c.wantErr && err != nil {
+				t.Fatalf("expected acceptance, got %v", err)
+			}
+		})
+	}
+}
+
+// An unclassified finding is read as major: failing closed keeps it in play,
+// where failing open would drop a real defect silently.
+func TestUnclassifiedFindingIsMajor(t *testing.T) {
+	if !(ReviewComment{Body: "x"}).IsMajor() {
+		t.Error("a finding with no severity must count as major")
+	}
+	if (ReviewComment{Body: "x", Severity: SeverityMinor}).IsMajor() {
+		t.Error("an explicitly minor finding must not count as major")
+	}
+}

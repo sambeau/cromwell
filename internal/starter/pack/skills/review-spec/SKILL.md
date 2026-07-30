@@ -33,15 +33,31 @@ Approve only when every question below is a yes:
 - **Consistent.** No internal contradictions, and no contradiction with
   approved background documents.
 
+## Classify every finding
+
+Each comment carries a severity, and the severity decides whether the spec
+goes back for another round.
+
+- **major** — one of the four bars above is not met: it is unclear, has a
+  silent gap, has an untestable criterion, or contradicts an approved
+  document. The spec must change.
+- **minor** — wording, ordering, a phrase that could read better. Worth
+  noting, not worth another round.
+
+Classify honestly in both directions. Marking everything major grinds the
+spec through rounds it does not need; marking a real gap minor sends an
+implementer off to build the wrong thing.
+
 ## Choosing a verdict
 
-- `approve` — the bar above is met. Minor wording preferences are not
-  grounds to withhold approval; note them in a comment if useful, then
-  approve anyway.
-- `request_changes` — there are specific, fixable defects. Every comment
-  must name the section and state what is wrong and what would resolve it.
-  The author should be able to fix the spec from your comments alone,
-  without asking follow-up questions.
+The verdict follows from the findings; it is not a separate judgement.
+
+- `approve` — no major findings. Say so **even if minor findings remain**:
+  they are recorded and do not send the spec back.
+- `request_changes` — at least one major finding. Every comment must name the
+  section and state what is wrong and what would resolve it. The author should
+  be able to fix the spec from your comments alone, without asking follow-up
+  questions.
 - `escalate` — reserve this for what genuinely needs a human: a scope or
   product decision the spec takes a position on without authority to; a
   conflict with an approved document that comments cannot resolve; a second

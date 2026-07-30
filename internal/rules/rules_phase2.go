@@ -10,6 +10,7 @@ package rules
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -81,9 +82,24 @@ func (CompleteImplementation) ActionKind() string { return "complete_implementat
 type ApproveTaskCode struct {
 	TaskID uuid.UUID
 	Actor  string
+	// DroppedMinor are findings the reviewer raised that were not major
+	// enough to send the work back. They are audited so a later
+	// retrospective can pick them up rather than losing them (audit §3.3a).
+	DroppedMinor []ReviewComment
 }
 
 func (ApproveTaskCode) ActionKind() string { return "approve_task_code" }
+
+// AbandonTask stops work on a task the review loop could not converge on.
+// TaskAbandon is always human and always carries a reason (lifecycle/task.go),
+// so this action only ever originates from an answered checkpoint.
+type AbandonTask struct {
+	TaskID uuid.UUID
+	Actor  string
+	Reason string
+}
+
+func (AbandonTask) ActionKind() string { return "abandon_task" }
 
 // ReturnTaskCode records a code-review request_changes: task → active,
 // comments attached, implementer re-dispatched against the kept worktree.
@@ -129,6 +145,12 @@ type VerificationOutcome struct {
 	Reasoning string      `json:"reasoning"`
 }
 
+// ParseVerificationOutcome validates the payload and enforces the evidence
+// contract (C-2). The verify-feature skill asks for per-criterion evidence and
+// the tool schema carries the field, but nothing checked it: an approve with an
+// empty criteria array, or with every evidence blank, used to merge the feature.
+// Rubber-stamp approval is the most common quality failure in multi-agent
+// systems (MAST FM-3.1), and this is the gate it would walk through.
 func ParseVerificationOutcome(raw json.RawMessage) (*VerificationOutcome, error) {
 	var o VerificationOutcome
 	if err := json.Unmarshal(raw, &o); err != nil {
@@ -138,6 +160,31 @@ func ParseVerificationOutcome(raw json.RawMessage) (*VerificationOutcome, error)
 	case "approve", "request_changes", "escalate":
 	default:
 		return nil, fmt.Errorf("verification outcome: unknown verdict %q", o.Verdict)
+	}
+	// escalate is the honest way out when the criteria cannot be judged, so
+	// it is not held to the evidence contract.
+	if o.Verdict == "escalate" {
+		return &o, nil
+	}
+	if len(o.Criteria) == 0 {
+		return nil, fmt.Errorf("verification outcome: no criteria reported — " +
+			"list the specification's acceptance criteria and what you checked for each")
+	}
+	for i, c := range o.Criteria {
+		if strings.TrimSpace(c.ID) == "" {
+			return nil, fmt.Errorf("verification outcome: criterion %d has no id", i+1)
+		}
+		if strings.TrimSpace(c.Evidence) == "" {
+			return nil, fmt.Errorf(
+				"verification outcome: criterion %q has no evidence — say what you read, ran or observed to decide it",
+				c.ID)
+		}
+	}
+	if o.Verdict == "approve" {
+		if unmet := o.UnmetCriteria(); len(unmet) > 0 {
+			return nil, fmt.Errorf("verification outcome: cannot approve with %d unmet criterion/criteria — "+
+				"request changes instead", len(unmet))
+		}
 	}
 	return &o, nil
 }
@@ -189,6 +236,12 @@ type TaskSnap struct {
 	ID        uuid.UUID
 	FeatureID uuid.UUID
 	State     lifecycle.TaskState
+	// ReviewRounds is how many code reviews this task has already completed,
+	// and ReviewRoundCap the configured limit. Severity gating (ParseReviewOutcome)
+	// ends the ordinary loop; the cap is the backstop for genuine disagreement,
+	// where majors keep recurring round after round (audit §3.3a).
+	ReviewRounds   int
+	ReviewRoundCap int
 }
 
 // decideDispatchSucceededPhase2 routes non-document dispatch outcomes
@@ -218,8 +271,27 @@ func decideDispatchSucceededPhase2(purpose string, dispatchID uuid.UUID, actor s
 		id := dispatchID
 		switch o.Verdict {
 		case "approve":
-			return []Action{ApproveTaskCode{TaskID: snap.Task.ID, Actor: actor}}, true
+			// Minor findings are dropped from the loop but not from the
+			// record: they are what a later retrospective picks up.
+			return []Action{ApproveTaskCode{
+				TaskID: snap.Task.ID, Actor: actor, DroppedMinor: o.MinorComments(),
+			}}, true
 		case "request_changes":
+			// The cap catches the case severity gating cannot: reviewer and
+			// implementer genuinely disagree, so majors recur every round.
+			// A human decides rather than the two grinding on (audit §3.3a).
+			if roundCap := snap.Task.ReviewRoundCap; roundCap > 0 && snap.Task.ReviewRounds >= roundCap {
+				return []Action{RaiseCheckpoint{
+					CPKind: "review-deadlock", RefType: "task", RefID: snap.Task.ID,
+					Question: fmt.Sprintf(
+						"The reviewer has asked for changes %d times on this task and major issues are still being found. Approve it as it stands, or stop work on it?",
+						snap.Task.ReviewRounds),
+					Context: map[string]any{
+						"rounds": snap.Task.ReviewRounds, "dispatch_id": id.String(),
+						"comments": o.Comments,
+					},
+				}}, true
+			}
 			return []Action{ReturnTaskCode{TaskID: snap.Task.ID, Actor: actor, DispatchID: &id, Comments: o.Comments}}, true
 		case "escalate":
 			return []Action{RaiseCheckpoint{

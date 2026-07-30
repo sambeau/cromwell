@@ -37,7 +37,7 @@ func ReviewOutcomeTool() provider.ToolDef {
 				"verdict": map[string]any{
 					"type":        "string",
 					"enum":        []string{"approve", "request_changes", "escalate"},
-					"description": "approve: the document meets the bar. request_changes: fixable problems, listed in comments. escalate: a human must decide; explain why in reasoning.",
+					"description": "The verdict follows from your findings. request_changes: at least one major finding. approve: no major findings — say so even if minor ones remain, because minor findings do not send work back. escalate: a human must decide; explain why in reasoning.",
 				},
 				"comments": map[string]any{
 					"type": "array",
@@ -46,8 +46,13 @@ func ReviewOutcomeTool() provider.ToolDef {
 						"properties": map[string]any{
 							"section_ref": map[string]any{"type": "string", "description": "Heading of the section the comment is about, empty for whole-document comments"},
 							"body":        map[string]any{"type": "string"},
+							"severity": map[string]any{
+								"type":        "string",
+								"enum":        []string{"major", "minor"},
+								"description": "major: correctness, completeness, scope or soundness is at stake, and the work must change. minor: style, naming, tidiness — worth noting, not worth another round. Classify honestly in both directions: calling everything major stalls the work, and calling a real defect minor lets it through.",
+							},
 						},
-						"required": []string{"body"},
+						"required": []string{"body", "severity"},
 					},
 				},
 				"reasoning": map[string]any{"type": "string", "description": "Why you reached this verdict"},

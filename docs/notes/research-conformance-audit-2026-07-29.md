@@ -227,6 +227,57 @@ This is the one finding I would treat as a defect rather than an enhancement. It
 is also thematically the kanbanzai failure family — work that spins without a
 human noticing.
 
+### 3.3a How the loop should terminate (Sam, 2026-07-30)
+
+The research prescribes a round cap. Sam's practice suggests the cap is the
+*wrong primary control*, and the reason is an observation about which failure
+actually occurs:
+
+> In practice the loop does not stall on disagreement. It stalls on the reviewer
+> querying finer and finer detail at a more and more pernickety level.
+
+A round cap applied to that failure escalates **trivia to a human**, which is
+noise and breaks the standing rule that human interruptions are for things going
+wrong. The pattern Sam reports working:
+
+1. Find all major and minor issues.
+2. Fix all of them.
+3. Repeat while any *major* issues are found.
+4. Stop when only minor issues remain, and drop them.
+
+**The two controls are complementary, not alternatives.** Severity-gated
+termination ends the common case correctly and without a human; the hard cap
+catches genuine disagreement — majors recurring round after round — which is the
+case the research was actually describing. Keep both.
+
+The termination argument holds: by round *n* with no majors found, the surviving
+minors have passed *n* reviews without anyone judging them major.
+
+**What it requires.** `ReviewComment` is `{section_ref, body}`
+([`rules.go:115`](../../internal/rules/rules.go:115)) — severity is a new field.
+More interestingly, **the verdict stops being a free choice and becomes
+derived**: any major → `request_changes`; no majors → `approve`; `escalate`
+remains free and orthogonal. That removes a class of reviewer inconsistency and
+doubles as a rubber-stamp defence — a reviewer cannot approve while holding a
+major finding, which attacks §3.4 from the other side.
+
+**Two risks.**
+
+- **Severity inflation** — everything marked major, the loop never terminates,
+  the cap fires every time and nothing improves. Kanbanzai anticipated this:
+  `reviewer.yaml` carries a *Severity Inflation* anti-pattern triggering above
+  30% of findings at the top tier. Port it.
+- **Severity deflation** — the inverse, and worse: a real correctness bug marked
+  minor is dropped silently at step 4. That is rubber-stamping in a new costume.
+  Mitigate by defining *major* concretely rather than by feel — `review-code`
+  already carries the right four criteria, so a failure of **Correct, Complete,
+  In scope or Sound** is major and style, naming and tidiness are minor.
+
+**Dropped minors are recorded, not discarded.** They are exactly the material
+Sam reports retrospectives being valuable for — complete the cycle, then go back
+and pick up what was noted along the way. Logging them against the task costs
+nothing now and feeds C-9.
+
 ### 3.4 Rubber-stamp approval is half-defended
 
 The MAST taxonomy names rubber-stamp approval (FM-3.1) as **the single most
@@ -545,7 +596,7 @@ Ordered by evidence strength times effort. These are proposals, not decisions.
 
 | # | Recommendation | Basis | Size |
 |---|---|---|---|
-| **C-1** | **Cap the review→revise loop** at 2–3 rounds, then raise a checkpoint. Add a round counter to the task. | Microsoft maker-checker; skill-authoring §2.4 | Small, and closes a real runaway |
+| **C-1** | **Severity-gated termination, with a hard cap as backstop** (§3.3a). Findings gain a severity; the loop repeats while *major* findings exist and stops when only minors remain; a hard round cap escalates genuine disagreement. Leftover minors are recorded, not discarded. | Microsoft maker-checker; Sam's practice; kanbanzai's Severity Inflation anti-pattern | Small–medium; closes the runaway *and* sharpens the verdict |
 | **C-2** | **Enforce the evidence contract**: reject a verification `approve` with an empty criteria array or blank evidence, the same way an unparseable outcome is rejected today. | MAST FM-3.1 (#1 quality failure) | Small |
 | **C-3** | **Extend the role schema** with `vocabulary` and `anti_patterns` (and decide on `inherits`), then populate the six roles — adapting kanbanzai's, not writing from scratch. Decide additive-vs-restructured identity first (§5.1). | Ranjan et al. 2024; the research's #1 lever; prior art in `.kbz/roles` | Medium — smaller than it was, given §5 |
 | **C-4** | **Add named anti-patterns and one BAD/GOOD pair** per skill. Reuse the calibration lines the skills already contain, and the kanbanzai skills where they still apply. | LangChain; Anthropic; P5/P10 | Medium |

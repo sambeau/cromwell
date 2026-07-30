@@ -29,13 +29,29 @@ description: Procedure for reviewing a dev-plan (decomposition of a spec into ta
 - **Soundness.** Is the Approach a reasonable way to build this, with no
   structural decision that contradicts the spec or an approved design?
 
+## Classify every finding
+
+Each comment carries a severity, and the severity decides whether the plan
+goes back for another round.
+
+- **major** — one of the four bars above is not met: a coverage gap, a task
+  too large to build alone, a wrong or missing dependency, a structural
+  decision that contradicts the spec. The plan must change.
+- **minor** — task wording, ordering that is defensible either way. Worth
+  noting, not worth another round.
+
+Classify honestly in both directions: a weak decomposition produces weak code
+no matter how good the spec was, but grinding a sound plan through rounds of
+wording changes costs real work and finds nothing.
+
 ## Choosing a verdict
 
-- `approve` — the decomposition is sound and complete. Minor task-wording
-  preferences are not grounds to withhold approval.
-- `request_changes` — specific, fixable problems: a coverage gap, a task too
-  large to build alone, a wrong or missing dependency. Name the task id and
-  say what to change.
+The verdict follows from the findings; it is not a separate judgement.
+
+- `approve` — no major findings. Say so **even if minor findings remain**:
+  they are recorded and do not send the plan back.
+- `request_changes` — at least one major finding. Name the task id and say
+  what to change.
 - `escalate` — a decomposition question that needs human judgement: the plan
   reveals the spec is ambiguous about build order in a way you cannot
   resolve, or it takes a structural approach whose trade-off a human should

@@ -112,10 +112,25 @@ func (KickQueue) ActionKind() string { return "kick_queue" }
 
 // ---- Review outcome (the submit_review outcome tool's payload, O-2) ----
 
+// Severity classifies a finding. Only major findings send work back; minor
+// findings ride along on a round that is happening anyway and are dropped
+// when nothing major remains (C-1, audit §3.3a).
+const (
+	SeverityMajor = "major"
+	SeverityMinor = "minor"
+)
+
 type ReviewComment struct {
 	SectionRef string `json:"section_ref,omitempty"`
 	Body       string `json:"body"`
+	// Severity is "major" or "minor". An empty value is read as major:
+	// failing closed keeps a finding in play, where failing open would drop
+	// it silently — the severity-deflation risk in audit §3.3a.
+	Severity string `json:"severity,omitempty"`
 }
+
+// IsMajor reports whether the comment blocks approval.
+func (c ReviewComment) IsMajor() bool { return c.Severity != SeverityMinor }
 
 type ReviewOutcome struct {
 	Verdict   string          `json:"verdict"` // approve | request_changes | escalate
@@ -123,6 +138,35 @@ type ReviewOutcome struct {
 	Reasoning string          `json:"reasoning"`
 }
 
+// HasMajor reports whether any finding blocks approval.
+func (o *ReviewOutcome) HasMajor() bool {
+	for _, c := range o.Comments {
+		if c.IsMajor() {
+			return true
+		}
+	}
+	return false
+}
+
+// MinorComments returns the findings that do not block approval. On an
+// approve verdict these are the ones being dropped, and they are recorded
+// rather than discarded (audit §3.3a, C-9).
+func (o *ReviewOutcome) MinorComments() []ReviewComment {
+	var minor []ReviewComment
+	for _, c := range o.Comments {
+		if !c.IsMajor() {
+			minor = append(minor, c)
+		}
+	}
+	return minor
+}
+
+// ParseReviewOutcome validates the payload and, with it, the loop-termination
+// rule: the verdict follows from the findings' severity rather than being a
+// free choice (audit §3.3a). A reviewer may not approve while holding a major
+// finding, and may not send work back over minors alone — the second half is
+// what makes the loop terminate instead of grinding through ever-finer detail.
+// escalate stays free: it is orthogonal to severity.
 func ParseReviewOutcome(raw json.RawMessage) (*ReviewOutcome, error) {
 	var o ReviewOutcome
 	if err := json.Unmarshal(raw, &o); err != nil {
@@ -132,6 +176,29 @@ func ParseReviewOutcome(raw json.RawMessage) (*ReviewOutcome, error) {
 	case "approve", "request_changes", "escalate":
 	default:
 		return nil, fmt.Errorf("review outcome: unknown verdict %q", o.Verdict)
+	}
+	for i, c := range o.Comments {
+		switch c.Severity {
+		case "", SeverityMajor, SeverityMinor:
+		default:
+			return nil, fmt.Errorf("review outcome: comment %d has unknown severity %q (expected %q or %q)",
+				i+1, c.Severity, SeverityMajor, SeverityMinor)
+		}
+	}
+	switch o.Verdict {
+	case "approve":
+		if o.HasMajor() {
+			return nil, fmt.Errorf("review outcome: cannot approve while a major finding stands — " +
+				"either downgrade it to minor or request changes")
+		}
+	case "request_changes":
+		if len(o.Comments) == 0 {
+			return nil, fmt.Errorf("review outcome: request_changes needs at least one comment saying what to change")
+		}
+		if !o.HasMajor() {
+			return nil, fmt.Errorf("review outcome: cannot request changes when every finding is minor — " +
+				"approve and let the minor findings stand, or raise one to major")
+		}
 	}
 	return &o, nil
 }
@@ -342,6 +409,14 @@ type RevisionResponse struct {
 	Continue bool `json:"continue"`
 }
 
+// DeadlockResponse is the payload of a review-deadlock checkpoint answer:
+// the reviewer and implementer could not converge within the round cap, so a
+// human either takes the code as it stands or stops work on the task.
+type DeadlockResponse struct {
+	Decision string `json:"decision"` // approve | abandon
+	Reason   string `json:"reason,omitempty"`
+}
+
 func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Action {
 	switch e.Kind {
 	case "review-escalation":
@@ -373,6 +448,17 @@ func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Actio
 			case "request_changes":
 				return []Action{ReturnTaskCode{TaskID: snap.Task.ID, Actor: e.RespondedBy, Comments: r.Comments}}
 			}
+		}
+	case "review-deadlock":
+		var r DeadlockResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil || snap.Task == nil {
+			return nil
+		}
+		switch r.Decision {
+		case "approve":
+			return []Action{ApproveTaskCode{TaskID: snap.Task.ID, Actor: e.RespondedBy}}
+		case "abandon":
+			return []Action{AbandonTask{TaskID: snap.Task.ID, Actor: e.RespondedBy, Reason: r.Reason}}
 		}
 	case "verification-escalation":
 		var r EscalationResponse

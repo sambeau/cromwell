@@ -116,10 +116,15 @@ type PricePerMTok struct {
 }
 
 type DispatchConfig struct {
-	Workers      int `yaml:"workers"`
-	MaxAttempts  int `yaml:"max_attempts"`
-	TurnCap      int `yaml:"turn_cap"`
-	StallSeconds int `yaml:"stall_seconds"`
+	Workers     int `yaml:"workers"`
+	MaxAttempts int `yaml:"max_attempts"`
+	TurnCap     int `yaml:"turn_cap"`
+	// MaxReviewRounds bounds the implement→review→revise loop. Severity
+	// gating ends the ordinary case; this is the backstop for genuine
+	// disagreement, where major findings recur every round. At the cap a
+	// human decides instead (audit §3.3a).
+	MaxReviewRounds int `yaml:"max_review_rounds"`
+	StallSeconds    int `yaml:"stall_seconds"`
 }
 
 // Command is a tool-host argv whitelist entry (DESIGN-004 §4, DESIGN-006
@@ -219,6 +224,9 @@ func (c *Config) validate() error {
 	}
 	if c.Dispatch.TurnCap == 0 {
 		c.Dispatch.TurnCap = 30
+	}
+	if c.Dispatch.MaxReviewRounds == 0 {
+		c.Dispatch.MaxReviewRounds = 3
 	}
 	if c.Dispatch.StallSeconds == 0 {
 		c.Dispatch.StallSeconds = 120

@@ -36,3 +36,10 @@ is met because the code looks like it should work; find the evidence.
 
 Call `submit_verification` once, with the `criteria` array (each with id,
 met, and evidence) and your overall verdict.
+
+**Evidence is required on every criterion, met or unmet, and this is enforced
+rather than requested.** A verification with no criteria, or with a criterion
+whose evidence is blank, is rejected and comes back to you — so does an
+`approve` while any criterion is marked unmet. If you genuinely cannot judge a
+criterion, `escalate` and say what you could not resolve; that is the honest
+way out, and it is the only verdict exempt from the evidence rule.
