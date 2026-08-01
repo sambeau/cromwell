@@ -59,6 +59,15 @@ integrate a code knowledge graph still holds up, tested first-hand against Cromw
 codebase. Keep it, but turn the integration around: the orchestrator should query and push
 rather than handing agents a tool the predecessor's agents ignored.
 
+### Workflow
+
+**[subutai-and-github.md](subutai-and-github.md)** — How Subutai and GitHub should divide a
+project, so a product team can leave GitHub without the developers noticing. Partition rather
+than synchronise: one owner per fact, joined by an identifier. Examined against Tickly, which
+turns out to have built a Subutai-shaped workflow on GitHub already and written down the tool
+that should replace it. Names the changes the upgrade path asks of DESIGN-010 — chiefly that
+documents must be adopted where they sit rather than moved.
+
 ### Writing
 
 **[writing-guide.md](writing-guide.md)** — How we plan, structure, and write documentation.

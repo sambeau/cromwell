@@ -122,7 +122,8 @@ that *define* work, and things that *track* it.
 | **Initiative** | A container for a piece of intent — a plan to do something. Initiatives nest. They hold documents and dashboards, but deliberately have no lifecycle: above the feature line, things simply *are*, until they're archived. |
 | **Feature** | A buildable unit with a specification. This is the commitment point: creating a feature says "we intend to build this." Features have the full lifecycle, tasks, and a worktree. |
 | **Task** | One unit of implementation work inside a feature. What an implementer picks up. |
-| **Bug** | A reported problem. Feature-shaped, with a triage step at the front. (Section 9.) |
+| **Bug** | A reported problem. Feature-shaped, with a triage step at the front. (Section 8.) |
+| **Spike** | A question with a budget. Throwaway investigation that produces findings, never shipped code. (Section 9.) |
 | **Job** | A single task for a human — sign up for the account, choose the icon, find the API key. Ticked off by hand. |
 | **Checklist** | A bundle of jobs. Complete when every box is ticked. |
 
@@ -386,7 +387,47 @@ built-in acceptance criterion: the defect no longer reproduces), and the fix
 passes the same reviews and the same verification as any feature. No
 parallel machinery, no second-class pipeline.
 
-## 9. Decisions
+## 9. Spikes
+
+Sometimes you can't write a spec because you don't yet know enough. Does that
+API do what its documentation claims? Is this approach fast enough to bother
+with? Will these two services actually talk to each other? The honest response
+is to go and find out, and the work of finding out is a **spike**.
+
+A spike is a question with a budget. It hangs off whatever initiative or
+feature raised it, it carries a token cap agreed up front, and it produces
+exactly one thing: a findings document. The code it writes along the way is
+scaffolding — real enough to answer the question, never good enough to ship.
+
+**A spike cannot merge, and that is enforced rather than promised.** It gets a
+worktree like any other work, and when the spike concludes the worktree is
+discarded. There is no merge path in the entity at all, so no agent can decide
+that its throwaway code looks good enough to keep and no human can do it by
+accident. This is the same principle as everywhere else in Subutai: a rule that
+matters is a property of the code, not a line in a document that an agent may
+or may not have read.
+
+Because a spike has no spec, it has nothing to verify against, so the
+definition-of-done machinery doesn't apply to it. What replaces it is simpler
+and human: the spike is done when someone reads the findings and says the
+question is answered. The findings document itself is an ordinary Subutai
+document with the ordinary lifecycle, so if it's going to inform a design it
+can be reviewed like anything else.
+
+Anyone can run a spike — a dispatched agent, the chat AI, or a human at a
+terminal — under the same executor rules as any other work (Section 5b). The
+budget is what keeps it honest: spikes are the single easiest thing in software
+to let run for a fortnight, and a cap that trips into a checkpoint is cheaper
+than a conversation about where the week went.
+
+**Promotion is deliberate and one-way.** A spike that starts looking like the
+real implementation doesn't graduate into one. The findings inform a design or
+a spec, a feature is created in the normal way, and the feature is built from
+scratch by the normal pipeline. The scaffolding stays in the bin. This costs a
+little rework and buys the guarantee that nothing reaches production without
+having gone through the gates — which is the whole point of having them.
+
+## 10. Decisions
 
 Decisions are how the project remembers *why*. Each one is a document —
 `DEC-006`, with its ID minted by the system — recording what was decided,
@@ -407,7 +448,7 @@ its reason, not the essay.
 A simple viewer in the UI lists decisions for humans; the IDs keep them easy
 to cite in conversation, reviews, and commit messages.
 
-## 10. What Subutai deliberately doesn't do
+## 11. What Subutai deliberately doesn't do
 
 - **No AI orchestrator.** The orchestrator is code, permanently. This is the
   founding lesson.
@@ -422,7 +463,7 @@ to cite in conversation, reviews, and commit messages.
 - **No multi-project features.** One Subutai installation manages one
   project.
 
-## 11. From Cromwell to Subutai: what actually changes
+## 12. From Cromwell to Subutai: what actually changes
 
 For readers who know Cromwell — a summary of the deltas, because the list is
 shorter than the discussion that produced it:
@@ -446,12 +487,14 @@ shorter than the discussion that produced it:
    editor.
 7. **Observability grows up.** Full dispatch transcripts, the feature
    timeline, review-health metrics, attribution everywhere.
-8. **Bugs and decisions become first-class**, as described above.
+8. **Bugs, spikes, and decisions become first-class**, as described above.
+   Spikes in particular turn a rule that used to live in prose — throwaway code
+   never ships — into a property of the entity: a spike has no merge path.
 9. **Everything else stands.** The orchestrator, the gates, the document
    lifecycle, worktree isolation, checkpoints, severity-gated review loops,
    token sizing, the audit trail — unchanged, by design.
 
-## 12. Open questions for revision
+## 13. Open questions for revision
 
 Left deliberately open for Sam's read-through:
 
@@ -463,6 +506,11 @@ Left deliberately open for Sam's read-through:
   default to a stronger model when the executor was the chat AI (the
   independent review carries more weight in that case).
 - **Bug triage surface** — inbox checkpoint, dedicated queue, or both.
+- **What a spike's budget does when it trips.** Section 9 assumes a checkpoint
+  — the spike pauses and asks whether to continue. The alternative is a hard
+  stop. Checkpoint is the friendlier default and the easier one to abuse; a
+  hard stop is the one that actually protects an afternoon. Also open: whether
+  the budget has a project-wide default or must be set per spike.
 - **How much of a decision gets pushed** into agent context, and the size
   cap that keeps surfacing affordable.
 - **The formal decision records** — the seam move, the executor model, and
