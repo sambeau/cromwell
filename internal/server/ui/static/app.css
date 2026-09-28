@@ -2227,3 +2227,7 @@ dialog.modal::backdrop { background: var(--c-overlay); }
   vertical-align: 0.08em;
   margin-right: 0.45em;
 }
+/* In a breadcrumb the flex gap already spaces the ID from its name, and the
+   crumb gets room for the ID so the name isn't cut short by it. */
+.crumb .ident { margin-right: 0; }
+.crumb:has(.ident) { max-width: 32ch; }

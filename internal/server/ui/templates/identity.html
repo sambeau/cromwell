@@ -48,12 +48,14 @@
             <option value="dev_plan">Development plan</option>{{end}}
           </select>
         </div>
-        <fieldset class="field">
-          <legend class="field-label">Has it already been approved?</legend>
-          <label><input type="radio" name="state" value="draft" checked> No, it's a draft</label>
-          <label><input type="radio" name="state" value="approved"> Yes, it was approved before it came into Subutai</label>
+        <div class="field">
+          <label class="field-label" for="ad-state">Has it already been approved?</label>
+          <select class="select" id="ad-state" name="state">
+            <option value="draft">No, it's a draft</option>
+            <option value="approved">Yes, it was approved before it came into Subutai</option>
+          </select>
           <p class="field-hint">Saying yes records your approval. A specification or development plan is always adopted as a draft, then submitted and reviewed.</p>
-        </fieldset>
+        </div>
       </div>
       <input type="hidden" name="owner_type" value="{{.RefType}}">
       <input type="hidden" name="id" value="{{.ID}}">

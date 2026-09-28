@@ -518,7 +518,7 @@ func (s *Server) renderDocumentPage(w http.ResponseWriter, r *http.Request, path
 		docPageData: view,
 		OwnerCrumb:  s.ownerCrumb(ctx, view.Document.OwnerType, view.Document.OwnerID),
 	}
-	page.Breadcrumbs = []crumb{page.OwnerCrumb, {Label: view.Document.Title, Here: true}}
+	page.Breadcrumbs = []crumb{page.OwnerCrumb, docCrumb(view.Document)}
 	s.render(w, "page-entity-document", s.page(r.Context(), "documents", page))
 }
 

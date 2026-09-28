@@ -44,6 +44,9 @@ type uiTemplates struct {
 // formatter: money is off the human surface (DESIGN-008 D-4), and the absence
 // of the helper is what keeps it off.
 var uiFuncs = template.FuncMap{
+	// idFor is the ID label for a name, or "" when the name already starts
+	// with it, as a decision's heading does ("DEC-005: …", SPEC-015 SD-17).
+	"idFor": idFor,
 	"tokens":  humanTokens,
 	"shortID": func(id uuid.UUID) string { return id.String()[:8] },
 	"ago":     ago,

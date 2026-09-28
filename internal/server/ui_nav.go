@@ -165,10 +165,19 @@ func (p *entityPage) headCrumbs() []crumb { return p.Breadcrumbs }
 // withID puts a minted ID before a name, for a page's title (SPEC-015 SD-17):
 // "FEAT-023 Login form".
 func withID(id, name string) string {
-	if id == "" {
+	if idFor(id, name) == "" {
 		return name
 	}
 	return id + " " + name
+}
+
+// idFor is the ID to show before a name: none when there is none, or when the
+// name already starts with it.
+func idFor(id, name string) string {
+	if id == "" || strings.HasPrefix(name, id) {
+		return ""
+	}
+	return id
 }
 
 func (p entityDocPage) headTitle() string { return withID(p.Document.PublicID, p.Document.Title) }

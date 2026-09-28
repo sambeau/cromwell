@@ -75,7 +75,7 @@
       <div class="panel-head">
         <h2 class="panel-title">
           <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .BodyDoc.Type}}"/></svg>
-          <a href="{{.BodyDoc.URL}}">{{template "ident" .BodyDoc.PublicID}}{{.BodyDoc.Title}}</a>
+          <a href="{{.BodyDoc.URL}}">{{template "ident" (idFor .BodyDoc.PublicID .BodyDoc.Title)}}{{.BodyDoc.Title}}</a>
         </h2>
         <div class="panel-head-actions">
           {{template "state-badge" .BodyDoc.State}}
@@ -152,7 +152,7 @@
       <div class="row">
         <svg class="icon icon-sm icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Type}}"/></svg>
         <span class="row-main">
-          <span class="row-title"><a href="{{.URL}}">{{template "ident" .PublicID}}{{.Title}}</a></span>
+          <span class="row-title"><a href="{{.URL}}">{{template "ident" (idFor .PublicID .Title)}}{{.Title}}</a></span>
           <span class="row-sub">{{.Type}}</span>
         </span>
         <span class="row-end">
@@ -819,7 +819,7 @@
       <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Document.Type}}"/></svg>
     </span>
     <div class="page-head-titles">
-      <h1 class="t-page">{{template "ident" .Document.PublicID}}{{.Document.Title}}</h1>
+      <h1 class="t-page">{{template "ident" (idFor .Document.PublicID .Document.Title)}}{{.Document.Title}}</h1>
       <div class="page-head-meta">
         {{template "state-badge" .Document.State}}
         <span class="t-meta">{{.Document.Type}}{{if .Document.Revision}}, revision {{.Document.Revision}}{{end}}</span>
