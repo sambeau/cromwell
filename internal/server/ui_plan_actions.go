@@ -298,9 +298,11 @@ func planError(err error) string {
 	case errors.Is(err, store.ErrNotFound):
 		return "That is no longer there. The page may be out of date, so reload it and try again."
 	case strings.Contains(err.Error(), "membership is frozen"):
-		return "This milestone is locked, so what it contains is fixed."
+		return "This milestone is marked as shipped, so what it contains is fixed. Reopen it first to change it."
 	case strings.Contains(err.Error(), "already locked"):
-		return "This milestone is already locked."
+		return "This milestone is already marked as shipped."
+	case errors.Is(err, store.ErrMilestoneNotLocked):
+		return "This milestone isn't marked as shipped, so there is nothing to reopen."
 	}
 	return err.Error()
 }
@@ -576,7 +578,11 @@ func (s *Server) milestoneMemberChange(w http.ResponseWriter, r *http.Request, a
 	s.respondMilestone(w, r, milestoneID, notice, "")
 }
 
-// --- Lock (FR-5) ---
+// --- Mark as shipped, and reopen (FR-5) ---
+//
+// In the store and the audit trail this is still "lock" and "unlock"; people
+// see "Mark as shipped" and "Reopen", which is what the act means (SPEC-010
+// SD-11). Because it can be undone, it needs no confirmation step.
 
 func (s *Server) handleMilestoneLock(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
@@ -587,13 +593,6 @@ func (s *Server) handleMilestoneLock(w http.ResponseWriter, r *http.Request) {
 	milestoneID, err := uuid.Parse(strings.TrimSpace(r.FormValue("milestone_id")))
 	if err != nil {
 		http.Error(w, "bad milestone id", http.StatusBadRequest)
-		return
-	}
-	// The confirm step is part of the form (FR-5.2): a post without it — a
-	// stray or scripted one — locks nothing.
-	if r.FormValue("confirm") != "permanent" {
-		s.respondMilestone(w, r, milestoneID, "",
-			"Locking is permanent, so it needs the confirmation. Open Lock this milestone and confirm it there.")
 		return
 	}
 	var g lifecycle.GateResult
@@ -618,12 +617,36 @@ func (s *Server) handleMilestoneLock(w http.ResponseWriter, r *http.Request) {
 		s.respondMilestone(w, r, milestoneID, "", planError(err))
 		return
 	}
-	held := fmt.Sprintf("%d features, %d of them done", prog.Total, prog.Done)
+	held := fmt.Sprintf("the %d features it covers, %d of them done", prog.Total, prog.Done)
 	if prog.Total == 1 {
 		held = "its one feature, which is done"
 	}
 	s.respondMilestone(w, r, milestoneID,
-		"This milestone is now locked. Its snapshot holds "+held+", and what it contains can no longer change.", "")
+		"This milestone is marked as shipped. Its record holds "+held+
+			", and later work won't change it. You can reopen it if this was a mistake.", "")
+}
+
+func (s *Server) handleMilestoneUnlock(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.uiError(w, err)
+		return
+	}
+	ctx := r.Context()
+	milestoneID, err := uuid.Parse(strings.TrimSpace(r.FormValue("milestone_id")))
+	if err != nil {
+		http.Error(w, "bad milestone id", http.StatusBadRequest)
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		return store.UnlockMilestone(ctx, tx, milestoneID, reason, s.uiActor())
+	})
+	if err != nil {
+		s.respondMilestone(w, r, milestoneID, "", planError(err))
+		return
+	}
+	s.respondMilestone(w, r, milestoneID,
+		"This milestone is open again, and what it contains is live. The history still shows when it was marked as shipped.", "")
 }
 
 // --- Roadmap order (FR-4) ---

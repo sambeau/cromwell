@@ -167,7 +167,7 @@
             <svg class="icon icon-sm icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
             <span class="row-main">
               <span class="row-title"><a href="{{.URL}}">{{.Name}}</a></span>
-              {{if .Locked}}<span class="row-sub">Locked, so what it contains is fixed.</span>{{end}}
+              {{if .Locked}}<span class="row-sub">Marked as shipped, so what it contains is fixed.</span>{{end}}
             </span>
             <span class="row-end">
               {{if not .Locked}}
@@ -202,7 +202,7 @@
             </optgroup>
             {{end}}
           </select>
-          <p class="field-hint">Only open milestones are listed. A locked milestone's contents are fixed.</p>
+          <p class="field-hint">Milestones already marked as shipped aren't listed, because what they contain is fixed.</p>
         </div>
         <input type="hidden" name="member_type" value="{{.Kind}}">
         <input type="hidden" name="member_id" value="{{.ID}}">
@@ -286,8 +286,19 @@
     {{if .Locked}}
     <div class="banner banner--info u-mt-6">
       <svg class="icon icon-md" aria-hidden="true"><use href="#i-lock"/></svg>
-      <div><b>This milestone is locked.</b>What it contains is fixed, and its progress is measured against the snapshot taken when it was locked.</div>
+      <div><b>This milestone is marked as shipped.</b>What it contains is fixed, so later work under its initiatives doesn't change the record. Progress is measured against the features it covered when it shipped.</div>
     </div>
+    <h3 class="t-row-title u-mt-6 u-mb-2">Reopen this milestone</h3>
+    <details class="inline-confirm inline-confirm--block">
+      <summary class="btn"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-unlock"/></svg>Reopen this milestone…</summary>
+      <p class="t-meta u-mt-2">Reopening throws away the shipped record and makes what it contains live again, so you can change it. The history still shows that it was marked as shipped, and when.</p>
+      <form class="inline-confirm-form u-mt-4" method="post" action="/ui/milestone/unlock"
+            hx-post="/ui/milestone/unlock" hx-target="#milestone-editor" hx-swap="outerHTML">
+        <input type="hidden" name="milestone_id" value="{{.Milestone.ID}}">
+        <input class="input input--sm" name="reason" placeholder="Why? (optional)" aria-label="Why is it being reopened? This is optional.">
+        <button class="btn btn--sm" type="submit">Reopen it</button>
+      </form>
+    </details>
     {{else}}
     <h3 class="t-row-title u-mt-6 u-mb-2">Add to this milestone</h3>
     <div class="field">
@@ -300,26 +311,19 @@
     </div>
     {{template "member-candidates" .Picker}}
 
-    <h3 class="t-row-title u-mt-6 u-mb-2">Lock this milestone</h3>
+    <h3 class="t-row-title u-mt-6 u-mb-2">Mark as shipped</h3>
     {{if .CanLock}}
-    <details class="inline-confirm inline-confirm--block">
-      <summary class="btn btn--danger"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Lock this milestone…</summary>
-      <div class="banner banner--warning u-mt-4">
-        <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg>
-        <div><b>Locking is permanent.</b>It takes a snapshot of the {{if eq .LeafCount 1}}one feature this milestone comes down to, which is done,{{else}}{{.LeafCount}} features this milestone comes down to ({{.LeafDone}} of them done so far){{end}} and freezes what it contains. It can't be unlocked.</div>
-      </div>
-      <form class="u-mt-4" method="post" action="/ui/milestone/lock"
-            hx-post="/ui/milestone/lock" hx-target="#milestone-editor" hx-swap="outerHTML">
-        <input type="hidden" name="milestone_id" value="{{.Milestone.ID}}">
-        <input type="hidden" name="confirm" value="permanent">
-        <button class="btn btn--danger" type="submit">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Lock it permanently</button>
-      </form>
-    </details>
+    <p class="t-meta u-mb-4">When this release goes out, mark it as shipped. That records the {{if eq .LeafCount 1}}one feature it covers, which is done,{{else}}{{.LeafCount}} features it covers ({{.LeafDone}} of them done so far){{end}} and stops what it contains from changing, so work added later under its initiatives doesn't rewrite the record. You can reopen it if it was a mistake.</p>
+    <form method="post" action="/ui/milestone/lock"
+          hx-post="/ui/milestone/lock" hx-target="#milestone-editor" hx-swap="outerHTML">
+      <input type="hidden" name="milestone_id" value="{{.Milestone.ID}}">
+      <button class="btn btn--primary" type="submit">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Mark as shipped</button>
+    </form>
     {{else}}
     <div class="action">
       <button class="btn" type="button" disabled aria-describedby="why-lock-{{.Milestone.ID}}">
-        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Lock this milestone</button>
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Mark as shipped</button>
       <p class="action-reason" id="why-lock-{{.Milestone.ID}}">
         <svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg>
         <span>{{.LockReason}}</span></p>

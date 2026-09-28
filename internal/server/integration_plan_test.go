@@ -251,34 +251,68 @@ func TestUIPlanEditing(t *testing.T) {
 	// FR-5: G4 refuses while nothing is done — disabled with the reason, and a
 	// post is refused in the same words.
 	_, ed = h.getUI("/ui/m/" + beta.ID.String() + "/edit")
-	mustContain(t, "lock disabled", ed, "its one feature isn&#39;t done")
-	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String(), "confirm": "permanent"}, true)
-	mustContain(t, "G4 refusal", frag, "can&#39;t be locked yet")
-	// Without the confirmation nothing is locked, whatever the gate says.
+	mustContain(t, "ship disabled", ed, "its one feature isn&#39;t done")
+	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String()}, true)
+	mustContain(t, "G4 refusal", frag, "can&#39;t be marked as shipped yet")
+	if h.milestoneNamed("Auth beta").LockedAt != nil {
+		t.Fatal("G4 refused, but the milestone was marked as shipped")
+	}
 	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE features SET state = 'done' WHERE id = $1`, fx.login); err != nil {
 		t.Fatal(err)
 	}
-	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String()}, true)
-	mustContain(t, "confirm needed", frag, "Locking is permanent, so it needs the confirmation")
-	if h.milestoneNamed("Auth beta").LockedAt != nil {
-		t.Fatal("locked without the confirmation")
-	}
 	_, ed = h.getUI("/ui/m/" + beta.ID.String() + "/edit")
-	mustContain(t, "confirm step", ed, "Locking is permanent.")
-	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String(), "confirm": "permanent"}, true)
-	mustContain(t, "locked notice", frag, "This milestone is now locked.")
+	mustContain(t, "ship explained", ed, "You can reopen it if it was a mistake.")
+	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String()}, true)
+	mustContain(t, "shipped notice", frag, "This milestone is marked as shipped.")
 	if h.milestoneNamed("Auth beta").LockedAt == nil {
-		t.Fatal("the milestone did not lock")
+		t.Fatal("the milestone was not marked as shipped")
 	}
 	if n := h.auditCount("milestone.locked", actor); n != 1 {
 		t.Errorf("milestone.locked by %s = %d", actor, n)
 	}
-	// FR-3.5: a locked milestone's editor offers nothing to change.
+	// FR-3.5: a shipped milestone's editor offers nothing to change, only a
+	// way to reopen it.
 	_, ed = h.getUI("/ui/m/" + beta.ID.String() + "/edit")
-	mustContain(t, "locked editor", ed, "This milestone is locked.")
+	mustContain(t, "shipped editor", ed, "This milestone is marked as shipped.")
+	mustContain(t, "reopen offered", ed, `action="/ui/milestone/unlock"`)
 	if strings.Contains(ed, "/ui/milestone/member/add") {
-		t.Error("a locked milestone still offers to add")
+		t.Error("a shipped milestone still offers to add")
 	}
+	// The member side shows it as shipped rather than offering removal.
+	_, featPage = h.getUI("/ui/f/auth/login")
+	mustContain(t, "shipped on the rail", featPage, "Marked as shipped, so what it contains is fixed.")
+
+	// FR-5.4: reopening undoes it, and the history keeps both.
+	_, frag = h.postPlan("/ui/milestone/unlock", map[string]string{
+		"milestone_id": beta.ID.String(), "reason": "Passkeys slipped into this release."}, true)
+	mustContain(t, "reopened notice", frag, "This milestone is open again")
+	if h.milestoneNamed("Auth beta").LockedAt != nil {
+		t.Fatal("the milestone is still marked as shipped")
+	}
+	var snapshotRows int
+	_ = h.srv.Store.Pool.QueryRow(ctx, `SELECT count(*) FROM milestone_snapshots WHERE milestone_id = $1`, beta.ID).Scan(&snapshotRows)
+	if snapshotRows != 0 {
+		t.Errorf("snapshot rows after reopening = %d, want 0", snapshotRows)
+	}
+	var unlockReason string
+	var kept int
+	if err := h.srv.Store.Pool.QueryRow(ctx, `
+		SELECT payload->>'reason', jsonb_array_length(payload->'snapshot') FROM audit_events
+		WHERE kind = 'milestone.unlocked' AND actor = $1 AND ref_id = $2`, actor, beta.ID).Scan(&unlockReason, &kept); err != nil {
+		t.Fatalf("milestone.unlocked audit row: %v", err)
+	}
+	if unlockReason != "Passkeys slipped into this release." || kept != 1 {
+		t.Errorf("unlock audit = reason %q, %d features kept; want the reason and the one feature", unlockReason, kept)
+	}
+	// It is live again: it can change, and it can be marked as shipped again.
+	_, frag = h.postPlan("/ui/milestone/member/add", map[string]string{
+		"milestone_id": beta.ID.String(), "member_type": "feature", "member_id": fx.invoices.String()}, true)
+	mustContain(t, "editable again", frag, "Invoices was added to Auth beta.")
+	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String()}, true)
+	mustContain(t, "shipped again", frag, "the 2 features it covers, 1 of them done")
+	// Reopening something open is refused in a sentence.
+	_, frag = h.postPlan("/ui/milestone/unlock", map[string]string{"milestone_id": ga.ID.String()}, true)
+	mustContain(t, "nothing to reopen", frag, "isn&#39;t marked as shipped, so there is nothing to reopen")
 
 	// NFR-4 (review R10-6): no page or fragment here takes a typed path.
 	for _, p := range []string{"/ui/i/auth", "/ui/project", "/ui/f/auth/login",
@@ -388,11 +422,11 @@ func TestMCPPlanTools(t *testing.T) {
 	if ms := detail["members"].([]any); len(ms) != 1 || ms[0].(map[string]any)["path"] != "auth/login" {
 		t.Errorf("members = %v", detail["members"])
 	}
-	lock := detail["lock"].(map[string]any)
-	if lock["could_lock_now"] != false {
-		t.Errorf("could_lock_now = %v", lock["could_lock_now"])
+	shipping := detail["shipping"].(map[string]any)
+	if shipping["could_mark_shipped_now"] != false {
+		t.Errorf("could_mark_shipped_now = %v", shipping["could_mark_shipped_now"])
 	}
-	mustContain(t, "why not", lock["why_not"].(string), "isn't done")
+	mustContain(t, "why not", shipping["why_not"].(string), "isn't done")
 	road := call("get_roadmap", map[string]any{"roadmap": "Auth plan"})
 	if road["milestones"].([]any)[0].(map[string]any)["name"] != "Auth GA" {
 		t.Errorf("get_roadmap order = %v", road["milestones"])
@@ -408,23 +442,28 @@ func TestMCPPlanTools(t *testing.T) {
 		}
 	}
 
-	// A refusal on a locked milestone is explained, not leaked (FR-7). The lock
-	// itself is a person's act in the web UI.
+	// A refusal on a shipped milestone is explained, not leaked (FR-7).
+	// Marking it as shipped is a person's act in the web UI.
 	if _, err := h.srv.Store.Pool.Exec(context.Background(),
 		`UPDATE features SET state = 'done' WHERE id = (SELECT id FROM features WHERE slug = 'login')`); err != nil {
 		t.Fatal(err)
 	}
-	_, frag := h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": gaID, "confirm": "permanent"}, true)
-	mustContain(t, "UI lock", frag, "This milestone is now locked.")
+	_, frag := h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": gaID}, true)
+	mustContain(t, "UI ship", frag, "This milestone is marked as shipped.")
 	callErr("add_milestone_member", map[string]any{"milestone": gaID, "member_type": "feature", "member": "billing/invoices"},
-		"that milestone is locked, so what it contains can't change")
+		"that milestone is marked as shipped, so what it contains can't change")
+	if got := call("get_milestone", map[string]any{"milestone": gaID}); got["state"] != "shipped" || got["shipped_at"] == nil {
+		t.Errorf("a shipped milestone reads as state %v, shipped_at %v", got["state"], got["shipped_at"])
+	}
 
-	// SD-4: there is no lock over MCP; the milestone is still open.
-	resp := h.rpc("tools/call", map[string]any{"name": "lock_milestone", "arguments": map[string]any{"milestone": betaID}})
-	if resp.Error == nil || resp.Error.Code != rpcMethodNotFound {
-		t.Errorf("lock_milestone should be unknown; got %+v", resp)
+	// SD-4: neither marking as shipped nor reopening exists over MCP.
+	for _, name := range []string{"lock_milestone", "unlock_milestone"} {
+		resp := h.rpc("tools/call", map[string]any{"name": name, "arguments": map[string]any{"milestone": betaID}})
+		if resp.Error == nil || resp.Error.Code != rpcMethodNotFound {
+			t.Errorf("%s should be unknown; got %+v", name, resp)
+		}
 	}
 	if h.milestoneNamed("Auth beta").LockedAt != nil {
-		t.Error("the milestone was locked over MCP")
+		t.Error("the milestone was marked as shipped over MCP")
 	}
 }

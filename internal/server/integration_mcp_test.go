@@ -133,9 +133,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 	for _, forbidden := range []string{
 		"start_feature", "transition_feature", "override_gate", "spawn_agent",
 		"dispatch_review", "respond_checkpoint", "archive_initiative", "set_estimate",
-		// SPEC-010 SD-4: locking a milestone is a gated, one-way lifecycle act
-		// and stays a person's act in the web UI.
-		"lock_milestone",
+		// SPEC-010 SD-4: marking a milestone as shipped (locking) and reopening
+		// it are guarded by gate G4 and stay a person's acts in the web UI.
+		"lock_milestone", "unlock_milestone",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

@@ -19,9 +19,10 @@ import (
 // The chat agent's milestone and roadmap tools (SPEC-010 FR-7). They are
 // planning authoring under DEC-004: each calls the same audited store method
 // the web UI calls, in one transaction, as the MCP actor, and signals the SSE
-// hub like the SPEC-008 tools. There is deliberately no tool that locks a
-// milestone (SD-4): locking is a gated lifecycle act that can't be undone, and
-// it stays a person's act in the web UI.
+// hub like the SPEC-008 tools. There is no tool that marks a milestone as
+// shipped (locks it) or reopens it (SD-4): DEC-004 keeps acts guarded by a
+// gate away from the chat agent, and G4 guards this one. It stays a person's
+// act in the web UI until Sam decides otherwise.
 //
 // Milestones and roadmaps are named by id, or by exact name where that name is
 // unique; initiatives and features by path, as the other tools do. Errors are
@@ -132,7 +133,8 @@ func mcpPlanError(err error) error {
 	case errors.Is(err, store.ErrMilestoneCycle):
 		return errors.New("a milestone can't contain itself, directly or through another milestone inside it")
 	case strings.Contains(err.Error(), "membership is frozen"):
-		return errors.New("that milestone is locked, so what it contains can't change")
+		return errors.New("that milestone is marked as shipped, so what it contains can't change; " +
+			"a person can reopen it in the web UI if it needs to")
 	}
 	return err
 }
@@ -158,9 +160,14 @@ func (s *Server) mcpMilestoneSummary(ctx context.Context, m *store.Milestone) (m
 	if err != nil {
 		return nil, err
 	}
+	// The stored state "locked" is what people call shipped (SPEC-010 SD-11).
+	state := string(m.State)
+	if m.State == lifecycle.MilestoneLocked {
+		state = "shipped"
+	}
 	out := map[string]any{
 		"id": m.ID.String(), "name": m.Name, "description": m.Description,
-		"state": string(m.State), "owner": s.mcpOwnerOf(ctx, m.OwnerType, m.OwnerID),
+		"state": state, "owner": s.mcpOwnerOf(ctx, m.OwnerType, m.OwnerID),
 		"items_done": card.Done, "items_total": card.Total,
 		"url": "/ui/m/" + m.ID.String(),
 	}
@@ -449,14 +456,14 @@ func (s *Server) mcpGetMilestone(r *http.Request, args map[string]any) (any, err
 			return nil, err
 		}
 		g := lifecycle.G4(prog.Total, prog.Done)
-		lock := map[string]any{"could_lock_now": g.Pass,
-			"how": "A person locks a milestone from its editor in the web UI. Locking is permanent, so this facet has no tool for it."}
+		shipping := map[string]any{"could_mark_shipped_now": g.Pass,
+			"how": "A person marks a milestone as shipped from its editor in the web UI. There is no tool for it here."}
 		if !g.Pass {
-			lock["why_not"] = g.Reason
+			shipping["why_not"] = g.Reason
 		}
-		out["lock"] = lock
+		out["shipping"] = shipping
 	} else if m.LockedAt != nil {
-		out["locked_at"] = m.LockedAt.Format(time.RFC3339)
+		out["shipped_at"] = m.LockedAt.Format(time.RFC3339)
 	}
 	return out, nil
 }
@@ -471,7 +478,7 @@ func (s *Server) mcpGetRoadmap(r *http.Request, args map[string]any) (any, error
 }
 
 // mcpPlanTools is the SPEC-010 part of the registry, kept beside its handlers.
-// It holds no lock tool, by design (SD-4).
+// It holds no tool to mark a milestone as shipped or reopen it (SD-4).
 func (s *Server) mcpPlanTools() []mcpTool {
 	milestoneRef := stringProp("The milestone's id, or its exact name if no other milestone shares it.")
 	roadmapRef := stringProp("The roadmap's id, or its exact name if no other roadmap shares it.")
@@ -506,7 +513,7 @@ func (s *Server) mcpPlanTools() []mcpTool {
 			Name: "add_milestone_member",
 			Description: "Add a feature, an initiative or another milestone to a milestone. An " +
 				"initiative brings in every feature under it, including ones created later. A " +
-				"milestone can't contain itself, and a locked milestone can't change.",
+				"milestone can't contain itself, and one marked as shipped can't change.",
 			Schema: objectSchema(map[string]any{
 				"milestone":   milestoneRef,
 				"member_type": stringProp("What is being added: \"feature\", \"initiative\" or \"milestone\"."),
@@ -518,7 +525,7 @@ func (s *Server) mcpPlanTools() []mcpTool {
 			Name: "remove_milestone_member",
 			Description: "Take a feature, an initiative or a milestone out of a milestone, for " +
 				"example when it is descoped from a release. The reason, if given, is kept on the " +
-				"audit trail. A locked milestone can't change.",
+				"audit trail. A milestone marked as shipped can't change.",
 			Schema: objectSchema(map[string]any{
 				"milestone":   milestoneRef,
 				"member_type": stringProp("What is being taken out: \"feature\", \"initiative\" or \"milestone\"."),
@@ -575,8 +582,9 @@ func (s *Server) mcpPlanTools() []mcpTool {
 			Name: "get_milestone",
 			Description: "Return one milestone in detail: its owner, state and target date, what it " +
 				"contains and which of those are done, its progress both as items and as estimated " +
-				"tokens, and whether it could be locked now — with the reason if not, so you can tell " +
-				"the person. Locking itself is done by a person in the web UI.",
+				"tokens, and whether it could be marked as shipped now — with the reason if not, so " +
+				"you can tell the person. Marking it as shipped, or reopening it, is done by a person " +
+				"in the web UI.",
 			Schema: objectSchema(map[string]any{
 				"milestone": milestoneRef,
 			}, "milestone"),
