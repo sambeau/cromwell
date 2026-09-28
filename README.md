@@ -8,7 +8,9 @@ AI agents driving development. Greenfield successor to kanbanzai.
 SPEC-007, SPEC-008 and SPEC-009 Stage 1 have shipped: the implementation loop,
 planning and tracking, the web command centre, the MCP facet for planning, and
 the authoring chain, in which agents write and review the spec and dev-plan
-from an approved design. Cromwell is now being revised as **Subutai**: the
+from an approved design. Since SPEC-011, approving a design starts nothing: a
+person presses **Send to development** when there is capacity to spend, and the
+agents take it from there to **Start building**. Cromwell is now being revised as **Subutai**: the
 same engine with a clearer workflow and a new name. Where that stands, and the
 milestones to finish it, are in the
 [Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md);
@@ -52,13 +54,15 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [SPEC-006](docs/specs/SPEC-006-command-centre-mutations.md) | The command centre's mutation slice: planning and review actions (**binding**) |
 | [SPEC-007](docs/specs/SPEC-007-workflow-surface-stage-a.md) | The workflow surface, Stage A: document-led browsing (**binding**) |
 | [SPEC-008](docs/specs/SPEC-008-mcp-facet-planning-authoring.md) | The MCP facet, slice 1: planning authoring (**binding**) |
-| [SPEC-009](docs/specs/SPEC-009-the-authoring-chain.md) | The authoring chain, Stage 1 (**binding**) |
+| [SPEC-009](docs/specs/SPEC-009-the-authoring-chain.md) | The authoring chain, Stage 1 (**binding**; its trigger and cascade rewrite are changed by SPEC-011) |
+| [SPEC-011](docs/specs/SPEC-011-send-to-development.md) | Send to development: the button, spec review with human issues and the hold, chat relays (**draft, for Sam's approval**) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
 | [REVIEW-003](docs/reviews/REVIEW-003-phase-3-planning-package.md) | Consistency review + approval of SPEC-003 |
 | [REVIEW-004](docs/reviews/REVIEW-004-phase-4-web-command-centre-package.md) | Consistency review + approval of DESIGN-007 and SPEC-004 |
 | [REVIEW-006](docs/reviews/REVIEW-006-command-centre-mutations-package.md) | Consistency review + approval of SPEC-006 |
 | [REVIEW-009](docs/reviews/REVIEW-009-authoring-chain-package.md) | Consistency review + approval of SPEC-009 |
+| [REVIEW-011](docs/reviews/REVIEW-011-send-to-development.md) | Consistency review of SPEC-011, and the author's response |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
 | [walkthrough-phase-3](docs/walkthrough-phase-3.md) | Phase 3: sizing, calibration and milestones |
@@ -66,6 +70,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [walkthrough-spec-006](docs/walkthrough-spec-006.md) | SPEC-006: the command centre's mutation slice |
 | [walkthrough-spec-007-008](docs/walkthrough-spec-007-008.md) | SPEC-007 and SPEC-008: the workflow surface and the MCP facet |
 | [walkthrough-spec-009-stage1](docs/walkthrough-spec-009-stage1.md) | SPEC-009 Stage 1: approval to gate 2, live, for 15,976 tokens |
+| [walkthrough-spec-011](docs/walkthrough-spec-011.md) | SPEC-011: Send to development in the browser and over MCP, with no AI provider |
 | [manual testing](docs/manual-testing.md) | Running Cromwell by hand, and rebuilding the smoke project |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
 | [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |
@@ -94,15 +99,24 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
   slice 1) ✅ **delivered**: a browsable, document-led UI, and nine MCP tools
   a chat agent uses to author the planning layer. Their human-confirmed live
   smokes still await Sam.
-- **The authoring chain** (SPEC-009 Stage 1) ✅ **delivered**: an approved
-  design produces a reviewed spec, dev-plan and tasks with no further human
-  act, and stops at gate 2; proven live for 15,976 tokens. The revision-cascade
-  smoke (DoD 3) has not run.
-- **Subutai** (next): the revision planned in the
-  [roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) §11. A human
-  presses Send to development ([DEC-006](docs/decisions/DEC-006-humans-start-development.md)),
-  milestone and roadmap editing, checklists, executors, the rename, and GitHub
-  adoption.
+- **The authoring chain** (SPEC-009 Stage 1) ✅ **delivered**: agents write
+  and review the spec and dev-plan, decompose the tasks, and stop at gate 2;
+  proven live for 15,976 tokens, when approving a design was still the trigger.
+- **Send to development** (SPEC-011, roadmap M3) ✅ **built, awaiting Sam's
+  approval and live smoke**: approving a design starts nothing. A person
+  presses **Send to development** on a feature, or on several from their
+  initiative, after a send screen showing the steps, models, reviewers, a
+  token forecast and free agent slots. The chain then runs to an estimate and
+  stops at **Start building**. The agent spec reviewer approves; people raise
+  issues it must answer, and can hold a spec for themselves; no setting lets a
+  spec through unreviewed. The chat agent can relay a person's verdicts,
+  issues, review requests and releases, quoting them, but can't send or start
+  building. The design reviewer is retired. See the
+  [M3 handoff](docs/notes/handoff-M3-2026-09-28.md) for the live smoke and the
+  revision-cascade smoke, neither yet run.
+- **Subutai** (next): the rest of the revision planned in the
+  [roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) §11:
+  checklists, executors, the rename, and GitHub adoption.
 
 ## Design notes
 
