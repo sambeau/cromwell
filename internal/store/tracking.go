@@ -33,15 +33,17 @@ type Milestone struct {
 	OwnerType string
 	OwnerID   *uuid.UUID
 	CreatedAt time.Time
+	// PublicID is the minted ID, "MS-004" (SPEC-015 FR-1.2).
+	PublicID string
 }
 
-const milestoneCols = `id, name, description, target_date, state, locked_at, owner_type, owner_id, created_at`
+const milestoneCols = `id, name, description, target_date, state, locked_at, owner_type, owner_id, created_at, public_id`
 
 func scanMilestone(row pgx.Row) (*Milestone, error) {
 	var m Milestone
 	var state string
 	err := row.Scan(&m.ID, &m.Name, &m.Description, &m.TargetDate, &state, &m.LockedAt,
-		&m.OwnerType, &m.OwnerID, &m.CreatedAt)
+		&m.OwnerType, &m.OwnerID, &m.CreatedAt, &m.PublicID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -63,9 +65,10 @@ func CreateMilestone(ctx context.Context, tx pgx.Tx, ownerType string, ownerID *
 	}
 	m := &Milestone{ID: NewID(), Name: name, Description: description, TargetDate: targetDate,
 		State: lifecycle.MilestoneOpen, OwnerType: ownerType, OwnerID: ownerID}
-	_, err := tx.Exec(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO milestones (id, name, description, target_date, owner_type, owner_id)
-		VALUES ($1, $2, $3, $4, $5, $6)`, m.ID, name, description, targetDate, ownerType, ownerID)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING public_id`, m.ID, name, description, targetDate, ownerType, ownerID).
+		Scan(&m.PublicID)
 	if err != nil {
 		return nil, err
 	}
@@ -602,13 +605,15 @@ type Roadmap struct {
 	Name      string
 	OwnerType string
 	OwnerID   *uuid.UUID
+	// PublicID is the minted ID, "RM-001" (SPEC-015 FR-1.2).
+	PublicID string
 }
 
-const roadmapCols = `id, name, owner_type, owner_id`
+const roadmapCols = `id, name, owner_type, owner_id, public_id`
 
 func scanRoadmap(row pgx.Row) (*Roadmap, error) {
 	var r Roadmap
-	err := row.Scan(&r.ID, &r.Name, &r.OwnerType, &r.OwnerID)
+	err := row.Scan(&r.ID, &r.Name, &r.OwnerType, &r.OwnerID, &r.PublicID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -626,8 +631,8 @@ func CreateRoadmap(ctx context.Context, tx pgx.Tx, ownerType string, ownerID *uu
 		return nil, err
 	}
 	r := &Roadmap{ID: NewID(), Name: name, OwnerType: ownerType, OwnerID: ownerID}
-	if _, err := tx.Exec(ctx, `INSERT INTO roadmaps (id, name, owner_type, owner_id) VALUES ($1, $2, $3, $4)`,
-		r.ID, name, ownerType, ownerID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO roadmaps (id, name, owner_type, owner_id) VALUES ($1, $2, $3, $4)
+		RETURNING public_id`, r.ID, name, ownerType, ownerID).Scan(&r.PublicID); err != nil {
 		return nil, err
 	}
 	// Roadmaps are not a ref_type (DESIGN-001 §3); a roadmap-scoped event is

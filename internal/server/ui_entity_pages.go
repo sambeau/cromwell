@@ -164,11 +164,11 @@ func (s *Server) ownerCrumb(ctx context.Context, ownerType string, ownerID *uuid
 		if err != nil {
 			return project
 		}
-		label := path
+		label, id := path, ""
 		if in, err := store.GetInitiative(ctx, s.Store.Pool, *ownerID); err == nil {
-			label = in.Name
+			label, id = in.Name, in.PublicID
 		}
-		return crumb{Label: label, URL: "/ui/i/" + path}
+		return crumb{ID: id, Label: label, URL: "/ui/i/" + path}
 	case "feature":
 		f, err := store.GetFeature(ctx, s.Store.Pool, *ownerID)
 		if err != nil {
@@ -178,7 +178,7 @@ func (s *Server) ownerCrumb(ctx context.Context, ownerType string, ownerID *uuid
 		if err != nil {
 			return project
 		}
-		return crumb{Label: f.Name, URL: "/ui/f/" + path}
+		return crumb{ID: f.PublicID, Label: f.Name, URL: "/ui/f/" + path}
 	}
 	return project
 }
@@ -271,6 +271,14 @@ type entityDocPage struct {
 func (s *Server) handleUIDocumentPage(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
 	view, err := s.documentViewByPath(r.Context(), path, "", "")
+	if err == store.ErrNotFound {
+		// A document that moved leaves its old address pointing at its new
+		// one (SPEC-015 FR-4.5).
+		if to := s.movedFrom(r.Context(), path); to != "" {
+			http.Redirect(w, r, "/ui/d/"+to, http.StatusFound)
+			return
+		}
+	}
 	if err != nil {
 		s.notFoundOrErr(w, r, "document", path, err)
 		return
@@ -279,10 +287,15 @@ func (s *Server) handleUIDocumentPage(w http.ResponseWriter, r *http.Request) {
 		docPageData: view,
 		OwnerCrumb:  s.ownerCrumb(r.Context(), view.Document.OwnerType, view.Document.OwnerID),
 	}
-	page.Breadcrumbs = []crumb{page.OwnerCrumb, {Label: view.Document.Title, Here: true}}
+	page.Breadcrumbs = []crumb{page.OwnerCrumb, docCrumb(view.Document)}
 	if page.Runs, err = s.runRowsFor(r.Context(), "document", view.Document.ID); err != nil {
 		s.uiError(w, err)
 		return
 	}
 	s.render(w, "page-entity-document", s.page(r.Context(), "documents", page))
+}
+
+// docCrumb is a document's own breadcrumb, led by its ID (SPEC-015 SD-17).
+func docCrumb(d store.Document) crumb {
+	return crumb{ID: idFor(d.PublicID, d.Title), Label: d.Title, Here: true}
 }

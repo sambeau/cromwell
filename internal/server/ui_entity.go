@@ -27,6 +27,8 @@ import (
 // existing service methods) ---
 
 type crumb struct {
+	// ID is the entity's minted ID, shown before its label (SPEC-015 SD-17).
+	ID    string
 	Label string
 	URL   string
 	Kind  string // entity kind, so the crumb carries its type icon
@@ -36,6 +38,7 @@ type crumb struct {
 // childCard is one entry in a parent's list of children — a sub-initiative or a
 // feature — carrying its human summary and its size roll-up (FR-2.1).
 type childCard struct {
+	PublicID    string // "INIT-014", "FEAT-023" (SPEC-015 SD-17)
 	Kind        string // "initiative" | "feature"
 	Name        string
 	Description string
@@ -46,6 +49,10 @@ type childCard struct {
 
 // docCard is one attached document in the Documents section (FR-3.2).
 type docCard struct {
+	// PublicID and Revision are the document's ID; empty for one known only
+	// by its path (SPEC-015 SD-12).
+	PublicID  string
+	Revision  int
 	ID        uuid.UUID
 	Title     string
 	Type      string
@@ -94,6 +101,7 @@ type entityPage struct {
 	Kind        string // "project" | "initiative" | "feature"
 	RefType     string // "project" | "initiative" | "feature"
 	ID          uuid.UUID
+	PublicID    string // the minted ID, "INIT-014" (SPEC-015 SD-17)
 	Title       string
 	Path        string // server-derived slug path (never user-typed) for action forms and links
 	Slug        string
@@ -177,7 +185,7 @@ func (s *Server) initiativeCrumbs(ctx context.Context, id uuid.UUID) ([]crumb, e
 	var cum []string
 	for i := len(anc) - 1; i >= 0; i-- {
 		cum = append(cum, anc[i].Slug)
-		out = append(out, crumb{Label: anc[i].Name, URL: "/ui/i/" + strings.Join(cum, "/"), Kind: "initiative"})
+		out = append(out, crumb{ID: anc[i].PublicID, Label: anc[i].Name, URL: "/ui/i/" + strings.Join(cum, "/"), Kind: "initiative"})
 	}
 	return out, nil
 }
@@ -229,6 +237,7 @@ func (s *Server) documentCards(docs []store.Document, primaryID uuid.UUID) []doc
 	out := make([]docCard, 0, len(docs))
 	for _, d := range docs {
 		out = append(out, docCard{
+			PublicID: d.PublicID, Revision: d.Revision,
 			ID: d.ID, Title: d.Title, Type: d.Type, State: string(d.State),
 			URL: "/ui/d/" + d.Path, IsPrimary: d.ID == primaryID,
 		})
@@ -255,6 +264,7 @@ func (s *Server) bodyFor(ctx context.Context, ownerType string, ownerID *uuid.UU
 		body = "_The document file could not be read from the working tree._"
 	}
 	return renderMarkdown(body), &docCard{
+		PublicID: doc.PublicID, Revision: doc.Revision,
 		ID: doc.ID, Title: doc.Title, Type: doc.Type, State: string(doc.State),
 		URL: "/ui/d/" + doc.Path, IsPrimary: true,
 	}, true
@@ -447,7 +457,7 @@ func (s *Server) projectPage(ctx context.Context, notice, errMsg string) (*entit
 			return nil, err
 		}
 		page.Children = append(page.Children, childCard{
-			Kind: "initiative", Name: in.Name, Description: in.Description,
+			PublicID: in.PublicID, Kind: "initiative", Name: in.Name, Description: in.Description,
 			URL: "/ui/i/" + in.Slug, Size: r,
 		})
 	}
@@ -488,7 +498,7 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 		crumbs[len(crumbs)-1].Here = true
 	}
 	page := &entityPage{
-		Kind: "initiative", RefType: "initiative", ID: in.ID, Title: in.Name,
+		Kind: "initiative", RefType: "initiative", ID: in.ID, PublicID: in.PublicID, Title: in.Name,
 		Path: path, Slug: in.Slug, Description: in.Description, Editable: true,
 		Breadcrumbs: crumbs, Notice: notice, Error: errMsg,
 	}
@@ -511,7 +521,7 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 			return nil, err
 		}
 		page.Children = append(page.Children, childCard{
-			Kind: "initiative", Name: c.Name, Description: c.Description,
+			PublicID: c.PublicID, Kind: "initiative", Name: c.Name, Description: c.Description,
 			URL: "/ui/i/" + path + "/" + c.Slug, Size: r,
 		})
 	}
@@ -530,7 +540,7 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 			return nil, err
 		}
 		page.Children = append(page.Children, childCard{
-			Kind: "feature", Name: f.Name, Description: f.Description,
+			PublicID: f.PublicID, Kind: "feature", Name: f.Name, Description: f.Description,
 			URL: "/ui/f/" + path + "/" + f.Slug, State: string(f.State), Size: r,
 		})
 	}
@@ -573,9 +583,9 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 	}
 	// The URL is kept on the current crumb so the navigation tree can locate the
 	// page; the template renders a `Here` crumb unlinked regardless.
-	crumbs = append(crumbs, crumb{Label: f.Name, URL: "/ui/f/" + path, Kind: "feature", Here: true})
+	crumbs = append(crumbs, crumb{ID: f.PublicID, Label: f.Name, URL: "/ui/f/" + path, Kind: "feature", Here: true})
 	page := &entityPage{
-		Kind: "feature", RefType: "feature", ID: f.ID, Title: f.Name,
+		Kind: "feature", RefType: "feature", ID: f.ID, PublicID: f.PublicID, Title: f.Name,
 		Path: path, Slug: f.Slug, Description: f.Description, Editable: true,
 		Breadcrumbs: crumbs, State: string(f.State), Notice: notice, Error: errMsg,
 	}

@@ -53,7 +53,7 @@
       {{range .Initiatives}}
       <a class="row" href="{{.URL}}">
         <svg class="icon icon-sm icon-entity" data-entity="initiative" aria-hidden="true"><use href="#i-initiative"/></svg>
-        <span class="row-main"><span class="row-title">{{.Name}}</span></span>
+        <span class="row-main"><span class="row-title">{{template "ident" .PublicID}}{{.Name}}</span></span>
         <span class="row-end">{{template "size-badge" .Size}}</span>
       </a>
       {{end}}
@@ -76,7 +76,7 @@
       {{range .Features}}
       <a class="row" href="{{.URL}}">
         <svg class="icon icon-sm icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg>
-        <span class="row-main"><span class="row-title">{{.Name}}</span></span>
+        <span class="row-main"><span class="row-title">{{template "ident" .PublicID}}{{.Name}}</span></span>
         <span class="row-end">{{template "size-badge" .Size}}</span>
       </a>
       {{end}}

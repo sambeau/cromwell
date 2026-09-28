@@ -10,14 +10,14 @@ import (
 // (DESIGN-007 §8, CC-7; SPEC-004 FR-8.1). All are read-only over the existing
 // tables — no schema change, no new authority.
 
-const initiativeCols = `id, parent_id, slug, name, description, archived, created_at`
+const initiativeCols = `id, parent_id, slug, name, description, archived, created_at, public_id`
 
 func scanInitiative(rows interface {
 	Scan(dest ...any) error
 }) (*Initiative, error) {
 	var in Initiative
 	if err := rows.Scan(&in.ID, &in.ParentID, &in.Slug, &in.Name, &in.Description,
-		&in.Archived, &in.CreatedAt); err != nil {
+		&in.Archived, &in.CreatedAt, &in.PublicID); err != nil {
 		return nil, err
 	}
 	return &in, nil
@@ -71,7 +71,7 @@ func ChildInitiatives(ctx context.Context, q Querier, parentID uuid.UUID) ([]Ini
 // FeaturesForInitiative lists an initiative's own features, ordered by slug.
 func FeaturesForInitiative(ctx context.Context, q Querier, initiativeID uuid.UUID) ([]Feature, error) {
 	rows, err := q.Query(ctx, `
-		SELECT id, initiative_id, slug, name, description, state, created_at
+		SELECT id, initiative_id, slug, name, description, state, created_at, public_id, legacy_doc_paths
 		FROM features WHERE initiative_id = $1
 		ORDER BY slug`, initiativeID)
 	if err != nil {
@@ -82,7 +82,7 @@ func FeaturesForInitiative(ctx context.Context, q Querier, initiativeID uuid.UUI
 	for rows.Next() {
 		var f Feature
 		if err := rows.Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description,
-			&f.State, &f.CreatedAt); err != nil {
+			&f.State, &f.CreatedAt, &f.PublicID, &f.LegacyDocPaths); err != nil {
 			return nil, err
 		}
 		out = append(out, f)

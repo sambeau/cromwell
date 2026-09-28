@@ -202,7 +202,7 @@ func (s *Server) supersedePlanWithSpec(ctx context.Context, tx pgx.Tx, spec *sto
 		map[string]any{"cause": "spec-revision", "spec": spec.ID.String()}); err != nil {
 		return nil, err
 	}
-	to := archiveTarget(plan)
+	to := s.archiveTarget(plan)
 	if err := store.UpdateDocumentPath(ctx, tx, plan.ID, to); err != nil {
 		return nil, err
 	}
@@ -749,23 +749,31 @@ func (s *Server) refuseIfAuthorAtWork(ctx context.Context, doc *store.Document) 
 
 // DetachDocument removes a draft's registration, leaving the file (FR-9.3).
 func (s *Server) DetachDocument(ctx context.Context, docID uuid.UUID, actor string) (*store.Document, error) {
+	doc, _, err := s.detachDocument(ctx, docID, actor)
+	return doc, err
+}
+
+// detachDocument is DetachDocument, also saying what happened to the ID in
+// the file (SPEC-015 SD-13): "committed", "uncommitted", or "" for none.
+func (s *Server) detachDocument(ctx context.Context, docID uuid.UUID, actor string) (*store.Document, string, error) {
 	doc, err := store.GetDocument(ctx, s.Store.Pool, docID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if doc.State != lifecycle.DocDraft {
-		return nil, fmt.Errorf("Only a draft can be detached; this document is %s. An approved document is changed by revising it.", doc.State)
+		return nil, "", fmt.Errorf("Only a draft can be detached; this document is %s. An approved document is changed by revising it.", doc.State)
 	}
 	if err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		return store.DetachDocument(ctx, tx, doc, actor)
 	}); err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	idOutcome := s.stripDetachedIdentity(doc)
 	if doc.OwnerType == "feature" && doc.OwnerID != nil {
 		s.notifyEntityChanged("feature", *doc.OwnerID)
 		if err := s.reconcileFeatureAuthoring(ctx, *doc.OwnerID); err != nil {
 			s.Log.Warn("reconcile after detach", "feature", *doc.OwnerID, "err", err)
 		}
 	}
-	return doc, nil
+	return doc, idOutcome, nil
 }

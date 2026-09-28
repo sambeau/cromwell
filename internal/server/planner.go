@@ -12,7 +12,6 @@ import (
 
 	"subutai/internal/config"
 	"subutai/internal/dispatch"
-	"subutai/internal/lifecycle"
 	"subutai/internal/provider"
 	"subutai/internal/rules"
 	"subutai/internal/store"
@@ -548,8 +547,8 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 func (s *Server) approvedDesigns(ctx context.Context, f *store.Feature) ([]docBody, error) {
 	var out []docBody
 	add := func(ownerType string, id uuid.UUID) error {
-		d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "design", ownerType, id)
-		if err != nil || d.State != lifecycle.DocApproved {
+		d, err := store.CurrentApprovedDocForOwner(ctx, s.Store.Pool, "design", ownerType, id)
+		if err != nil {
 			return nil
 		}
 		body, rerr := s.readDocFile(d.Path)

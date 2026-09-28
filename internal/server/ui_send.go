@@ -583,11 +583,18 @@ func (s *Server) handleDocDetach(w http.ResponseWriter, r *http.Request) {
 		s.afterDocAct(w, r, doc, "", errors.New("Tick the box to confirm the detach."))
 		return
 	}
-	if _, err := s.DetachDocument(r.Context(), doc.ID, s.uiActor()); err != nil {
+	_, idOutcome, err := s.detachDocument(r.Context(), doc.ID, s.uiActor())
+	if err != nil {
 		s.afterDocAct(w, r, doc, "", err)
 		return
 	}
 	target, notice := "project", "The document "+doc.Path+" was detached. Its file is still in the repository."
+	switch idOutcome {
+	case "committed":
+		notice += " Its ID, " + doc.PublicID + ", was taken out of the file, and that change was committed."
+	case "uncommitted":
+		notice += " Its ID, " + doc.PublicID + ", was taken out of the file; that change isn't committed yet."
+	}
 	id := uuid.Nil
 	if doc.OwnerID != nil {
 		target, id = doc.OwnerType, *doc.OwnerID

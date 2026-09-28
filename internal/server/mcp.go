@@ -92,10 +92,11 @@ func (s *Server) mcpTools() []mcpTool {
 				"for. To nest it, pass the parent initiative's path; leave the parent out to create " +
 				"a top-level initiative.",
 			Schema: objectSchema(map[string]any{
-				"slug":        stringProp("A short lower-case identifier used in the initiative's address, for example \"auth\"."),
-				"name":        stringProp("The human-readable name, for example \"Authentication\"."),
-				"description": stringProp("A short description in plain prose, written for a person to read."),
-				"parent_path": stringProp("Optional. The path of the parent initiative, for example \"auth/basic\". Omit for a top-level initiative."),
+				"slug":            stringProp("A short lower-case identifier used in the initiative's address, for example \"auth\"."),
+				"name":            stringProp("The human-readable name, for example \"Authentication\"."),
+				"description":     stringProp("A short description in plain prose, written for a person to read."),
+				"parent_path":     stringProp("Optional. The path of the parent initiative, for example \"auth/basic\", or its ID, such as \"INIT-003\". Omit for a top-level initiative."),
+				"design_document": boolProp("Optional, true unless you say otherwise. Whether to start the initiative's design document from the project's template, in its folder under docs/work/. Say false only when a design already exists to attach, or none is wanted."),
 			}, "slug", "name"),
 			Handler: s.mcpCreateInitiative,
 		},
@@ -103,9 +104,11 @@ func (s *Server) mcpTools() []mcpTool {
 			Name: "create_feature",
 			Description: "Create a feature under an initiative. The feature starts as an idea; it is " +
 				"not started into development — a person does that from the command centre when its " +
-				"specification has been approved.",
+				"specification has been approved. Its design document is started from the template " +
+				"unless you say otherwise; a feature can also build from its initiative's design.",
 			Schema: objectSchema(map[string]any{
-				"initiative_path": stringProp("The path of the initiative that will own this feature, for example \"auth\"."),
+				"initiative_path": stringProp("The path of the initiative that will own this feature, for example \"auth\", or its ID, such as \"INIT-003\"."),
+				"design_document": boolProp("Optional, true unless you say otherwise. Whether to start the feature's own design document. Say false for a placeholder, or for a feature that will build from its initiative's design."),
 				"slug":            stringProp("A short lower-case identifier used in the feature's address, for example \"login\"."),
 				"name":            stringProp("The human-readable name, for example \"Login form\"."),
 				"description":     stringProp("A short description in plain prose, written for a person to read."),
@@ -118,7 +121,7 @@ func (s *Server) mcpTools() []mcpTool {
 				"to change; anything you leave out is kept as it is. The description is the human " +
 				"summary shown at the top of the initiative's page, so write it in plain prose.",
 			Schema: objectSchema(map[string]any{
-				"path":        stringProp("The path of the initiative, for example \"auth/basic\"."),
+				"path":        stringProp("The path of the initiative, for example \"auth/basic\", or its ID, such as \"INIT-003\"."),
 				"name":        stringProp("Optional. A new human-readable name."),
 				"description": stringProp("Optional. A new description, in plain prose."),
 			}, "path"),
@@ -130,7 +133,7 @@ func (s *Server) mcpTools() []mcpTool {
 				"change; anything you leave out is kept as it is. The description is the human " +
 				"summary shown at the top of the feature's page, so write it in plain prose.",
 			Schema: objectSchema(map[string]any{
-				"path":        stringProp("The path of the feature, for example \"auth/login\"."),
+				"path":        stringProp("The path of the feature, for example \"auth/login\", or its ID, such as \"FEAT-012\"."),
 				"name":        stringProp("Optional. A new human-readable name."),
 				"description": stringProp("Optional. A new description, in plain prose."),
 			}, "path"),
@@ -142,14 +145,32 @@ func (s *Server) mcpTools() []mcpTool {
 				"document belonging to an initiative or a feature. This records and indexes the " +
 				"file; it does not write it. Write the file with your own editing tools and commit " +
 				"it first, then attach it here. A document of type \"design\" becomes the body of " +
-				"the owning entity's page.",
+				"the owning entity's page. An attached file is known only by its path, so moving it " +
+				"loses it; prefer adopt_document, which gives it an ID that survives a move.",
 			Schema: objectSchema(map[string]any{
 				"path":       stringProp("The file's path within the repository, for example \"docs/design/login.md\"."),
 				"owner_type": stringProp("Which kind of thing owns the document: \"project\", \"initiative\" or \"feature\"."),
-				"owner_path": stringProp("The path of the owning initiative or feature. Omit when the owner is the project."),
+				"owner_path": stringProp("The path of the owning initiative or feature, or its ID. Omit when the owner is the project."),
 				"doc_type":   stringProp("The kind of document: design, research, note, report, spec, dev_plan or policy. Defaults to design."),
 			}, "path", "owner_type"),
 			Handler: s.mcpAttachDocument,
+		},
+		{
+			Name: "adopt_document",
+			Description: "Bring an existing Markdown file under Subutai where it sits, as a draft: give it " +
+				"an ID, a kind and an owner. Subutai writes two lines into the file's front matter, id: and " +
+				"revision:, changes nothing else, and commits that change itself. The ID then follows the " +
+				"file if it is moved or renamed. The file must already be committed, with no uncommitted " +
+				"changes. A file already attached by its path keeps its kind, owner and state and gains an " +
+				"ID. This tool only registers drafts: whether a document is approved is for a person to " +
+				"decide. A decision file named like DEC-005-….md keeps its number.",
+			Schema: objectSchema(map[string]any{
+				"path":       stringProp("The file's path within the repository, for example \"docs/design/login.md\"."),
+				"doc_type":   stringProp("The kind of document: design, research, note, report, spec, dev_plan, policy or decision."),
+				"owner_type": stringProp("Which kind of thing owns it: \"project\", \"initiative\" or \"feature\". A decision belongs to the project or an initiative."),
+				"owner_path": stringProp("The path of the owning initiative or feature, or its ID, such as \"FEAT-012\". Omit when the owner is the project."),
+			}, "path", "doc_type", "owner_type"),
+			Handler: s.mcpAdoptDocument,
 		},
 
 		// --- The reads authoring needs (FR-3) ---
@@ -166,7 +187,7 @@ func (s *Server) mcpTools() []mcpTool {
 			Description: "Return one initiative in detail: its name, description, the " +
 				"sub-initiatives and features directly beneath it, and the documents attached to it.",
 			Schema: objectSchema(map[string]any{
-				"path": stringProp("The path of the initiative, for example \"auth\"."),
+				"path": stringProp("The path of the initiative, for example \"auth\", or its ID, such as \"INIT-003\"."),
 			}, "path"),
 			Handler: s.mcpGetInitiative,
 		},
@@ -174,7 +195,7 @@ func (s *Server) mcpTools() []mcpTool {
 			Name:        "get_feature",
 			Description: "Return one feature in detail: its name, description, lifecycle state, and the documents attached to it.",
 			Schema: objectSchema(map[string]any{
-				"path": stringProp("The path of the feature, for example \"auth/login\"."),
+				"path": stringProp("The path of the feature, for example \"auth/login\", or its ID, such as \"FEAT-012\"."),
 			}, "path"),
 			Handler: s.mcpGetFeature,
 		},
@@ -183,7 +204,7 @@ func (s *Server) mcpTools() []mcpTool {
 			Description: "List the documents attached to an initiative or a feature, with each one's kind and review state.",
 			Schema: objectSchema(map[string]any{
 				"owner_type": stringProp("Which kind of thing owns the documents: \"project\", \"initiative\" or \"feature\"."),
-				"owner_path": stringProp("The path of the owning initiative or feature. Omit when the owner is the project."),
+				"owner_path": stringProp("The path of the owning initiative or feature, or its ID. Omit when the owner is the project."),
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
@@ -217,6 +238,10 @@ func objectSchema(props map[string]any, required ...string) map[string]any {
 
 func stringProp(desc string) map[string]any {
 	return map[string]any{"type": "string", "description": desc}
+}
+
+func boolProp(desc string) map[string]any {
+	return map[string]any{"type": "boolean", "description": desc}
 }
 
 // --- Transport (FR-1.1) ---

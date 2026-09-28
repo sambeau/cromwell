@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/ident"
 	"subutai/internal/sizing"
 	"subutai/internal/store"
 )
@@ -351,6 +352,13 @@ func (s *Server) milestoneByRef(ctx context.Context, ref string) (*store.Milesto
 	if id, err := uuid.Parse(ref); err == nil {
 		return store.GetMilestone(ctx, s.Store.Pool, id)
 	}
+	// Its ID, "MS-004" (SPEC-015 FR-7.5); a milestone named like one is still
+	// found by its name.
+	if r, ok := ident.Parse(ref); ok && r.Shape == ident.ShapeEntity && r.Kind.Name == "milestone" && ref == r.ID {
+		if m, err := store.MilestoneByPublicID(ctx, s.Store.Pool, r.ID); err != store.ErrNotFound {
+			return m, err
+		}
+	}
 	return store.MilestoneByName(ctx, s.Store.Pool, ref)
 }
 
@@ -441,6 +449,11 @@ func (s *Server) roadmapByRef(ctx context.Context, ref string) (*store.Roadmap, 
 	}
 	if id, err := uuid.Parse(ref); err == nil {
 		return store.GetRoadmap(ctx, s.Store.Pool, id)
+	}
+	if r, ok := ident.Parse(ref); ok && r.Shape == ident.ShapeEntity && r.Kind.Name == "roadmap" && ref == r.ID {
+		if rm, err := store.RoadmapByPublicID(ctx, s.Store.Pool, r.ID); err != store.ErrNotFound {
+			return rm, err
+		}
 	}
 	return store.RoadmapByName(ctx, s.Store.Pool, ref)
 }

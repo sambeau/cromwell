@@ -2229,3 +2229,20 @@ button.check-box:focus-visible { outline: var(--bw-thick) solid var(--c-accent);
 .job-who { font-size: var(--fs-xs); color: var(--c-text-3); }
 .job-quote { font-style: italic; color: var(--c-text-2); }
 .check-item[data-done="true"] .job-title { text-decoration: line-through; text-decoration-color: var(--c-text-3); color: var(--c-text-2); }
+
+/* A minted ID before a name (SPEC-015 SD-17): small, muted and monospaced,
+   there to cite without competing with the name it precedes. */
+.ident {
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  font-weight: var(--fw-medium);
+  color: var(--c-text-3);
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: 0.08em;
+  margin-right: 0.45em;
+}
+/* In a breadcrumb the flex gap already spaces the ID from its name, and the
+   crumb gets room for the ID so the name isn't cut short by it. */
+.crumb .ident { margin-right: 0; }
+.crumb:has(.ident) { max-width: 32ch; }

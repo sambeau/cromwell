@@ -391,15 +391,13 @@ func (s *Server) handleEntityInitiativeCreate(w http.ResponseWriter, r *http.Req
 		s.renderEntity(w, r, renderType, renderID, "", "A short slug and a name are both required to create an initiative.")
 		return
 	}
-	err := s.Store.WithTx(r.Context(), func(tx pgx.Tx) error {
-		_, e := store.CreateInitiative(r.Context(), tx, parentID, slug, name, strings.TrimSpace(r.FormValue("description")), s.uiActor())
-		return e
-	})
+	in, designPath, err := s.createInitiative(r.Context(), parentID, slug, name,
+		strings.TrimSpace(r.FormValue("description")), s.uiActor(), startDesignWanted(r))
 	if err != nil {
 		s.renderEntity(w, r, renderType, renderID, "", err.Error())
 		return
 	}
-	s.renderEntity(w, r, renderType, renderID, "Initiative created: "+name+".", "")
+	s.renderEntity(w, r, renderType, renderID, createdNotice("Initiative", in.PublicID, name, designPath), "")
 }
 
 func (s *Server) handleEntityFeatureCreate(w http.ResponseWriter, r *http.Request) {
@@ -418,18 +416,14 @@ func (s *Server) handleEntityFeatureCreate(w http.ResponseWriter, r *http.Reques
 		s.renderEntity(w, r, "initiative", initID, "", "A short slug and a name are both required to create a feature.")
 		return
 	}
-	var f *store.Feature
-	err = s.Store.WithTx(r.Context(), func(tx pgx.Tx) error {
-		var e error
-		f, e = store.CreateFeature(r.Context(), tx, initID, slug, name, strings.TrimSpace(r.FormValue("description")), s.uiActor())
-		return e
-	})
+	f, designPath, err := s.createFeature(r.Context(), initID, slug, name,
+		strings.TrimSpace(r.FormValue("description")), s.uiActor(), startDesignWanted(r))
 	if err != nil {
 		s.renderEntity(w, r, "initiative", initID, "", err.Error())
 		return
 	}
 	s.Bus.Publish(bus.FeatureCreated{FeatureID: f.ID})
-	s.renderEntity(w, r, "initiative", initID, "Feature created: "+name+".", "")
+	s.renderEntity(w, r, "initiative", initID, createdNotice("Feature", f.PublicID, name, designPath), "")
 }
 
 // --- Document review from the document page (FR-11, SPEC-006 FR-5 behaviour) ---
@@ -540,7 +534,7 @@ func (s *Server) renderDocumentPage(w http.ResponseWriter, r *http.Request, path
 		docPageData: view,
 		OwnerCrumb:  s.ownerCrumb(ctx, view.Document.OwnerType, view.Document.OwnerID),
 	}
-	page.Breadcrumbs = []crumb{page.OwnerCrumb, {Label: view.Document.Title, Here: true}}
+	page.Breadcrumbs = []crumb{page.OwnerCrumb, docCrumb(view.Document)}
 	s.render(w, "page-entity-document", s.page(r.Context(), "documents", page))
 }
 

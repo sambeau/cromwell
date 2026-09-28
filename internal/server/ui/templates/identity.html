@@ -1,0 +1,103 @@
+{{/* Documents with identity (SPEC-015). The ID label, the adopt dialog, the
+     create dialogs' "Start a design document" box, and the document page's
+     identity panel. Kept here so entity.html, which other work shares, gains
+     only includes (NFR-3). All prose is human-facing (D-6). */}}
+
+{{/* A minted ID before a name: small, muted and monospaced, there to cite
+     without competing with the name (SD-17). Renders nothing for "". */}}
+{{define "ident"}}{{if .}}<span class="ident">{{.}}</span>{{end}}{{end}}
+
+{{/* The opt-out in both create dialogs (SD-15, FR-6.4). The hidden field
+     tells the handler the box was offered, so an unticked box means "no". */}}
+{{define "start-design-field"}}
+<div class="field">
+  <label class="field-label"><input type="checkbox" name="start_design" value="1" checked> Start a design document</label>
+  <p class="field-hint">Subutai writes a draft from the design template, in this initiative's folder under <code>docs/work/</code>, and commits it. Untick it if a design already exists to attach, or if this will build from its initiative's design.</p>
+  <input type="hidden" name="start_design_offered" value="1">
+</div>
+{{end}}
+
+{{/* Adopt a file where it sits (SD-11, FR-5.6). Only the file's path is
+     typed; the owner is this page, carried by id (NFR-4). */}}
+{{define "adopt-modal"}}
+<dialog class="modal" id="dlg-adopt" aria-labelledby="t-adopt">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-adopt"><svg class="icon icon-md" aria-hidden="true"><use href="#i-attach"/></svg> Adopt a file</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/entity/adopt">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">Brings a Markdown file that is already in the repository under Subutai, where it sits. Subutai gives it an ID and writes two lines into its front matter, <code>id:</code> and <code>revision:</code>, changes nothing else, and commits that change. The file keeps its ID if you move or rename it later.</p>
+        <div class="field">
+          <label class="field-label" for="ad-path">Where the file is in the repository</label>
+          <input class="input" id="ad-path" name="file_path" placeholder="docs/decisions/DEC-005-example.md" required>
+          <p class="field-hint">It must be committed, with no uncommitted changes. A decision named like <code>DEC-005-….md</code> keeps its number.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="ad-type">What kind of document is it</label>
+          <select class="select" id="ad-type" name="doc_type">
+            <option value="design">Design — the thinking behind this work</option>
+            {{if ne .Kind "feature"}}<option value="decision">Decision</option>{{end}}
+            <option value="research">Research</option>
+            <option value="note">Note</option>
+            <option value="report">Report</option>
+            <option value="policy">Policy</option>
+            {{if eq .Kind "feature"}}<option value="spec">Specification — written for agents</option>
+            <option value="dev_plan">Development plan</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="ad-state">Has it already been approved?</label>
+          <select class="select" id="ad-state" name="state">
+            <option value="draft">No, it's a draft</option>
+            <option value="approved">Yes, it was approved before it came into Subutai</option>
+          </select>
+          <p class="field-hint">Saying yes records your approval. A specification or development plan is always adopted as a draft, then submitted and reviewed.</p>
+        </div>
+      </div>
+      <input type="hidden" name="owner_type" value="{{.RefType}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Adopt the file</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{/* The document page's identity panel (FR-4.6, FR-5.6, FR-5.8). */}}
+{{define "doc-identity"}}
+{{if .Identity.Lost}}
+<div class="banner banner--warning" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg>
+  <div><b>This file no longer carries its ID.</b> Its front matter should say <code>id: {{.Document.PublicID}}</code> and <code>revision: {{.Document.Revision}}</code>. Until it does, Subutai can't follow the file if it is moved.</div>
+</div>
+{{end}}
+{{if or .Identity.CanGiveID .Identity.CanRecordApproved}}
+<section class="panel u-mt-4">
+  <div class="panel-body">
+    <div class="action-row">
+      {{if .Identity.CanGiveID}}
+      <form method="post" action="/ui/document/adopt">
+        <input type="hidden" name="doc_id" value="{{.Document.ID}}">
+        <button class="btn" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-attach"/></svg>Give it an ID</button>
+      </form>
+      <p class="t-meta">This document is known only by its path, so moving it would lose it. Giving it an ID writes two lines into its front matter and commits them.</p>
+      {{end}}
+      {{if .Identity.CanRecordApproved}}
+      <form method="post" action="/ui/document/already-approved">
+        <input type="hidden" name="doc_id" value="{{.Document.ID}}">
+        <button class="btn" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>This was already approved</button>
+      </form>
+      <p class="t-meta">Documents of this kind have no template, so they aren't submitted for review. If this one was approved before it came into Subutai, say so here; it is recorded as your approval.</p>
+      {{end}}
+    </div>
+  </div>
+</section>
+{{end}}
+{{end}}

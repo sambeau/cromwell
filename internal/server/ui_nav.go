@@ -159,31 +159,49 @@ func currentURL(crumbs []crumb) string {
 // and the page would render with no title and no breadcrumbs. Value receivers
 // satisfy the interface either way.
 
-func (p *entityPage) headTitle() string   { return p.Title }
+func (p *entityPage) headTitle() string   { return withID(p.PublicID, p.Title) }
 func (p *entityPage) headCrumbs() []crumb { return p.Breadcrumbs }
 
-func (p entityDocPage) headTitle() string { return p.Document.Title }
+// withID puts a minted ID before a name, for a page's title (SPEC-015 SD-17):
+// "FEAT-023 Login form".
+func withID(id, name string) string {
+	if idFor(id, name) == "" {
+		return name
+	}
+	return id + " " + name
+}
+
+// idFor is the ID to show before a name: none when there is none, or when the
+// name already starts with it.
+func idFor(id, name string) string {
+	if id == "" || strings.HasPrefix(name, id) {
+		return ""
+	}
+	return id
+}
+
+func (p entityDocPage) headTitle() string { return withID(p.Document.PublicID, p.Document.Title) }
 func (p entityDocPage) headCrumbs() []crumb {
 	return p.Breadcrumbs
 }
 
-func (p milestonePage) headTitle() string { return p.Milestone.Name }
+func (p milestonePage) headTitle() string { return withID(p.Milestone.PublicID, p.Milestone.Name) }
 func (p milestonePage) headCrumbs() []crumb {
-	return []crumb{p.Owner, {Label: p.Milestone.Name, Kind: "milestone", Here: true}}
+	return []crumb{p.Owner, {ID: p.Milestone.PublicID, Label: p.Milestone.Name, Kind: "milestone", Here: true}}
 }
 
-func (p roadmapPage) headTitle() string { return p.Roadmap.Name }
+func (p roadmapPage) headTitle() string { return withID(p.Roadmap.PublicID, p.Roadmap.Name) }
 func (p roadmapPage) headCrumbs() []crumb {
-	return []crumb{p.Owner, {Label: p.Roadmap.Name, Kind: "roadmap", Here: true}}
+	return []crumb{p.Owner, {ID: p.Roadmap.PublicID, Label: p.Roadmap.Name, Kind: "roadmap", Here: true}}
 }
 
-func (p taskPage) headTitle() string { return p.Task.Title }
+func (p taskPage) headTitle() string { return withID(p.Task.PublicID, p.Task.Title) }
 func (p taskPage) headCrumbs() []crumb {
 	c := []crumb{{Label: "Project", URL: "/ui/project", Kind: "project"}}
 	if p.FeatureURL != "" {
 		c = append(c, crumb{Label: p.FeatureName, URL: p.FeatureURL, Kind: "feature"})
 	}
-	return append(c, crumb{Label: p.Task.Title, Kind: "task", Here: true})
+	return append(c, crumb{ID: p.Task.PublicID, Label: p.Task.Title, Kind: "task", Here: true})
 }
 
 // milestoneURL and roadmapURL are the id-to-URL helpers for click-through.

@@ -22,18 +22,21 @@ type Task struct {
 	DependsOn   []uuid.UUID
 	BaseCommit  string // branch HEAD when the task's work began (code-review diff base)
 	CreatedAt   time.Time
+	// PublicID is the task's ID, its feature's ID and its number from the
+	// feature's own counter: "FEAT-023-T03" (SPEC-015 SD-4).
+	PublicID string
 }
 
-const taskCols = `id, feature_id, position, COALESCE(local_id, ''), title, description, state, depends_on, COALESCE(base_commit, ''), created_at`
+const taskCols = `id, feature_id, position, COALESCE(local_id, ''), title, description, state, depends_on, COALESCE(base_commit, ''), created_at, public_id`
 
 // taskColsT is the same column list qualified to the `t` alias, for queries
 // that join another table (avoids ambiguous `id`).
-const taskColsT = `t.id, t.feature_id, t.position, COALESCE(t.local_id, ''), t.title, t.description, t.state, t.depends_on, COALESCE(t.base_commit, ''), t.created_at`
+const taskColsT = `t.id, t.feature_id, t.position, COALESCE(t.local_id, ''), t.title, t.description, t.state, t.depends_on, COALESCE(t.base_commit, ''), t.created_at, t.public_id`
 
 func scanTask(row pgx.Row) (*Task, error) {
 	var t Task
 	err := row.Scan(&t.ID, &t.FeatureID, &t.Position, &t.LocalID, &t.Title,
-		&t.Description, &t.State, &t.DependsOn, &t.BaseCommit, &t.CreatedAt)
+		&t.Description, &t.State, &t.DependsOn, &t.BaseCommit, &t.CreatedAt, &t.PublicID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -53,10 +56,20 @@ func SetTaskBaseCommit(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, commit 
 func CreateTask(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, position int, localID, title, description string, actor string) (*Task, error) {
 	t := &Task{ID: NewID(), FeatureID: featureID, Position: position, LocalID: localID,
 		Title: title, Description: description, State: lifecycle.TaskPending, DependsOn: []uuid.UUID{}}
-	_, err := tx.Exec(ctx, `
-		INSERT INTO tasks (id, feature_id, position, local_id, title, description)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		t.ID, featureID, position, nullable(localID), title, description)
+	// The task's ID comes from its feature's own counter, bumped in the same
+	// statement, so two tasks created at once can't share a number (SD-4).
+	err := tx.QueryRow(ctx, `
+		WITH n AS (
+			UPDATE features SET task_seq = task_seq + 1 WHERE id = $2
+			RETURNING public_id, task_seq
+		)
+		INSERT INTO tasks (id, feature_id, position, local_id, title, description, public_id)
+		SELECT $1, $2, $3, $4, $5, $6, n.public_id || '-T' || ident_number(n.task_seq, 2) FROM n
+		RETURNING public_id`,
+		t.ID, featureID, position, nullable(localID), title, description).Scan(&t.PublicID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
 		return nil, err
 	}

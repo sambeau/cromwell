@@ -333,6 +333,9 @@ func DetachDocument(ctx context.Context, tx pgx.Tx, d *Document, actor string) e
 		}
 	}
 	payload := map[string]any{"path": d.Path, "type": d.Type, "owner_type": d.OwnerType}
+	if d.PublicID != "" {
+		payload["public_id"], payload["revision"] = d.PublicID, d.Revision
+	}
 	if len(dropped) > 0 {
 		payload["open_issues"] = dropped
 	}

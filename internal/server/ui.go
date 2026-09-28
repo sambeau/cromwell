@@ -44,6 +44,9 @@ type uiTemplates struct {
 // formatter: money is off the human surface (DESIGN-008 D-4), and the absence
 // of the helper is what keeps it off.
 var uiFuncs = template.FuncMap{
+	// idFor is the ID label for a name, or "" when the name already starts
+	// with it, as a decision's heading does ("DEC-005: …", SPEC-015 SD-17).
+	"idFor":   idFor,
 	"tokens":  humanTokens,
 	"shortID": func(id uuid.UUID) string { return id.String()[:8] },
 	"ago":     ago,
@@ -632,6 +635,8 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/m/{id}/candidates", s.handleUIMilestoneCandidates)
 	mux.HandleFunc("GET /ui/r/{id}/edit", s.handleUIRoadmapEdit)
 	mux.HandleFunc("GET /ui/t/{id}", s.handleUITaskPage)
+	// Anything with an ID, by its ID (SPEC-015 SD-18).
+	mux.HandleFunc("GET /ui/id/{id}", s.handleUIByID)
 	// Seeing the work (SPEC-012): a run's transcript, and review health.
 	mux.HandleFunc("GET /ui/run/{id}", s.handleUIRun)
 	mux.HandleFunc("GET /ui/review-health", s.handleUIReviewHealth)
@@ -641,6 +646,11 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	// method the CLI uses.
 	mux.HandleFunc("POST /ui/entity/describe", s.handleEntityDescribe)
 	mux.HandleFunc("POST /ui/entity/attach", s.handleEntityAttach)
+	// Adopt a file where it sits, and the document page's identity acts
+	// (SPEC-015 FR-5.6, FR-5.8).
+	mux.HandleFunc("POST /ui/entity/adopt", s.handleEntityAdopt)
+	mux.HandleFunc("POST /ui/document/adopt", s.handleDocAdopt)
+	mux.HandleFunc("POST /ui/document/already-approved", s.handleDocAlreadyApproved)
 	mux.HandleFunc("POST /ui/entity/estimate", s.handleEntityEstimateSet)
 	mux.HandleFunc("POST /ui/entity/estimate/ai", s.handleEntityEstimateAI)
 	mux.HandleFunc("POST /ui/document/primary", s.handleDocumentPrimary)

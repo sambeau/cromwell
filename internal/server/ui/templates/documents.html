@@ -27,7 +27,7 @@
       <a class="row" href="/ui/d/{{.Path}}">
         <svg class="icon icon-sm icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Type}}"/></svg>
         <span class="row-main">
-          <span class="row-title">{{if .Title}}{{.Title}}{{else}}{{.Path}}{{end}}</span>
+          <span class="row-title">{{template "ident" (idFor .PublicID .Title)}}{{if .Title}}{{.Title}}{{else}}{{.Path}}{{end}}</span>
           <span class="row-sub">{{.Type}} · belongs to {{.OwnerType}} · registered {{ago .CreatedAt}} ago</span>
         </span>
         <span class="row-end">{{template "state-badge" .State}}</span>

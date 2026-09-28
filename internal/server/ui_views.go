@@ -109,8 +109,11 @@ type docPageData struct {
 	// Actions is what the page may offer beyond the verdict panel: Submit,
 	// Revise, Detach, issues, and the spec-review acts (SPEC-011).
 	Actions docActions
-	Notice  string
-	Error   string
+	// Identity is what the page says and offers about the document's ID
+	// (SPEC-015 FR-4.6, FR-5.6, FR-5.8).
+	Identity docIdentity
+	Notice   string
+	Error    string
 }
 
 func (s *Server) documentView(r *http.Request) (*docPageData, error) {
@@ -149,6 +152,7 @@ func (s *Server) documentViewByPath(ctx context.Context, path, notice, errMsg st
 	// while it is in reviewing (SPEC-009 FR-2.3); an agent-approved type is
 	// only when an open review-escalation checkpoint refs it (SD-4).
 	page.Actions = s.docActionsFor(ctx, doc)
+	page.Identity = s.docIdentityFor(ctx, doc)
 	if doc.State == lifecycle.DocReviewing && s.humanApprovalType(doc.Type) {
 		page.HumanDecision = true
 	} else if cp, err := s.openReviewCheckpoint(ctx, doc.ID); err == nil && cp != nil {
@@ -190,9 +194,10 @@ type workView struct {
 
 // entityWork is one labelled line of work, sized in tokens.
 type entityWork struct {
-	Name string
-	URL  string
-	Size sizing.Rollup
+	PublicID string // "INIT-014", "FEAT-023" (SPEC-015 SD-17)
+	Name     string
+	URL      string
+	Size     sizing.Rollup
 }
 
 func (s *Server) workView(r *http.Request) (workView, error) {
@@ -221,7 +226,7 @@ func (s *Server) workView(r *http.Request) (workView, error) {
 			return view, err
 		}
 		view.Initiatives = append(view.Initiatives, entityWork{
-			Name: path, URL: "/ui/i/" + path, Size: roll})
+			PublicID: in.PublicID, Name: path, URL: "/ui/i/" + path, Size: roll})
 
 		feats, err := store.FeaturesForInitiative(ctx, s.Store.Pool, in.ID)
 		if err != nil {
@@ -233,7 +238,7 @@ func (s *Server) workView(r *http.Request) (workView, error) {
 				return view, err
 			}
 			view.Features = append(view.Features, entityWork{
-				Name: path + "/" + f.Slug, URL: "/ui/f/" + path + "/" + f.Slug, Size: froll})
+				PublicID: f.PublicID, Name: path + "/" + f.Slug, URL: "/ui/f/" + path + "/" + f.Slug, Size: froll})
 		}
 	}
 
