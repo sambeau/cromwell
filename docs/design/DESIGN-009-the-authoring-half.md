@@ -1,7 +1,10 @@
 # DESIGN-009: The Authoring Half — approving a design starts the chain
 
-**Status:** **Draft for Sam.** Not approved. Authored by Claude (Opus 5); an
-authoring consistency review follows, and the approval decision is Sam's.
+**Status:** **Approved by Sam — 2026-07-30**, with SPEC-009, after the authoring
+consistency review ([REVIEW-009](../reviews/REVIEW-009-authoring-chain-package.md)).
+Authored by Claude (Opus 5). §4, where approving a design starts the chain, is
+revised by [DEC-006](../decisions/DEC-006-humans-start-development.md): approving
+a design now starts nothing, and a human presses Send to development.
 **Date:** 2026-07-29
 **Builds on:** [DEC-005](../decisions/DEC-005-the-orchestration-boundary.md)
 (accepted 2026-07-29), [DEC-003](../decisions/DEC-003-cli-scope.md),
