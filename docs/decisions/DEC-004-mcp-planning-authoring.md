@@ -1,6 +1,8 @@
 # DEC-004: The MCP facet may author the planning layer, but not drive development
 
-**Status:** Accepted
+**Status:** Accepted. **Amended 2026-09-28:**
+[Amendment 1](#amendment-1--milestones-and-roadmaps-2026-09-28) adds
+milestones and roadmaps to the planning layer.
 **Date:** 2026-07-24
 **Decided by:** Sam
 **Refines:** [vision-v1](../vision/vision-v1.md) §7 (the MCP facet's "no direct
@@ -105,3 +107,33 @@ planning becomes possible.
   Rejected: it steps back toward the rogue-orchestrator risk the vision named,
   for little gain — the human at the command centre is the right driver for the
   moment work crosses into development.
+
+## Amendment 1 — milestones and roadmaps (2026-09-28)
+
+**Status:** **Accepted — Sam, 2026-09-28.** Drafted by Claude, on Sam's
+instruction, during M4 ([SPEC-010](../specs/SPEC-010-milestones-and-roadmaps-editing.md)).
+Added as an amendment rather than an edit, as DEC-005 asks of accepted
+decisions.
+
+**Milestones and roadmaps are part of the planning layer.** The chat agent may
+create them, change what a milestone contains, and place, move and remove
+milestones on a roadmap, as it does with initiatives and features. These are
+ordinary planning edits, not relayed human decisions, so they don't need the
+person's quoted words (DEC-006 Amendment 1).
+
+**Gate G4 is a record-keeping check, not a development gate**, so "may not
+touch gates" doesn't cover it. G4 only stops a milestone being marked as
+shipped when none of its features is done. Nothing in the agent workflow reads
+milestones: no work starts, stops or waits because of one. So the chat agent
+may also mark a milestone as shipped and reopen it. Both acts can be undone
+(SPEC-010 SD-11), and both are logged under the chat agent's name. G4 itself
+still applies to it exactly as it does to a person.
+
+The rule for every other gate is unchanged. G0 to G3 (which guard a feature's
+path into and through development), G5 (archiving an initiative), and
+anything that starts, stops or releases agent work stay out of the chat
+agent's reach.
+
+This amendment permits the two milestone tools; it doesn't build them. When
+they are added, `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` must name
+them on purpose, as DEC-005 requires.

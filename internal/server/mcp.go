@@ -75,9 +75,9 @@ type mcpTool struct {
 
 // mcpTools builds the tool registry. This function IS the DEC-004 boundary: the
 // set it returns is exactly the authoring writes (FR-2) and the authoring reads
-// (FR-3), plus the milestone and roadmap tools of SPEC-010 (mcpPlanTools, which
-// has no lock tool), and nothing else. A development-side or gate tool would have to be
-// added here to exist at all, which is what makes the line reviewable.
+// (FR-3), plus the milestone and roadmap tools of SPEC-010 (mcpPlanTools), and
+// nothing else. A development-side or gate tool would have to be added here to
+// exist at all, which is what makes the line reviewable.
 func (s *Server) mcpTools() []mcpTool {
 	return append([]mcpTool{
 		// --- The writes (FR-2) ---

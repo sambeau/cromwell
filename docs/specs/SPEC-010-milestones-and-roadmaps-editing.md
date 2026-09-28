@@ -6,9 +6,12 @@ found six material and twelve smaller problems in the first draft. All of them
 are dealt with in this revision; §7 says how, finding by finding. The author
 can't be the approval gate, so the decision is Sam's. Sam has said he will
 approve the spec and the build together.
-**Revised after Sam's decision (2026-09-28):** locking a milestone is now
-called **marking it as shipped**, and it **can be undone** (SD-11, FR-5). §8
-records what changed. Three other choices still need Sam's yes (§5, DoD 6).
+**Revised after Sam's decisions (2026-09-28):** locking a milestone is now
+called **marking it as shipped**, and it **can be undone** (SD-11, FR-5). Sam
+then accepted the other three choices as recommended (SD-5, SD-6, SD-10), and
+[DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28)
+records the one that needed a decision. §8 records what changed. Approval of
+the spec and build is still Sam's.
 **Date:** 2026-09-28
 **Roadmap milestone:** M4 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §11
@@ -144,20 +147,20 @@ Two supporting claims:
     one easy to create by accident.
   - **`MemberCandidates`** is the milestone-side picker's read (FR-3.3).
 
-- **SD-4 — For now, the chat agent can't mark a milestone as shipped or
-  reopen it.** Before Sam's decision (SD-11) this was about safety: locking
-  couldn't be undone, and a chat agent that misread "we're done with beta" would
-  have made a permanent mistake. Now that shipping can be undone, that reason
-  has gone, and the only thing in the way is wording. DEC-004 says the chat
-  agent "may not … touch gates", and G4 is technically a gate, even though it
-  guards a report rather than any agent work.
+- **SD-4 — The chat agent may mark a milestone as shipped and reopen it, but
+  this build doesn't add the tools.** Before Sam's decision (SD-11) this was
+  about safety: locking couldn't be undone, and a chat agent that misread
+  "we're done with beta" would have made a permanent mistake. Now that shipping
+  can be undone, that reason has gone. The only thing left in the way was
+  DEC-004's wording ("may not … touch gates"), and **DEC-004 Amendment 1
+  (Sam, 2026-09-28)** settles it: G4 is a record-keeping check, not a
+  development gate, so both acts are permitted. No quoted words are needed,
+  because a mistake is undone by reopening.
 
-  So this build leaves both acts out, and the tool-set test lists
-  `lock_milestone` and `unlock_milestone` as tools that must not exist. **The
-  recommendation is to allow them later**, with a one-line amendment to
-  DEC-004 that says G4 is a record-keeping check, not a development gate. It is
-  small enough to do whenever the chat agent needs it. No quoted words would be
-  needed, because a mistake is undone by reopening.
+  The tools themselves aren't in this build, which was specced, reviewed and
+  demonstrated without them. The tool-set test still lists `lock_milestone`
+  and `unlock_milestone` as names that must not exist today; adding them is a
+  small follow-up that must update that test on purpose (§6).
 
 - **SD-5 — The chat agent edits milestones and roadmaps as ordinary
   planning.** DEC-004 lets the chat agent create and edit planning material
@@ -172,13 +175,13 @@ Two supporting claims:
   The alternative would be to treat them as *relay* tools under DEC-006
   Amendment 1: tools that pass on a decision a person made, and must store that
   person's exact words. That would add a field to six tools and a step to every
-  planning conversation, for acts that are easy to reverse. Sam is asked to
-  confirm this reading (§5). If he does, a one-line amendment to DEC-004 naming
-  milestones and roadmaps would stop the next person having to argue it again.
+  planning conversation, for acts that are easy to reverse. **Accepted by Sam,
+  2026-09-28**, and recorded in DEC-004 Amendment 1, which names milestones
+  and roadmaps as part of the planning layer.
 
-- **SD-6 — Two places where the build differs from DESIGN-008.** Both need
-  Sam's acceptance. If he gives it, DESIGN-008 §5.1a should get a short dated
-  note so the design and the build agree.
+- **SD-6 — Two places where the build differs from DESIGN-008.** **Both
+  accepted by Sam, 2026-09-28**, and DESIGN-008 §5.1a now carries a dated note
+  so the design and the build agree.
   1. **Taking something out of a milestone from its own page.** The design
      says you only remove members inside the milestone's editor, and that the
      "milestones it is part of" list on a feature's page is read-only. The M4
@@ -244,7 +247,8 @@ Two supporting claims:
   as shipped; and when delete arrives, deleting a milestone must account for
   roadmaps elsewhere that list it. The alternative, allowing only the owner's
   own milestones, would push people to duplicate milestones, and the copies
-  would drift. Sam is asked to confirm it (§5).
+  would drift. **Accepted by Sam, 2026-09-28**, and noted in DESIGN-008
+  §5.1a.
 
 - **SD-11 — Locking is "mark as shipped", and it can be undone.** Decided by
   Sam on 2026-09-28, after asking what locking is for.
@@ -612,25 +616,23 @@ SPEC-008's `attachError` does, so the agent can relay them.
 6. A handoff note records what was built, what was decided, and what needs
    Sam.
 
-**Decided by Sam, 2026-09-28:** locking becomes "mark as shipped", and it can
-be undone (SD-11).
+**Decided by Sam, 2026-09-28:**
 
-**Still waiting on Sam** — each with a recommendation:
+1. Locking becomes **Mark as shipped**, and it can be undone (SD-11). Vision §4
+   carries a dated note.
+2. **The two places where the build differs from DESIGN-008 §5.1a are
+   accepted** (SD-6): a member can be taken out of a milestone from its own
+   page, and milestone and roadmap pages have their own Edit button.
+   DESIGN-008 §5.1a carries a dated note.
+3. **A roadmap can include milestones that belong somewhere else** (SD-10),
+   as built. Also in the DESIGN-008 note.
+4. **The chat agent edits milestones and roadmaps as ordinary planning**, and
+   **may mark a milestone as shipped and reopen it**, because G4 is a
+   record-keeping check rather than a development gate (SD-4, SD-5). Recorded
+   as [DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28).
+   The ship and reopen tools are permitted but not yet built (§6).
 
-1. **The chat agent can't mark a milestone as shipped or reopen it, for now**
-   (SD-4). Now that shipping can be undone, there is no safety reason to keep
-   it out of chat; only DEC-004's wording ("may not touch gates") stands in the
-   way. *Recommendation:* leave it out of this build, and allow it later with a
-   one-line amendment to DEC-004 when the chat agent needs it.
-2. **Two places where the build differs from DESIGN-008 §5.1a** (SD-6): a
-   member can be taken out of a milestone from its own page, and milestone and
-   roadmap pages have their own Edit button. *Recommendation:* accept both, and
-   add a dated note to the design.
-3. **The chat agent edits milestones and roadmaps as ordinary planning**
-   (SD-5), not as relayed human decisions that must quote the person's words.
-   *Recommendation:* confirm it, and add a line to DEC-004 naming them.
-4. **A roadmap can include milestones that belong somewhere else** (SD-10).
-   *Recommendation:* allow it, as built.
+Nothing else waits on Sam except approving the spec and the build.
 
 ## 6. Open questions carried forward
 
@@ -651,8 +653,11 @@ be undone (SD-11).
 - **`POST /api/milestones/lock` reports every failure as a G4 409**, including
   "already locked". The UI handler doesn't copy that; the API is left alone
   because the CLI is being retired.
-- **Vision §4 still says a locked milestone can never change.** SD-11 departs
-  from that on Sam's decision; the vision should get a dated note.
+- **Chat tools to mark a milestone as shipped and to reopen it.** Permitted by
+  DEC-004 Amendment 1, not yet built. They would call `LockMilestone` and
+  `UnlockMilestone` as the MCP actor, return G4's sentence when it refuses, and
+  move `lock_milestone` and `unlock_milestone` (or whatever they are named)
+  from the tool-set test's must-not-exist list to its list of tools.
 - **The tool-set test will also change in M3**, whose relay tools edit the
   same list. Whichever lands second merges the two.
 
@@ -701,3 +706,12 @@ and make it reversible. What changed:
 | SD-4 | Rewritten. The safety argument for keeping the act out of chat has gone; only DEC-004's wording remains, and the recommendation is now to allow it later with a one-line amendment. This replaces the reasoning recorded against R10-1 and R10-2 in §7. |
 | FR-7.8, FR-7.9 | The chat agent sees `shipped` and a `shipping` object; `unlock_milestone` joins `lock_milestone` as a tool that must not exist. |
 | SD-5, SD-6, SD-10, DoD 6 | Rewritten in plainer language, with what each choice means and a recommendation. |
+
+Sam then accepted all three remaining recommendations the same day:
+
+| Where | What changed |
+|---|---|
+| SD-4, SD-5 | Marked decided. [DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28) names milestones and roadmaps as planning, and says G4 is a record-keeping check, so the chat agent may also mark as shipped and reopen. The tools aren't built yet (§6). |
+| SD-6, SD-10 | Marked accepted; DESIGN-008 §5.1a carries a dated note. |
+| SD-11 | Vision §4 carries a dated note. |
+| DoD 6 | Lists the four decisions; only approval of the spec and build remains. |

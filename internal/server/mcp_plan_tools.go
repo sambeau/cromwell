@@ -19,10 +19,10 @@ import (
 // The chat agent's milestone and roadmap tools (SPEC-010 FR-7). They are
 // planning authoring under DEC-004: each calls the same audited store method
 // the web UI calls, in one transaction, as the MCP actor, and signals the SSE
-// hub like the SPEC-008 tools. There is no tool that marks a milestone as
-// shipped (locks it) or reopens it (SD-4): DEC-004 keeps acts guarded by a
-// gate away from the chat agent, and G4 guards this one. It stays a person's
-// act in the web UI until Sam decides otherwise.
+// hub like the SPEC-008 tools. There is not yet a tool that marks a milestone
+// as shipped (locks it) or reopens it. DEC-004 Amendment 1 permits both, since
+// G4 is a record-keeping check rather than a development gate, but this build
+// doesn't add them (SPEC-010 SD-4, §6); for now a person does it in the web UI.
 //
 // Milestones and roadmaps are named by id, or by exact name where that name is
 // unique; initiatives and features by path, as the other tools do. Errors are
@@ -478,7 +478,7 @@ func (s *Server) mcpGetRoadmap(r *http.Request, args map[string]any) (any, error
 }
 
 // mcpPlanTools is the SPEC-010 part of the registry, kept beside its handlers.
-// It holds no tool to mark a milestone as shipped or reopen it (SD-4).
+// It holds no tool to mark a milestone as shipped or reopen it yet (SD-4).
 func (s *Server) mcpPlanTools() []mcpTool {
 	milestoneRef := stringProp("The milestone's id, or its exact name if no other milestone shares it.")
 	roadmapRef := stringProp("The roadmap's id, or its exact name if no other roadmap shares it.")

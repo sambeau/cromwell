@@ -176,6 +176,8 @@ When a milestone ships, the team **locks** it. Locking snapshots the membership 
 
 If the team needs to ship without something, they remove it from the milestone before locking. **No fudging.** A locked milestone is the true record of what was shipped, including what was descoped along the way (visible in the milestone's notes and history).
 
+> **Note, 2026-09-28 (Sam).** Locking is now called **marking a milestone as shipped**, and it **can be undone**: a shipped milestone can be reopened. Milestones are a planning and reporting tool, and nothing in the agent workflow reads them, so a permanent lock gave a mistake no remedy. The history stays honest, because reopening is logged along with the record it replaced. See [SPEC-010](../specs/SPEC-010-milestones-and-roadmaps-editing.md) SD-11.
+
 ### Roadmaps
 
 A roadmap is an ordered list of milestones. The ordering is whatever the planner wants it to mean — sequence, priority, schedule, theme. The system makes no claims about semantics; it just preserves the order.
