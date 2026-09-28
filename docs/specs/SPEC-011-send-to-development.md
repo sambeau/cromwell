@@ -3,9 +3,10 @@
 **Status:** **Draft — for Sam's approval.** Authored by Claude. The author
 can't be the approval gate, so the decision is Sam's. Sam has said he will
 approve the spec and the build together. An independent consistency review is
-recorded in [REVIEW-011](../reviews/REVIEW-011-send-to-development.md), and §7
-says how each finding was dealt with. Five choices in it need Sam's explicit
-yes (§5, DoD 7).
+recorded in [REVIEW-011](../reviews/REVIEW-011-send-to-development.md). It
+found five material and fourteen smaller problems in the first draft; all are
+dealt with in this revision, and §7 says how, finding by finding. Eight choices
+need Sam's explicit yes (§5, DoD 7).
 **Date:** 2026-09-28
 **Roadmap milestone:** M3 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §11
@@ -17,9 +18,11 @@ brief.
 first button", "How specs are reviewed", "When a design changes"), §5a, §5c,
 §14, and §17b (withdrawing a send, and how a human issue is marked addressed,
 are settled here)
-**Changes:** [SPEC-009](SPEC-009-the-authoring-chain.md) FR-2.2, FR-4.1,
-FR-4.2, FR-4.3, FR-4.7 and FR-9.4, as DEC-006 says. FR-3, FR-8 and the rest of
-FR-9 are kept as built.
+**Changes:** [SPEC-009](SPEC-009-the-authoring-chain.md) FR-2.2 (the design
+reviewer is retired), FR-2.3 and FR-2.4 (a person may now approve a spec or
+plan directly, as Amendment 1 decision 5 allows), FR-4.1, FR-4.2, FR-4.3,
+FR-4.7 and FR-9.4, as DEC-006 says. FR-3, FR-8 and the rest of FR-9 are kept
+as built.
 **Context only:** [DEC-007](../decisions/DEC-007-the-judgement-boundary.md).
 Executors and claims are M13, not this spec.
 
@@ -60,7 +63,8 @@ Most of the machinery exists. What this spec adds is:
 
 > Approving a design starts nothing. Pressing Send to development on a feature
 > produces a reviewed spec, a reviewed plan, tasks and an estimate, and then
-> stops at Start building.
+> stops at Start building. If the spec is held, it waits for a person between
+> its review and the plan.
 
 Three supporting claims:
 
@@ -118,6 +122,11 @@ Three supporting claims:
   on a feature nobody sent. So the dev-plan invariant also needs the mark, and
   so does the estimate (FR-7).
 
+  A `ready` feature can be sent too. A feature whose spec and plan were both
+  written and approved in chat reaches `ready` by G1 without anyone pressing
+  Send; sending it runs what is left (the estimate), which is how DESIGN-010
+  §5a's "a well-prepared feature flows straight through" reads.
+
 - **SD-3 — Building counts as sent.** A feature that is `active` or in
   `review` is treated as sent, whether or not it has a mark. Start building is
   a stronger commitment than Send, and a feature started before M3, or with
@@ -126,13 +135,17 @@ Three supporting claims:
   *not* treated as sent: DESIGN-010 §5 says a feature not yet sent is left
   without a spec until someone sends it.
 
-- **SD-4 — A document sent back goes back to its author agent.** SPEC-009 as
-  built has no revise loop: a reviewer's `request_changes` moves an authored
-  spec to `draft`, and nothing ever writes it again. Amendment 1 says "the spec
-  goes back to the spec agent", so this spec builds the loop for specs and
-  plans (FR-3). The loop is bounded by the existing `dispatch.max_review_rounds`,
-  after which an `authoring-deadlock` checkpoint asks a person whether to allow
-  another round.
+- **SD-4 — A document sent back goes back to its author agent, as an
+  invariant.** SPEC-009 as built has no revise loop: a reviewer's
+  `request_changes` moves an authored spec to `draft`, and nothing ever writes
+  it again. Amendment 1 says "the spec goes back to the spec agent", so this
+  spec builds the loop for specs and plans (FR-3). It is part of the invariant
+  rather than a reaction to one transition, so Send, the heartbeat and every
+  re-check pick it up (REVIEW-011 R11-1): a current draft that **waits for its
+  author** — one carrying an open human issue or a major review finding — does
+  not satisfy the invariant for a sent feature. The loop is bounded by the
+  existing `dispatch.max_review_rounds`, after which an `authoring-deadlock`
+  checkpoint asks a person whether to allow another round.
 
 - **SD-5 — The hold catches an approval, not a send-back.** When the agent
   reviewer asks for changes, the spec goes straight back to its author, held
@@ -153,8 +166,9 @@ Three supporting claims:
   - An answered issue is stored as resolved, with the note, the dispatch and
     the time. `not_addressed` leaves it open, and it makes the verdict a
     send-back.
-  - A person who approves directly settles the open issues by that decision,
-    and the record says so.
+  - A person who approves — directly, or by answering a review escalation —
+    settles the open issues by that decision, and the record says so. Any
+    approval that carries no agent review is a person's.
 
   This was chosen over a separate "issues" table because the comment thread is
   already where review findings live, already persists across resubmission,
@@ -167,8 +181,11 @@ Three supporting claims:
   approved, it supersedes the old spec, and the old plan is superseded with
   it." So the approved spec stays current until the successor is approved;
   then the approval supersedes it and its approved plan together, and a `ready`
-  feature returns to `idea` so the plan is rewritten. Until then, Start
-  building refuses, because the contract is being revised.
+  feature returns to `idea` so the plan is rewritten. In the store's terms the
+  successor draft becomes the feature's *current* spec at once (the newest
+  live document), while the predecessor stays `approved` and in force; the
+  current spec not being approved is what makes Start building refuse
+  (FR-6.7).
 
 - **SD-8 — Existing projects keep their design reviewer.** A project whose
   design manifest still names `reviewer_role: design-reviewer` keeps getting
@@ -192,10 +209,14 @@ Three supporting claims:
   queue when slots are full, which is exactly when a person may change their
   mind. **Flagged for Sam.**
 
-- **SD-11 — A relay can't reach a document whose review has escalated.** An
-  escalated review is a checkpoint, and the chat agent doesn't answer
-  checkpoints (DESIGN-010 §5c). A relayed verdict on such a document is refused
-  with a sentence pointing to the Inbox.
+- **SD-11 — No act gets round a pending question.** A checkpoint is answered
+  in the Inbox, and the chat agent doesn't answer checkpoints (DESIGN-010 §5c).
+  So every act in FR-5.5 and FR-6, from either surface, is refused on a
+  document with a pending question about it, with a sentence pointing to the
+  Inbox: a `review-escalation` or `authoring-deadlock` checkpoint that refs the
+  document, or a `design-revision` checkpoint that lists its feature. Without
+  this, raising an issue or asking for a fresh review would answer the
+  question by the back door (R11-4).
 
 - **SD-12 — The forecast is honest or absent.** The send screen forecasts each
   planning step as the median tokens of this project's past successful
@@ -209,11 +230,26 @@ Three supporting claims:
   `agent` (on by default) and `hold` (off by default). There is no settings
   page yet; the file is the project's settings today.
 
-- **SD-14 — Issues can be raised on specs and plans.** DESIGN-010 §5 talks
-  about specs. The plan reviewer uses the same loop, so plans get the same
-  treatment at no extra cost. A design in `draft` or `reviewing` may carry an
-  issue as a note for its human approver; an approved design is changed by
-  revising it, so an issue on one is refused with that advice.
+- **SD-14 — Issues can be raised on specs and plans, and noted on designs.**
+  DESIGN-010 §5 talks about specs. The plan reviewer uses the same loop, so
+  plans get the same treatment; the one extra piece is that a successor plan
+  approved on a `ready` feature is re-decomposed (FR-6.6), which SPEC-009 did
+  only for features being built. A design in `draft` or `reviewing` may carry
+  an issue as a note for its human approver, with no routing; an approved
+  design is changed by revising it, so an issue on one is refused with that
+  advice.
+
+- **SD-15 — A relayed or UI "send back" of a spec is a human issue and a
+  return to draft.** A person's objection must be addressed (SD-6), so the
+  reason is recorded as an issue, and the document goes back to `draft`
+  whether or not the feature is sent. For a sent feature the author then
+  revises it; for an unsent one it waits for whoever is writing it (R11-8).
+
+- **SD-16 — The CLI and API can still start building.** DESIGN-010 §5 says
+  Start building is in the web UI only. `POST /api/features/start`, which
+  `cromwell feature start` calls, predates it and is due to go with the CLI
+  under DEC-003. This spec doesn't remove it; it records the departure for Sam
+  (R11-3). Sending, which is new, has no API route.
 
 ## 3. Requirements
 
@@ -242,11 +278,23 @@ again is refused with a sentence; the page shows who sent it.
 **FR-2.1 — The spec invariant** (replaces SPEC-009 FR-4.1):
 
 > Every **sent** feature that G0 admits, and that has a non-empty description,
-> has a current spec.
+> has a current spec that isn't waiting for its author.
 
 **FR-2.2 — The dev-plan invariant** (replaces FR-4.2, SD-2):
 
-> Every **sent** feature with an approved spec has a current dev-plan.
+> Every **sent** feature with an approved spec has a current dev-plan that
+> isn't waiting for its author.
+
+A document **waits for its author** when it is the current `draft` and carries
+an open human issue or a major review finding (SD-4). Such a draft is revised
+by the author agent (FR-3). Any other draft — one written by hand or in chat and
+not yet submitted, with nothing against it — belongs to whoever is writing it,
+and satisfies the invariant.
+
+**FR-2.2a — The estimate** (FR-7) is owed by a sent feature, in `idea` or
+`ready`, with an approved plan, when the project assigns an `estimate` role and
+no estimate has been queued since the later of the send and the plan's
+approval.
 
 **FR-2.3 — Triggers** (replaces FR-4.3):
 
@@ -256,10 +304,18 @@ again is refused with a sentence; the page shows who sent it.
 | A design reaching `approved` | Re-checks the invariants over its scope. Starts nothing for an unsent feature. |
 | A feature being created, or gaining a description | Re-checks. Starts nothing for an unsent feature. |
 | A spec reaching `approved` | Re-checks the dev-plan invariant. |
-| A spec or plan sent back to `draft` | The revise loop (FR-3). |
+| A plan reaching `approved` | Decomposes (as built), re-checks G1 and the estimate. |
+| A spec or plan sent back to `draft` | Re-checks, which runs the revise loop (FR-3). |
+| A human issue on a draft | Re-checks, likewise. |
+| Detach | Re-checks the feature (FR-9.3). |
+| An `authoring-deadlock` answered retry | One more round (FR-3.3). |
+| Withdraw | Nothing to start; queued work is cancelled (FR-4.6). |
+| A change to `spec_review` in `config.yaml` | Nothing at once. Agent review is read when a spec is submitted and when a verdict arrives, so the change applies from then, including to work already sent. The per-send hold is fixed when the send is made. |
 
 **FR-2.4 — The heartbeat sweep covers sent features only** (replaces FR-4.7).
-Its never-attempted boundary is kept.
+Its never-attempted boundary is kept, and read for a revision as "not attempted
+since the draft last changed": a failed revision has a dispatch-failure
+checkpoint governing its retry, as a failed first draft does.
 
 **FR-2.5 — The cascade rewrites only for sent features** (replaces FR-9.4).
 FR-9.1 and FR-9.2 still choose which specs to retire, for every feature. A
@@ -287,10 +343,11 @@ development once one of them is."
 
 ### FR-3: The review-and-revise loop
 
-**FR-3.1** When a spec or plan owned by a **sent** feature moves from
-`reviewing` to `draft` (a reviewer's or a person's send-back), the orchestrator
-dispatches its author again: `write-spec` or `write-dev-plan`, whichever the
-type needs.
+**FR-3.1** When a sent feature's current spec or plan waits for its author
+(FR-2.1), the orchestrator dispatches the author again: `write-spec` or
+`write-dev-plan`, whichever the type needs. The usual cause is a send-back,
+by the reviewer or a person; an early review in chat that sent a spec back
+before the feature was sent is picked up by Send the same way.
 
 **FR-3.2** A revising author's prompt carries the current draft, every open
 review finding, and every open human issue, and asks for the whole revised
@@ -304,11 +361,18 @@ back *n* times. Allow the author another round, or stop and edit it
 yourself?"), answered `retry` or `cancel`. Retry dispatches one more round;
 cancel leaves the draft for a person, who can edit it and press Submit.
 
-**FR-3.4** A draft that was never submitted (written by hand or in chat) is
-not the loop's business. Its author submits it when ready.
+**FR-3.4** A draft with nothing against it (written by hand or in chat) is not
+the loop's business. Its author submits it when ready. A draft with an issue
+against it, on a sent feature, *is* the loop's business, whoever wrote it:
+DESIGN-010 §5 sends it "back to the spec author" (R11-6).
 
-**FR-3.5** A review verdict that arrives for a document no longer in
-`reviewing` is ignored: the document moved on while the reviewer was working.
+**FR-3.5** A review verdict is applied only to the content it reviewed: one that
+arrives for a document no longer in `reviewing`, or whose content has changed
+since the review was queued, is dropped.
+
+**FR-3.6** While an author dispatch for the feature is queued or running,
+Submit and *Ask for an agent review* on that document are refused ("Its author
+is revising it now"), so a person's submission can't race the author's.
 
 **Acceptance:** a reviewer's send-back on a sent feature's spec dispatches a
 second `write-spec`, whose prompt carries the finding; the revised spec is
@@ -318,8 +382,9 @@ dispatches nothing.
 
 ### FR-4: Send to development
 
-**FR-4.1 — On the feature page.** An unsent feature in `idea` shows **Send to
-development** as its primary action. When it can't be sent, the button is
+**FR-4.1 — On the feature page.** An unsent feature in `idea` or `ready` shows
+**Send to development** as its primary action (a `ready` one beside Start
+building). When it can't be sent, the button is
 disabled in a rail card with the reason beside it, in G0's words or "This
 feature has no description yet. Describe what it should do before sending it,
 because the spec is written from that description." A sent feature shows its
@@ -337,17 +402,28 @@ be sent is listed unchecked and disabled, with its reason.
   person, write the plan, review the plan, estimate. Each shows the role and
   model that will run it, or "you" for the hold, and says **already done** when
   its document exists (a spec written in chat is used as it is, DESIGN-010 §5a);
-- **who will review each spec**, in a sentence: "The spec reviewer (*model*)
-  approves it", "The spec reviewer checks it, then it waits for you", or "You
-  review it; agent review is switched off for this project";
+- **who will review each spec**, in a sentence built from the spec manifest's
+  `approved_by` and `spec_review`: "The spec reviewer (*model*) approves it",
+  "The spec reviewer checks it, then it waits for you", or "You review it;
+  agent review is switched off for this project";
+- a warning when a step's role isn't assigned in `config.yaml` (a project from
+  before M3 has the authoring roles commented out): "Nobody is assigned to
+  write the spec, so it won't be written until you write it or assign
+  `write-spec`" (R11-9);
 - a rough token forecast per step and in total (SD-12), or "no forecast yet";
 - free agent slots: `dispatch.workers` less the dispatches running now, and
   that work which doesn't fit waits in the queue;
 - the hold, as a checkbox defaulting to the project setting, forced on and
-  disabled when agent review is off (FR-5.1).
+  disabled when agent review is off (FR-5.1), with a line saying the hold is
+  fixed at the send but the agent-review setting is read as the work runs.
+
+A step is **already done** when its document exists and doesn't wait for its
+author: for writing, the current document exists; for a review, it is
+approved; for the estimate, the feature has one newer than its plan.
 
 **FR-4.4 — Sending** (`POST /ui/send`). For each ticked feature, the server
-re-checks the preconditions (G0, description, not already sent, state `idea`),
+re-checks the preconditions (G0, description, not already sent, state `idea` or
+`ready`),
 then writes the mark (FR-1.3). A feature that fails is reported by name and
 reason; the others are sent. The response is the page the person came from,
 with a notice naming what was sent.
@@ -404,13 +480,23 @@ noted, by relay (FR-8):
 
 | Act | When | What happens |
 |---|---|---|
-| **Approve** | the spec is `reviewing` | Approved at once, the person's verdict. Open issues are settled by it (SD-6), and any hold is cleared. |
+| **Approve** | the spec is `reviewing` | Approved at once, the person's verdict. Open issues are settled by it (SD-6), and any hold is cleared. This is new authority for agent-approved types: SPEC-009 FR-2.3 and FR-2.4 gave a person a spec only on escalation. |
+| **Send back** | the spec is `reviewing` | SD-15: the reason becomes a human issue and the spec returns to `draft`. |
 | **Raise an issue** | before building (FR-6) | FR-6. |
 | **Ask for an agent review** | `reviewing`, with no review queued or running; or `draft` (where it means Submit) | A fresh review is queued, even with agent review switched off (a one-off). Its approval of a held spec is held again. |
 | **Let the reviewer decide** | the spec is held after an agent approval, agent review is on, and no issue is open | The held approval stands: the spec is approved, attributed to the reviewer, and the release is audited to the person. |
 
 With agent review off, **Let the reviewer decide** isn't offered, because no
 automatic reviewer has given a verdict. It is refused if forced.
+
+Every act in this table is refused while a question about the document is
+pending (SD-11).
+
+**FR-5.4a — Where a hold lives.** Migration `0007` adds `document_holds`:
+`document_id` (primary key), `dispatch_id` (the review whose approval is held,
+or null when none is), and `created_at`. A hold is written when a held spec is
+submitted with agent review off or approved by its reviewer, and cleared by any
+approval or any return to `draft`.
 
 **FR-5.6** The document page says plainly when a spec is held: "This spec is
 waiting for you. The spec reviewer approved it; it approves only when you
@@ -430,7 +516,7 @@ without a reviewer or a person.
 ### FR-6: Human issues
 
 **FR-6.1 — Raising one.** A person may raise an issue on a spec or plan whose
-feature is `idea` or `ready`. Building has started otherwise, and the answer is
+feature is `idea` or `ready`, or on a design in `draft` or `reviewing` (SD-14). Building has started otherwise, and the answer is
 a revision, which the document page offers. An issue has a body, an optional
 section, the channel it came by (`ui` or `mcp`), and, by relay, the human's
 quoted words. It is stored in `document_comments` with `is_issue` set
@@ -455,7 +541,9 @@ others open.
 
 **FR-6.4 — A verdict can't jump an issue.** An agent approval applied to a
 document whose open issues it didn't answer (because an issue arrived while the
-reviewer was working) is not applied. A fresh review is queued instead.
+reviewer was working) is not applied. A fresh review is queued instead, for a
+sent or an unsent feature alike: the review was already running at someone's
+request, and this completes it honestly rather than starting new work.
 
 **FR-6.5 — The record.** The document page shows each issue with who raised
 it, the channel and the quote, and, once addressed, the reviewer's answer.
@@ -464,7 +552,13 @@ it, the channel and the quote, and, once addressed, the reviewer's answer.
 feature is `idea` or `ready` supersedes the predecessor as today and, in the
 same transaction, supersedes the feature's approved plan (FR-9.4a's rule) and
 returns a `ready` feature to `idea`. The plan invariant then rewrites the plan
-for a sent feature.
+for a sent feature. Approving a successor plan on a `ready` feature
+re-decomposes it (`ReDecomposeDevPlan`, which reconciles tasks by local id) and
+re-checks the estimate.
+
+**FR-6.8 — Detach keeps the record.** Detaching a draft with open issues is
+allowed, behind a confirm step that says so, and the `document.detached` audit
+row carries each dropped issue's words, so none disappears silently.
 
 **FR-6.7** Start building refuses while a feature's current spec or plan is not
 approved: "This feature's specification is being revised, so building can't
@@ -483,13 +577,14 @@ start until the revision is approved."
 
 ### FR-7: Estimation ends the chain
 
-**FR-7.1** When a sent feature's plan is approved and decomposed, the
-orchestrator queues one estimate for the feature, if the project assigns an
-`estimate` role and the feature has had no estimate dispatch since it was sent.
-An unassigned role is silence, as for the authoring purposes.
+**FR-7.1** The estimate is part of the invariants (FR-2.2a): when a sent
+feature's plan is approved and decomposed, or a feature with an approved plan
+is sent, the orchestrator queues one estimate for the feature. An unassigned
+role is silence, as for the authoring purposes.
 
 **FR-7.2** The feature reaches `ready` by G1, as today, and waits for Start
-building.
+building. Start building doesn't wait for the estimate: the estimate informs
+the person's decision, and it isn't a gate.
 
 **Acceptance:** the mock-provider run from Send ends with the feature `ready`,
 tasks decomposed, one estimate recorded, and no implementation dispatch.
@@ -521,10 +616,15 @@ names the four, and its must-not-exist list adds `send_to_development`,
 verdicts, issues, review requests and releases, quoting them, and that sending
 and starting building are a person's acts in the web UI.
 
+**FR-8.5** The `initialize` instructions no longer say the agent "can't run an
+agent": a relayed review request does queue one. They say instead that it can't
+send, start building, lock or answer the Inbox.
+
 **Acceptance:** over `POST /mcp`, each tool works on its happy path and leaves
 an audit row with `via: mcp` and the quote; a missing quote, a draft verdict, an
-escalated document, and a release with agent review off each fail with a
-sentence; the advertised set is exact.
+escalated document, an issue on a document under a pending question, and a
+release with agent review off each fail with a sentence; the advertised set is
+exact.
 
 ### FR-9: Submit, Revise and Detach on the document page
 
@@ -538,7 +638,10 @@ is and that the original stays approved until the revision is.
 **FR-9.3 — Detach** (a `draft` only), behind a confirm step: removes the
 document's registration (its row, sections, comments and any hold), leaves the
 file on disk, and audits `document.detached` with the path, type and owner. A
-detached spec or plan on a sent feature lets the invariants re-check.
+detached spec or plan on a sent feature lets the invariants re-check. An author
+agent never writes over a file it didn't register: when the conventional path
+is taken by an unregistered file, the authored document goes beside it with a
+numbered name (R11-10).
 
 **Acceptance:** each action works from the page in the browser; Detach on a
 non-draft and Revise on a revised document are refused with sentences.
@@ -583,19 +686,25 @@ a fresh `init` has the two assignments live.
 - **NFR-2 — The orchestrator stays code.** Every dispatch this spec adds is
   decided by the rules engine or the reconciler, never by an agent.
 - **NFR-3 — The seam holds.** Only a `POST` from the web UI writes the sent
-  mark or starts building. A test asserts no MCP tool, and no `/api/*` route,
-  can.
+  mark. A test asserts no MCP tool, and no `/api/*` route, can. Starting
+  building is not reachable over MCP, as before; its API route is SD-16's
+  recorded departure.
 - **NFR-4 — No unreviewed specs.** A test runs every combination of the two
   settings and the per-send hold, and asserts no spec reaches `approved`
   without an agent approval or a person's.
 - **NFR-5 — Human prose** in every label, reason, refusal, checkpoint question
   and tool description (D-6). No currency anywhere.
-- **NFR-6 — Contained templates.** New markup lives in its own partial file,
-  `send.html`, and `entity.html` gains only the includes and the renamed
-  label.
+- **NFR-6 — Contained templates.** New markup lives in its own partial files,
+  `send.html` (the send screen and the feature's send card) and `review.html`
+  (the document page's actions and review panel). `entity.html`, which also
+  holds the document page, gains only the includes, the issue marks on
+  comments, and the renamed label.
 - **NFR-7 — Coordination.** Migration `0007` only. No change to
-  `internal/dispatch/` (the relay and review outcome schemas are built in
-  `internal/server`).
+  `internal/dispatch/`: the review outcome tool is defined there, and the
+  `issues` field is added in `internal/server` by extending a copy of its
+  schema; the payload is parsed in `internal/rules`, as before.
+- **NFR-9 — No typed paths.** The send screen and the document page's new
+  forms carry ids in hidden fields, and the typed-path scan covers them.
 - **NFR-8 — Tested as before.** Integration tests with the mock provider
   against real Postgres cover every FR. `go vet ./...` and
   `go test -race -count=1 ./...` clean. The SPEC-009 authoring and cascade
@@ -617,14 +726,19 @@ a fresh `init` has the two assignments live.
    re-approve, and watch the sent feature's spec superseded and rewritten.
 5. A handoff note, `docs/notes/handoff-M3-2026-09-28.md`.
 6. The roadmap's §11 marks M3 done with a pointer to the handoff.
-7. **Five choices need Sam's explicit yes:**
+7. **Eight choices need Sam's explicit yes:**
    1. Withdraw is built, small (SD-10);
-   2. the dev-plan invariant and the estimate need the mark too (SD-2), and
-      building counts as sent (SD-3);
+   2. the dev-plan invariant and the estimate need the mark too, a `ready`
+      feature can be sent (SD-2), and building counts as sent (SD-3);
    3. the hold catches approvals only (SD-5);
    4. existing projects keep their design reviewer (SD-8);
    5. how an issue is marked addressed (SD-6), and that an issue on an
-      approved spec opens a successor rather than retiring it at once (SD-7).
+      approved spec opens a successor rather than retiring it at once (SD-7);
+   6. Start building stays reachable from the CLI and API until DEC-003
+      retires them (SD-16);
+   7. issues on approved plans are supported, with re-decomposition (SD-14);
+   8. a "send back" of a spec is a human issue plus a return to draft
+      (SD-15).
 
 ## 6. Open questions carried forward
 
@@ -635,6 +749,42 @@ a fresh `init` has the two assignments live.
   estimate is enough for Start building's decision today.
 - **Issues on documents other than specs, plans and draft designs** (research
   notes, decisions) aren't handled. Nothing reviews them.
+- **Review findings are never marked resolved.** A reviewer's findings pile
+  up across rounds, and the author is told some may be dealt with already. A
+  reviewer that could resolve the previous round's findings would give a
+  cleaner thread; it is a C-1 follow-up.
+- **Start building can be pressed before the estimate lands** (FR-7.2).
+- **A feature part-way through the July chain when M3 lands** — spec
+  approved, plan not written — waits until someone sends it. That is DEC-006's
+  intent; the handoff says so.
 - **The review round cap is shared** with code review
   (`dispatch.max_review_rounds`). A separate setting may be wanted once the
   live runs show how often documents loop.
+
+## 7. Changes after review
+
+How each [REVIEW-011](../reviews/REVIEW-011-send-to-development.md) finding was
+dealt with.
+
+| Finding | What changed |
+|---|---|
+| R11-1 (material) | SD-4 and FR-2.1/2.2 make the revise loop part of the invariants: a draft that waits for its author (open issue or major finding) doesn't satisfy them, so Send, the sweep and every re-check pick it up. FR-2.4 reads the sweep's boundary for revisions. FR-4.3 defines "already done". |
+| R11-2 (material) | The header lists SPEC-009 FR-2.3 and FR-2.4 as changed, and FR-5.5 says direct approval is new authority for agent-approved types, from Amendment 1 decision 5. |
+| R11-3 (material) | NFR-3 now covers the sent mark only. SD-16 records that the CLI and API can still start building, as a departure from DESIGN-010 §5 for Sam (DoD 7.6). |
+| R11-4 (material) | SD-11 now refuses every person's act, from either surface, on a document with a pending escalation, authoring-deadlock or design-revision question. FR-5.5 and FR-8's acceptance say so. |
+| R11-5 (material) | FR-6.6 re-decomposes a successor plan approved on a `ready` feature and re-checks the estimate. SD-14 no longer says "at no extra cost". Sam is asked (DoD 7.7). |
+| R11-6 | FR-3.4 says an issue on a sent feature's hand-written draft does go to the author, as DESIGN-010 §5 says. FR-3.6 refuses Submit and a review request while the author is at work. |
+| R11-7 | FR-6.1 includes design drafts; FR-6.4 explains the re-review for unsent features; SD-6 says an escalation approval settles issues; FR-6.8 records dropped issues on Detach; FR-5.4a says any return to draft clears a hold. |
+| R11-8 | SD-15 defines a send-back of a spec, and FR-5.5 adds its UI twin. Sam is asked (DoD 7.8). |
+| R11-9 | FR-4.3 warns on the send screen when a step's role isn't assigned. |
+| R11-10 | FR-9.3: an author never writes over an unregistered file. |
+| R11-11 | NFR-7 says where the schema lives and where the field is added. |
+| R11-12 | SD-7 says the successor is the current document at once, and why that blocks Start building. |
+| R11-13 | Built: the Inbox offers retry and cancel on `authoring-deadlock`, and the rules engine acts on retry. |
+| R11-14 | FR-5.4a specifies `document_holds`. NFR-6 names `review.html` and what `entity.html` gains. |
+| R11-15 | FR-2.2a and FR-7 make the estimate part of the invariants, owed after a send or a new plan; FR-4.3 defines its "done"; FR-7.2 and §6 say Start building doesn't wait for it. |
+| R11-16 | FR-2.3's table adds the plan's approval, issues on drafts, Detach, the deadlock retry, Withdraw and a settings change. |
+| R11-17 | FR-3.5 drops a verdict whose content has changed since its review was queued. |
+| R11-18 | FR-8.5 corrects the `initialize` text. §6 records that findings pile up. |
+| R11-19 | The status line points here, and the Goal mentions the hold. |
+| §4 notes | FR-4.3's reviewer sentence reads `approved_by`; NFR-9 adds the typed-path scan; the snapshot carries held and open issues so rules stay pure; FR-2.3 says when settings are read; the upgrade case is in §6 and the handoff. |

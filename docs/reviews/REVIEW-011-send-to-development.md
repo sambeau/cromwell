@@ -1,7 +1,8 @@
 # REVIEW-011: Consistency Review of SPEC-011 (Send to development)
 
-**Status:** Complete; awaiting the author's response (§6) and Sam's decision
-(§5)
+**Status:** Complete. The author has dealt with every finding (§6, and
+[SPEC-011 §7](../specs/SPEC-011-send-to-development.md#7-changes-after-review));
+awaiting Sam's decision
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author. Approval is
 Sam's, recorded in §5.
@@ -446,7 +447,7 @@ content hash catches every case, and the key already carries it
   Nothing marks an ordinary finding resolved (only issues get `addressed_*`),
   so by the third round the author and the reviewer both see every earlier
   finding as open (`CommentsForDocument` with `unresolvedOnly`,
-  `internal/store/documents.go:242-250`). Say whether findings from earlier
+  `internal/store/documents.go:234-250`). Say whether findings from earlier
   rounds are resolved on resubmission, or labelled by round.
 
 ### R11-19 — The status line and the Goal claim more than is there (note)
@@ -496,7 +497,7 @@ content hash catches every case, and the key already carries it
   R11-12.
 - **SD-6 answers DESIGN-010 §17b as Amendment 1 suggested**, in the comment
   and severity machinery. Its claims hold: comments persist across
-  resubmission and reach the reviewer's prompt (`documents.go:413-421`), and
+  resubmission and reach the reviewer's prompt (`documents.go:414-421`), and
   severity is checked inside the reviewer's turn (`planner.go:56-68`). The
   reviewer, not the author, marks an issue addressed, which keeps DEC-007's
   rule.
@@ -516,15 +517,15 @@ content hash catches every case, and the key already carries it
   with checkboxes, steps with role, model and "already done" (see R11-1 and
   R11-15 for what that means), who reviews each spec, a token forecast or "no
   forecast yet", and free slots from `dispatch.workers`, which defaults to 4
-  (`config.go:243-245`). SD-12's forecast is honest about what `internal/sizing`
+  (`config.go:119`, `219-221`). SD-12's forecast is honest about what `internal/sizing`
   can't do.
 - **Withdraw (SD-10) answers DEC-006's "Not decided here" and DESIGN-010
   §17b** with a small, bounded rule, and is flagged for Sam.
 - **The claims about SPEC-009 as built hold.** There is no revise loop: a
   send-back leaves a draft that `neededAuthoring` never touches.
   `submit_document` fills an existing draft in place (`authoring.go:565-582`).
-  `dispatch.max_review_rounds` exists, defaulting to 3 (`config.go:146-150`,
-  `252-254`). The estimate purpose and its idempotent enqueue exist
+  `dispatch.max_review_rounds` exists, defaulting to 3 (`config.go:122-126`,
+  `228-230`). The estimate purpose and its idempotent enqueue exist
   (`actions_phase3.go`, `enqueueEstimate`). G0's reason is a fragment today
   (`lifecycle/gates.go:38-47`), so FR-2.6 is a real change.
 - **Retiring the design reviewer keeps existing projects working.**
@@ -611,6 +612,28 @@ not approve.
 
 _Decision (Sam): pending._
 
-## 6. Author's response
+## 6. Author's response (2026-09-28)
 
-To be written by the author.
+Every finding is accepted, and each is dealt with in SPEC-011; its §7 maps
+finding to change. In short:
+
+- **R11-1** is fixed at the root. The revise loop is part of the invariants:
+  a current draft that waits for its author (an open human issue or a major
+  finding) doesn't satisfy them, so Send, the heartbeat sweep and every
+  re-check pick it up, not only the transition to draft.
+- **R11-2**: the header now lists SPEC-009 FR-2.3 and FR-2.4 as changed, on
+  Amendment 1's authority. A person's direct approval of a spec or plan is a
+  new service method beside `HumanApproveDocument`, which stays as it is for
+  designs.
+- **R11-3**: NFR-3 covers the sent mark only. The CLI and API start is recorded
+  as a departure (SD-16) and put to Sam, rather than removed in a milestone that
+  doesn't own the CLI.
+- **R11-4**: every person's act, from either surface, is refused on a document
+  with a pending escalation, authoring-deadlock or design-revision question.
+- **R11-5**: a successor plan approved on a `ready` feature is re-decomposed,
+  and the estimate re-checked. Issues on plans stay in scope, and Sam is asked.
+
+The three decisions §5 adds are the spec's DoD 7 items 6, 7 and 8. The notes in
+§4 are taken too: the reviewer sentence reads `approved_by`, the typed-path
+scan covers the new forms, the snapshot carries what the rules need, and the
+send screen says when settings are read.
