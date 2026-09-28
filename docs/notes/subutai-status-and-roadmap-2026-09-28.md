@@ -599,8 +599,11 @@ the recommended defaults.
 - [DEC-007](../decisions/DEC-007-the-judgement-boundary.md) is written up from
   the accepted proposal.
 - [DESIGN-010 Draft 2](../design/DESIGN-010-subutai.md) is written and
-  consistency-reviewed, and is waiting for Sam's approval. Its §18 lists what
-  changed from Draft 1.
+  consistency-reviewed. All twenty review findings are addressed (§19). It is
+  waiting for Sam's approval.
+  - Its §17a lists seven proposals that go beyond the accepted decisions.
+    Approving the draft approves them, unless Sam says otherwise.
+  - Its §18 lists what changed from Draft 1.
 
 ### Phase B: the Subutai core
 
@@ -613,6 +616,8 @@ the recommended defaults.
 - Human issues on specs (must-address), and an optional hold for a human.
 - Chat relay tools for human verdicts, issues and review requests.
 - Add Submit, Revise and Detach on the document page.
+- Retire the design reviewer, if Sam confirms DESIGN-010 §17a item 1.
+- Decide whether a send can be withdrawn.
 
 *Done when:* a live run shows that approving a design starts nothing, and that
 pressing *Send* produces a reviewed spec, plan, tasks and an estimate, then
@@ -624,7 +629,8 @@ stops. The cascade smoke (§7) runs in the same session.
 - Add and remove members from either end.
 - Reorder roadmap entries.
 - Lock a milestone, showing why when G4 refuses.
-- Add chat tools for the same actions.
+- Add chat tools for the same actions, except locking. Locking stays in the UI
+  pending Sam's ruling on DESIGN-010 §17a item 2.
 
 *Done when:* a person can build a two-milestone roadmap for an initiative
 entirely in the browser, and the chat agent can do the same.
@@ -728,7 +734,8 @@ agent's.
   observed, developer-filed bugs arriving for triage, and verification after
   merge.
 - **M15c — The pilot:** one real Tickly feature from idea to merged code,
-  written up.
+  written up. Per-user identity lands before the pilot if a second person
+  takes part (decision 14).
 
 *Done when:* the pilot walkthrough is recorded. **This is Subutai v1.**
 

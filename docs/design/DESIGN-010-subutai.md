@@ -1,25 +1,29 @@
 # DESIGN-010: Subutai
 
-**Status:** Draft 2, for Sam's approval. Not yet approved.
+**Status:** Draft 2, for Sam's approval. It has been consistency-reviewed
+(§19) and is not yet approved. **Approving it also means ruling on the
+proposals listed in §17a.**
 **Date:** 2026-09-28 (Draft 1: 2026-07-31)
 **Author:** Claude, from the R2 discussion with Sam and the decisions of
-2026-09-28
+2026-09-28.
 **Binding decisions it rests on:**
 - [DEC-006](../decisions/DEC-006-humans-start-development.md) and its
   Amendment 1: a human decides when development starts, and how specs are
-  reviewed;
+  reviewed.
 - [DEC-007](../decisions/DEC-007-the-judgement-boundary.md): who does the work
   is flexible; who judges it is not.
+- The fourteen roadmap decisions accepted on 2026-09-28
+  ([roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §12).
 
 **Sources:**
 - the [Subutai discussion document](../vision/Cromwell%20R2%20Vision%20Subutai.md);
 - the [discussion response](../notes/subutai-discussion-response-2026-07-31.md);
 - [Subutai and GitHub](../research/subutai-and-github.md);
-- the [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md);
 - [vision-v1](../vision/vision-v1.md), which this document revises but does not
   replace.
 
-**What changed from Draft 1** is listed in §18.
+**Reading notes.** Section numbers in this document are Draft 2's own. Anything
+that goes beyond an accepted decision is marked **(proposal, §17a)**.
 
 ---
 
@@ -62,9 +66,10 @@ decision in the system, so it gets its own paragraph.
 **The orchestrator is software, not an AI.** It is plain, deterministic code
 that watches for events, checks the rules, and hands work to AI agents at the
 right moments. It has no conversation history to lose track of and no
-attention span to exhaust, and it can't be talked out of a rule. We learned
-this the hard way. Our previous system, kanbanzai, used an AI agent as the
-orchestrator, and under a long enough workload it drifted:
+attention span to exhaust, and it can't be talked out of a rule.
+
+We learned this the hard way. Our previous system, kanbanzai, used an AI agent
+as the orchestrator, and under a long enough workload it drifted:
 - it did the work itself instead of delegating;
 - or it delegated and then forgot to follow up;
 - and the records then claimed things were done that weren't.
@@ -104,9 +109,12 @@ A Subutai team mixes humans and AI, in two groups.
 - **Product manager**: a human.
 - **Designer**: a human and a chat AI working together.
 - **Project manager**: a chat AI, guided by a human. This is the agent that
-  talks to Subutai on the humans' behalf. It creates initiatives and features,
-  drafts designs, keeps milestones and roadmaps up to date, checks status, and
-  relays the humans' decisions (§5d).
+  talks to Subutai on the humans' behalf. It:
+  - creates initiatives and features;
+  - drafts designs;
+  - keeps milestones and roadmaps up to date;
+  - checks status;
+  - relays the humans' decisions (§5c).
 
 **The development team** builds it:
 
@@ -130,9 +138,14 @@ Every orchestrated role has its own configured model, its own instructions, and
 its own strictly limited set of tools. A reviewer has no tool that can edit a
 file. Which model backs which role is yours to tune, per project.
 
-There is **no design reviewer**. A design gets its review in the conversation
-that writes it, with a human in the room. The `review-design` skill survives as
-a chat-side skill, for anyone who wants a cold read of a design on request.
+**The design reviewer is retired (proposal, §17a).**
+- It is built today (SPEC-009 FR-2.2). It comments on designs and never rules.
+- Draft 1 retired it, on Sam's 31 July view that a design gets its review in
+  the conversation that writes it, with a human in the room.
+- DEC-006 deliberately left the question open.
+- If retired, the `review-design` skill survives as a chat-side skill, for
+  anyone who wants a cold read of a design on request, and the removal lands
+  in roadmap milestone M3.
 
 ## 4. The vocabulary
 
@@ -156,9 +169,9 @@ Subutai keeps a deliberately small set of concepts, in two groups: things that
 
 | Term | What it is |
 |---|---|
-| **Deliverable** | Anything a milestone can contain: an initiative (meaning everything under it), a feature (including a bug), a checklist, or another milestone. |
+| **Deliverable** | Anything a milestone can contain: an initiative (meaning everything under it), a feature, a bug (proposal, §17a), a checklist, or another milestone. |
 | **Milestone** | An *unordered* collection of deliverables that ship together. It is live while open, and frozen when locked, so the record of what shipped is honest (§6). |
-| **Roadmap** | An *ordered* list of **milestones**, and only milestones. The order means whatever the planner wants it to mean, and the system just preserves it. |
+| **Roadmap** | An *ordered* list of **milestones**, and only milestones (DESIGN-008 D-11). The order means whatever the planner wants it to mean, and the system just preserves it. |
 
 ### Documents
 
@@ -166,30 +179,35 @@ Every piece of writing in the system is a **document**: designs, specs,
 development plans, reviews, bug reports, spike findings, decisions and notes.
 A document is a Markdown file in the project's git repository, tracked by
 Subutai with a type, an ID and a lifecycle (`draft → reviewing → approved →
-superseded`). Section 7 covers how documents are identified and where they
-live.
+superseded`).
+
+An approved document is never reopened. It is changed by writing a
+**successor**, a new draft that replaces it when approved. That is how
+revision works throughout this document. Section 7 covers how documents are
+identified and where they live.
 
 Two document types matter most, and the difference between them is the
 difference between the two worlds:
 
 - **A design** says what we want and why. It is written by humans, with AI
-  help, for humans. Any initiative or feature can have one, and a feature can
-  build from its own design or its parent initiative's.
-- **A spec** says exactly what will be built. It is written by the spec agent,
-  for the agents who will build it. Only features have specs, because only
-  features get built.
+  help, for humans. Any initiative or feature can have one. A feature builds
+  from its own design or its **immediate** parent initiative's (gate G0).
+- **A spec** says exactly what will be built, for the agents who will build it.
+  It is normally written by the spec author agent. It can also be written
+  ahead in chat (§5a), and for a bug the bug report serves as the spec (§9).
+  Only features and bugs have specs, because only they get built.
 
 ## 5. The workflow, end to end
 
-There are exactly **two moments where the system waits for a human**, and both
-are about timing:
+There are **two routine buttons**, **Send to development** and **Start
+building**, and both are about timing. Beyond them, a human steps in only:
+- when they choose to (raising an issue, holding a spec);
+- when the work needs a human decision by its nature (triaging a bug, locking
+  a milestone, closing a spike);
+- or when something has gone wrong (checkpoints).
 
-- **Send to development**;
-- **Start building**.
-
-Everything else either flows on its own, or interrupts a human only when
-something has actually gone wrong. A human's usual next involvement after
-approving a design is **manual testing** of what was built.
+After approving a design and pressing the two buttons, a human's usual next
+involvement is **manual testing** of what was built.
 
 ### Designing: the conversation
 
@@ -202,32 +220,44 @@ When the design feels right, a human approves it, either on the document page
 or by telling the chat agent. Approval is a record, not a trigger. Nothing
 launches. Approved designs can sit ready until there is capacity to build them.
 
-### Gate one: Send to development
+### The first button: Send to development
 
-When it's the right time, a human presses **Send to development**. It sits on a
-feature whose design is approved, or on an initiative, to send several of its
-features at once. The button is in the web UI only. The chat agent can't press
-it.
+When it's the right time, a human presses **Send to development**.
 
-The send screen shows what's about to happen, before anyone commits:
+**Where it appears:**
+- on a feature;
+- on an initiative, to send several of its features at once, chosen with
+  checkboxes.
+
+**When it can be pressed:**
+- A feature can be sent when its own design or its *immediate* parent
+  initiative's design is approved (gate G0), and it has a description.
+- Otherwise the button explains what's missing.
+- The button is in the web UI only. The chat agent can't press it.
+
+**The send screen shows what's about to happen, before anyone commits:**
 - the features being sent;
 - each step, with the agent role and model that will run it, and whether it is
   already done;
+- who will review each spec;
 - a rough token forecast;
 - how many agent slots are free.
 
-It also says who will review each spec. From the button, development planning
-runs unattended:
+Work that doesn't fit waits in the dispatch queue, as all dispatches do.
+
+**From the button, development planning runs unattended:**
 
 1. **The spec is written.** The spec author translates the approved design
    into precise, testable language. A spec already written in chat is used as
    it is, and this step is skipped (§5a).
-2. **The spec is reviewed.** The spec reviewer checks it is clear, testable, and
-   a faithful, complete translation of the design, and approves it or sends it
-   back to the author with findings.
-3. **The development plan is written**, breaking the feature into tasks.
-4. **The plan is reviewed** by a second reviewer.
-5. **The work is decomposed and estimated**, in tokens.
+2. **The spec is reviewed.** It must first pass the mechanical validation that
+   every document gets on submission. Then the spec reviewer checks it is
+   clear, testable, and a faithful, complete translation of the design, and
+   approves it or sends it back to the author with findings.
+3. **The spec is held for a human**, if the hold is on (below).
+4. **The development plan is written**, breaking the feature into tasks.
+5. **The plan is reviewed** by the plan reviewer.
+6. **The work is decomposed into tasks and estimated**, in tokens.
 
 Then the system stops and waits.
 
@@ -237,29 +267,42 @@ Then the system stops and waits.
 normal approver. Its verdict moves the spec on without waiting for anyone. The
 human's role is to **point out issues**, not to be the arbiter of truth.
 
-- **A human may raise an issue on a spec at any time before building starts.**
-  This can be done on the document page or by telling the chat agent.
-  - A human issue must be dealt with. The spec goes back to the author, and the
-    reviewer can't approve until it has said how each issue was addressed, or
-    why it doesn't apply.
-  - An issue on an already-approved spec reopens it, and its plan is retired
-    automatically.
-- **A human may also approve a spec directly, or ask for an agent review.**
-  Both are there when wanted, and neither is expected.
-- **Holding specs for a human is optional, and off by default.** It can be set
-  per project or per send. A held spec waits after the agent review, and the
-  human then does one of three things:
-  - approves it;
-  - raises issues;
-  - hands it back with *let the reviewer decide*.
-- **There is always at least one reviewer.** A project may turn off the agent
-  spec review, but then every spec is held for a human. No setting lets a spec
-  through unreviewed.
+**A human may raise an issue on a spec at any time before building starts**,
+on the document page or by telling the chat agent. A human issue must be dealt
+with: the reviewer can't approve until it has said how each issue was
+addressed, or why it doesn't apply. Where the issue goes depends on the spec's
+state:
+- **For a feature that has been sent, and a spec in draft or review:** the spec
+  goes back to the spec author with the issue.
+- **For an approved spec:** the issue starts a successor. When the successor is
+  approved, it supersedes the old spec, and the old plan is superseded with it.
+- **For a feature not yet sent:** the issue is simply recorded on the spec.
+  Nothing is dispatched, because nothing runs before Send. Whoever is working
+  on the spec in chat addresses it, and the reviewer checks it when the review
+  runs.
 
-### Gate two: Start building
+**A human may also approve a spec directly, or ask for an agent review.** Both
+are there when wanted, and neither is expected.
+
+**Holding specs for a human is optional, and off by default.** It can be set
+per project or per send. A held spec waits after the agent review, and the
+human then does one of three things:
+- approves it;
+- raises issues;
+- hands it back with *let the reviewer decide*, after which the agent's verdict
+  stands.
+
+**There is always at least one reviewer.** A project may turn off the agent
+spec review, but then every spec is held for a human after validation. In
+that case the human either approves the spec or raises issues. They can still
+ask for a one-off agent review. *Let the reviewer decide* isn't offered,
+because there is no automatic reviewer. No setting lets a spec through
+unreviewed.
+
+### The second button: Start building
 
 A human looks at the reviewed plan and the estimate, and presses **Start
-building**. From here the loop runs:
+building**. That button is in the web UI only, too. From here the loop runs:
 
 - Implementers pick up tasks in an isolated working copy.
 - Code reviewers inspect each task's changes.
@@ -274,8 +317,14 @@ fixing.
 When every task is done, the **verifier** checks the whole feature against the
 spec's acceptance criteria. It must cite specific evidence for each one. "Looks
 fine" is not evidence; "the login test covers valid and invalid credentials"
-is. Only then does the feature merge and count as done. After that comes the
-human's manual testing, and anything it finds is a bug report.
+is. Only then does the feature merge and count as done.
+
+**The GitHub exception.** On a project where developers merge their own pull
+requests, tasks merge as they finish, and the verifier runs on the merged code
+(§12).
+
+After that comes the human's manual testing, and anything it finds is a bug
+report.
 
 ### Exceptions, not check-ins
 
@@ -286,24 +335,26 @@ inbox when something genuinely needs judgement:
 - a dispatch keeps failing;
 - a budget threshold trips;
 - a merge conflicts;
-- a revised design affects several specs.
+- a revised design affects several specs;
+- a claim goes quiet (§5b).
 
-Answer the checkpoint and the machine continues. If checkpoints are rare, the
-system is healthy. If they're frequent, something upstream needs fixing, and
-that's worth knowing too.
+Answer the checkpoint and the machine continues. Checkpoints are answered in
+the web UI. If checkpoints are rare, the system is healthy. If they're
+frequent, something upstream needs fixing, and that's worth knowing too.
 
 ### When a design changes: the cascade
 
-Designs get revised. When a revised design is approved, Subutai finds the specs
-written from it:
-- If there is only one, it is retired, along with its plan.
+Designs get revised. When a successor design is approved, Subutai finds the
+specs written from the design it supersedes:
+- If there is only one, it is superseded, along with its plan.
 - If there are several, one checkpoint asks, spec by spec, whether to keep it
   or redo it.
 
-Retired specs are rewritten against the new design, automatically, for
-features already sent to development. Features not yet sent wait until someone
-sends them. Tasks are reconciled, not duplicated. A feature already being
-built also gets the existing "revised while in progress" checkpoint.
+A superseded spec is rewritten against the new design, automatically, for
+features already sent to development. A feature not yet sent is left without a
+spec until someone sends it. Tasks are reconciled, not duplicated. A feature
+already being built also gets the existing "revised while in progress"
+checkpoint.
 
 ### 5a. Working ahead in chat
 
@@ -326,9 +377,11 @@ flows straight through to Start building.
 This is [DEC-007](../decisions/DEC-007-the-judgement-boundary.md). Any stage's
 *work* can be done by a dispatched agent, by the chat AI in conversation with a
 human, or by a human alone. We call whoever does the work its **executor**, and
-the system records it. A chat AI or human working on a task claims it first,
-works in the feature's working copy, and submits it when done. That is the
-same doorway the dispatched agents use, so the state always tells the truth.
+the system records it.
+
+A chat AI or human working on a task claims it first, works in the feature's
+working copy, and submits it when done. That is the same doorway the
+dispatched agents use, so the state always tells the truth.
 
 The honest reason: if the system didn't allow it, people would do it anyway.
 When a task is genuinely hard, the temptation to open a chat window and say
@@ -339,15 +392,17 @@ One rule makes this flexibility safe:
 
 > **Who does the work is flexible. Who judges the work is not.**
 
-Anyone may *do* a stage. Nobody may judge their own work, and no path skips a
-gate.
+**Doing stages** are writing a spec or plan, implementing a task, estimating,
+and running a spike. Anyone may do them. **Judging stages** are spec review,
+plan review, code review and verification. These belong to an independent
+party, never to whoever did the work.
 - The chat AI has no tool that can approve, review or verify anything on its
   own judgement.
-- A chat-implemented task still gets an independent code review.
+- A chat-implemented task still gets an independent code review. By default
+  that review uses a stronger model, because a feature done in chat has had one
+  mind through the whole chain (DEC-007 decision 10).
 - Verification against the definition of done is **always** done by the
   dispatched verifier. No actor, human or AI, can waive it.
-
-Two more rules complete it:
 - A claim with no activity raises a "still working on this?" checkpoint.
 - A commit to an active feature with no claimed task is flagged.
 
@@ -357,8 +412,9 @@ The chat agent is a full member of the product team, with one firm boundary.
 [DEC-006](../decisions/DEC-006-humans-start-development.md) Amendment 1 draws it
 by *what an act does*, not which channel it comes through.
 
-- **It may author planning structure.** That covers initiatives, features,
-  milestones, roadmaps, checklists, descriptions and documents.
+- **It may author planning structure,** under DEC-004: initiatives, features,
+  milestones and roadmaps, descriptions and documents. Checklists and jobs are
+  included too (proposal, §17a).
 - **It may relay a human's decisions:**
   - a verdict on any document;
   - an issue raised on a document;
@@ -370,11 +426,15 @@ by *what an act does*, not which channel it comes through.
 - **It may claim and submit work** under DEC-007.
 - **It may never:**
   - press Send to development or Start building;
-  - lock a milestone;
-  - override a gate;
+  - override a gate, including by answering a checkpoint that would;
   - hold a verdict of its own.
 
-  These either commit resources, can't be undone, or remove a safeguard.
+  Those either commit resources or remove a safeguard.
+- **It doesn't answer checkpoints at all**, even the ones that don't override a
+  gate, such as keep-or-redo. Checkpoints are UI acts. The chat agent can read
+  them and help a human decide (DEC-005).
+- **Proposal (§17a): it may not lock a milestone either**, because locking
+  can't be undone.
 
 ## 6. Planning and tracking
 
@@ -389,6 +449,7 @@ beta" or "Public launch". It contains any mix of:
 - initiatives (everything under them, live: a feature added later joins
   automatically);
 - features;
+- bugs (proposal);
 - checklists;
 - other milestones.
 
@@ -403,13 +464,14 @@ questions.**
   big one.
 
 Both are shown. On the page a milestone looks like what it is: a checklist of
-its deliverables.
+its deliverables (DESIGN-008 D-10).
 
 **Locking** freezes a milestone. Subutai takes a permanent snapshot of what
 actually shipped, so the record stays honest even when the plan changes later.
-Locking needs at least one deliverable done, and it can't be undone, so it is
-a web UI act with a confirmation step. Deliverables not done at lock time are
-recorded as not shipped. They are not quietly dropped.
+- Locking needs at least one deliverable done (gate G4).
+- It can't be undone, so the web UI asks for confirmation first.
+- Deliverables not done at lock time are recorded as not shipped. They are not
+  quietly dropped.
 
 ### Roadmaps
 
@@ -422,7 +484,8 @@ and target date.
 
 A checklist is a list of **jobs**, meaning things only a human can do: get an
 API key, sign a contract, choose an icon.
-- A job has a title, an optional note, and a record of who ticked it and when.
+- A job has a title, an optional note, and a record of who ticked it and when
+  (roadmap decision 8).
 - Jobs are ticked on the checklist page, or by telling the chat agent, which
   relays it with the human's words (§5c).
 - A checklist is done when every job is ticked.
@@ -431,35 +494,51 @@ API key, sign a contract, choose an icon.
 
 ### Ownership and editing
 
-- **Ownership.** Milestones, roadmaps and checklists belong to the project or
-  to an initiative, so planning sits at the level it's about. What a milestone
-  *contains* can come from anywhere in the tree.
-- **Editing in the web UI.** Each one is edited from its owner's page. Members
-  can be added from either end: from the milestone, or with "Add to a
-  milestone…" on any feature or initiative.
-- **Editing in chat.** The chat project manager can create and fill milestones,
-  roadmaps and checklists in conversation, but can't lock a milestone.
+- **Ownership.** Milestones and roadmaps belong to the project or to an
+  initiative, so planning sits at the level it's about (DESIGN-008 D-9).
+  Checklists belong to them the same way (proposal). What a milestone
+  *contains* can come from anywhere in the tree (D-12).
+- **Editing in the web UI.** Each one is edited in a modal from its owner's
+  page (roadmap decision 7). Members can be added from either end: from the
+  milestone, or with "Add to a milestone…" on any feature or initiative.
+- **Editing in chat.** The chat project manager can create and fill
+  milestones, roadmaps and checklists in conversation.
 
 ## 7. Documents: identity, homes and editing
 
 ### Every entity has an ID, minted by the system
 
 Subutai assigns IDs centrally, from the database, so numbers never clash no
-matter who creates what, from chat or the UI.
+matter who creates what, from chat or the UI (roadmap decision 9).
 
-| Entity | Prefix | Example |
-|---|---|---|
-| Initiative | `INIT-` | `INIT-014` |
-| Feature | `FEAT-` | `FEAT-023` |
-| Bug | `BUG-` | `BUG-007` |
-| Spike | `SPK-` | `SPK-003` |
-| Decision | `DEC-` | `DEC-008` |
-| Milestone | `MS-` | `MS-004` |
-| Roadmap | `RM-` | `RM-001` |
-| Checklist | `CL-` | `CL-002` |
+| Thing | Prefix | Example | Status |
+|---|---|---|---|
+| Initiative | `INIT-` | `INIT-014` | accepted |
+| Feature | `FEAT-` | `FEAT-023` | accepted |
+| Bug | `BUG-` | `BUG-007` | accepted |
+| Spike | `SPK-` | `SPK-003` | accepted |
+| Decision | `DEC-` | `DEC-008` | accepted |
+| Milestone | `MS-` | `MS-004` | proposal |
+| Roadmap | `RM-` | `RM-001` | proposal |
+| Checklist | `CL-` | `CL-002` | proposal |
+| Task | `<feature>-T<n>` | `FEAT-023-T03` | proposal |
 
-The number means nothing beyond "the next one". A document's ID is its
-entity's ID plus its type, for example `FEAT-023-spec`.
+The number means nothing beyond "the next one". A **decision** is a document,
+not an entity, but it gets its own number sequence, because decisions are cited
+on their own.
+
+### Document IDs, and what happens when a document is revised (proposal)
+
+- **A document's ID** is its owner's ID plus its type, for example
+  `FEAT-023-spec`.
+- **If an owner has more than one document of the same type**, such as two
+  design notes on one initiative, the second and later ones take a number:
+  `INIT-014-design-2`.
+- **The ID names the document across its revisions.** A successor keeps the ID
+  and increments a **revision** number in its front matter. So the current
+  spec of `FEAT-023` is always `FEAT-023-spec`.
+- **Superseded revisions are archived** with the revision in the file name
+  (`FEAT-023-spec.r1.md`), much as Cromwell archives them today.
 
 ### Identity lives in front matter; location is free
 
@@ -501,16 +580,24 @@ alongside *adopt*.
 The web UI includes a simple Markdown editor with preview, for the everyday
 case of fixing and polishing documents without leaving the browser.
 
-- **Save & commit** is the main button. It writes the file and commits it to
-  git, with the person as author. **Save** alone writes the file and leaves the
-  commit to you.
-- If the file changed on disk since you opened it, because someone edited it in
-  vim, saving stops and shows you the difference. It doesn't silently
+- **Save & commit** is the main button (roadmap decision 11). It writes the
+  file and commits it.
+  - On a project whose `main` is protected, it also lands the commit through
+    the project's documents fast lane (Subutai and GitHub §7), so a paragraph
+    edit doesn't wait on a full code-CI run.
+  - The commit author is the signed-in person once per-user identity exists
+    (§13). Until then it is the configured operator.
+- **Save** alone writes the file and leaves the commit to you.
+- **If the file changed on disk since you opened it**, because someone edited
+  it in vim, saving stops and shows you the difference. It doesn't silently
   overwrite either version.
-- The editor always shows the document's lifecycle state. It warns before you
-  edit something under review, or something that feeds work in progress.
-  Editing an approved design is allowed, but it starts the cascade (§5) when
-  re-approved.
+- **The editor always shows the document's lifecycle state.**
+  - A draft is edited in place.
+  - Editing an approved document creates a successor draft. When that is
+    approved, it supersedes the original. For a design, that starts the
+    cascade (§5).
+  - The editor warns before you edit a document under review, or one that
+    feeds work in progress.
 
 Documents remain plain Markdown files in git throughout. The browser editor is
 a convenience, never a requirement, and never a special format.
@@ -552,26 +639,33 @@ glance, and *"what exactly happened?"* when you need to dig.
 
 Anyone, human or agent, can report a bug at any time, without ceremony.
 - Agents file reports mid-work when they spot something out of scope, and the
-  minor review findings recorded in §5 land here too.
+  minor review findings from §5 land here too.
 - Humans report through chat, through a form in the UI, or, on projects that
   use GitHub, by filing an ordinary GitHub issue labelled as a bug (§12).
 
 Every report becomes a bug entity with a report document, attached to the
 initiative or feature it came from.
 
-**A bug is feature-shaped, with one extra step at the front: triage.** Reports
-wait in a dedicated **triage queue**, with a count on the inbox. A human
-accepts or rejects each one. That is the human involvement the workflow
-guarantees, and it is the same kind of act as creating a feature: a commitment
-of scope.
+**A bug is feature-shaped, with one extra step at the front: triage.**
+- Reports wait in a dedicated **triage queue**, with a count on the inbox
+  (roadmap decision 12).
+- A human accepts or rejects each one. That is a commitment of scope, the same
+  kind of act as creating a feature.
+- Triage happens in the queue. The chat agent may relay a triage decision with
+  the human's words (proposal, §17a).
 
-From acceptance onward, a bug travels the normal pipeline:
-- It is sent to development when there is capacity.
-- Its report document serves as its spec, with a built-in acceptance criterion:
-  the defect no longer reproduces.
-- The fix passes the same reviews and the same verification as any feature.
+**From acceptance onward, a bug travels the normal pipeline, with two
+differences** (proposal, §17a):
+- **Its gate to Send is acceptance.** A bug has no design, so an accepted bug
+  with a report can be sent to development in place of G0.
+- **Its report serves as its spec.** The spec-writing step is skipped. The spec
+  reviewer reviews the report as a spec, checking that the reproduction and
+  the acceptance criterion ("the defect no longer reproduces") are clear and
+  testable.
 
-There is no parallel machinery and no second-class pipeline.
+After that it is the normal pipeline: plan, plan review, Start building,
+implementation, code review and verification. There is no parallel machinery
+and no second-class pipeline.
 
 ## 10. Spikes
 
@@ -582,16 +676,24 @@ finding out is a **spike**.
 
 A spike is a question with a budget.
 - It hangs off whatever initiative or feature raised it.
-- It carries a token budget. The budget comes from a project-wide default that
-  can be overridden per spike.
 - It produces exactly one thing: a findings document.
 - The code it writes along the way is scaffolding. It is real enough to answer
   the question, and never good enough to ship.
 
-**When the budget runs out, the spike stops.** That is a hard stop, not a
-polite question. Spikes are the easiest thing in software to let run for a
-fortnight. The findings so far are written up, and a human decides whether the
-question deserves a second, separately budgeted spike.
+**Starting a spike (proposal, §17a).** Anyone may *create* a spike, including
+the chat agent as planning structure. **Starting** one spends resources, so it
+works like Send to development: a human starts it in the web UI. Any executor
+may *run* it (DEC-007): a dispatched agent, the chat AI, or a human.
+
+**The budget.** A dispatched spike carries a token budget, from a project-wide
+default that can be overridden per spike (roadmap decision 13).
+- **When the budget runs out, the spike stops.** That is a hard stop, not a
+  polite question. Spikes are the easiest thing in software to let run for a
+  fortnight.
+- The findings so far are written up, and a human decides whether the question
+  deserves a second, separately budgeted spike.
+- A spike run in chat or by a human can't be metered in tokens. It carries a
+  time box instead, enforced through claim expiry (§5b) (proposal).
 
 **A spike can't merge, and that is enforced, not promised.** It gets a worktree
 like any other work, and when it concludes the worktree is discarded. There is
@@ -610,14 +712,14 @@ the normal pipeline. The scaffolding stays in the bin.
 ## 11. Decisions
 
 Decisions are how the project remembers *why*. Each one is a document, with its
-`DEC-nnn` ID minted by the system, recording:
+`DEC-nnn` number minted by the system, recording:
 - what was decided;
 - the reason;
 - what it replaced.
 
 An accepted decision is never edited. If the project changes its mind, a new
-decision supersedes the old one, or a dated amendment is appended, and the
-trail stays honest.
+decision supersedes the old one, or a dated amendment is appended, as
+DEC-006's Amendment 1 was. Either way the trail stays honest.
 
 Decisions attach to the project or to an initiative, and they do their real
 work automatically. **Accepted decisions on the relevant branch of the tree are
@@ -629,8 +731,8 @@ the relevant ones into the prompt.
 
 **Only the ruling and its one-line reason are pushed, not the whole
 document.** There is also a hard cap on how much any dispatch receives, so
-surfacing stays affordable (the size is in §17). Project conventions use the
-same mechanism. A simple viewer in the UI lists decisions for humans.
+surfacing stays affordable (the size is open, §17b). Project conventions use
+the same mechanism. A simple viewer in the UI lists decisions for humans.
 
 ## 12. Working with GitHub
 
@@ -662,8 +764,8 @@ The two are joined by an identifier, not by a sync.
 
 **Human work, human review.** When a human implements a task and a colleague
 approves the pull request, that review is the independent code review
-(DEC-007). Subutai records both people, and doesn't ask an agent for a second
-opinion.
+(DEC-007 decision 9). Subutai records both people, and doesn't ask an agent for
+a second opinion.
 
 **Verification is at the feature level, after merge.** When a feature's last
 task has merged, the verifier checks the feature against its acceptance
@@ -680,14 +782,15 @@ blocks a developer's pull request.
 
 ## 13. People
 
-Subutai is for small teams, so it needs to know who's who. Before a second
-person uses a project, and before the first real pilot, Subutai gains
-**per-user identity**. Approvals, issues, ticks and commits are then recorded
-against the person who made them.
+Subutai is for small teams, so it needs to know who's who. **Per-user
+identity** arrives before a second person uses a project, and in any case
+before the Tickly pilot if more than one person takes part (roadmap decision
+14). With it, approvals, issues, ticks and commits are recorded against the
+person who made them.
 
-Until then it runs with a single operator. Anything relayed through the chat
-agent is recorded as arriving via chat, with the human's words quoted. That is
-honest, but it can't prove who spoke.
+Until then Subutai runs with a single operator. Anything relayed through the
+chat agent is recorded as arriving via chat, with the human's words quoted.
+That is honest, but it can't prove who spoke.
 
 ## 14. What Subutai deliberately doesn't do
 
@@ -698,8 +801,9 @@ honest, but it can't prove who spoke.
 - **No unreviewed specs.** There is always at least one reviewer.
 - **No skippable verification.** The definition-of-done check always runs, by
   the dispatched verifier, whoever did the work.
-- **No starting work from chat.** Send to development and Start building are
-  human acts in the web UI.
+- **No committing resources from chat.** Send to development, Start building
+  and starting a spike are human acts in the web UI. The chat agent may still
+  claim work and ask for reviews (§5c).
 - **No knowledge subsystem.** It has been tried twice and failed twice.
   Documents plus automatic surfacing do that job.
 - **No rich text.** Documents are Markdown files in git. Every tool that touches
@@ -713,18 +817,18 @@ For readers who know Cromwell, here are the deltas:
 
 1. **The name.** Cromwell becomes Subutai, once, at a clean boundary.
 2. **A human starts development.** Approving a design no longer sets agents
-   off. Send to development does. The spec author and plan author stay
-   orchestrated. Start building (renamed from "Start work") is unchanged.
+   off; Send to development does. The spec author and plan author stay
+   orchestrated. "Start work" is renamed Start building.
 3. **Spec review is reshaped.** The agent reviewer is the normal approver, and
    there is always at least one reviewer. Humans raise issues, and can hold a
-   spec for themselves. The design reviewer is retired.
-4. **The chat agent grows up.** It relays human decisions (quoted and audited),
-   plans milestones, roadmaps and checklists, and can claim work. It never
-   judges, and never starts work.
+   spec for themselves. The design reviewer is retired (proposal).
+4. **The chat agent grows up.** It relays human decisions, quoted and audited.
+   It plans milestones, roadmaps and checklists, and it can claim work. It
+   never judges, and never commits resources.
 5. **Executors.** Work records who did it. Chat and humans can do any doing
    stage through claim and submit. Judging stays closed.
 6. **Planning and tracking come into the UI.** Milestones and roadmaps become
-   editable in the browser and from chat. Checklists and jobs arrive.
+   editable in the browser and from chat, and checklists and jobs arrive.
 7. **Document management grows up.** System-minted IDs, identity in front
    matter, adopt-in-place, starter documents on creation, and the browser
    editor.
@@ -742,69 +846,148 @@ For readers who know Cromwell, here are the deltas:
 
 **Subutai v1 is done when** everything in §15 is shipped, and one real project
 (Tickly) has taken one feature from idea to merged code through Subutai, with a
-written walkthrough. The [roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md)
-§11 breaks this into milestones M0 to M15.
+written walkthrough. The
+[roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §11 breaks this
+into milestones M0 to M15:
+- the design reviewer's retirement and the decision on withdrawing a send land
+  in M3;
+- per-user identity lands with the pilot, in M15, when a second person takes
+  part.
 
 **After v1**, deliberately:
 - estimates as ranges, and forecasting from past throughput (beyond the quick
   version on the roadmap's spare-hours track);
 - a hard token budget enforced at Send;
-- withdrawing a send;
 - reading pull-request review comments into the record;
 - retrospectives (audit C-9);
 - multi-repository projects;
 - a single button that runs straight from Send to building when the estimate is
   within budget.
 
-## 17. Open questions
+## 17. Open items
 
-These are small, and each can be settled in the spec for the milestone that
-needs it.
+### 17a. Proposals in this draft that need Sam's ruling
+
+These go beyond the accepted decisions. Approving Draft 2 approves them, unless
+Sam says otherwise.
+
+1. **Retire the design reviewer** (§3), in M3.
+2. **The chat agent may not lock a milestone** (§5c), because locking can't be
+   undone. Roadmap M4 is built without a chat lock tool, pending this.
+3. **Bugs as milestone deliverables** (§4, §6).
+4. **Checklists owned by the project or an initiative**, and **the chat agent
+   may create checklists and jobs** as planning structure (§5c, §6).
+5. **ID prefixes for milestones, roadmaps, checklists and tasks**, and the
+   **document revision scheme** (§7).
+6. **The bug path** (§9): acceptance stands in for G0, the report is the spec,
+   the spec reviewer reviews it, and the chat agent may relay a triage
+   decision.
+7. **Spikes** (§10): a human starts a spike in the UI, any executor runs it, and
+   a chat or human spike carries a time box instead of a token budget.
+
+### 17b. Open questions, settled in the spec of the milestone named
 
 - **How agent-implemented work lands in a GitHub project.** It could be
   Subutai's own merge after verification, as today, or a pull request like a
-  human's. The second is friendlier to developers who watch `main`. (M15b)
+  human's. (M15b)
 - **When a projected issue is created**, and what happens to it if its task is
-  abandoned. Close it, or delete it? (M15b)
+  abandoned. (M15b)
 - **How big the decision surfacing cap is.** The proposal is about 150 words per
-  decision and 1,500 tokens per dispatch, to be tuned against transcripts once
-  M6 exists. (M11)
-- **What counts as activity on a claim.** (M13)
-- **The milestone, roadmap and checklist ID prefixes** (`MS-`, `RM-`, `CL-`).
-  These extend the accepted scheme and are Draft 2's proposal. (M8)
+  decision and 1,500 tokens per dispatch, tuned against transcripts once M6
+  exists. (M11)
+- **Withdrawing a send** before its spec is written. (M3)
+- **How a human issue is marked addressed** in the review loop. (M3)
+- **What counts as activity on a claim**, and whether expiry differs for humans
+  and the chat AI. (M13)
+- **Whether the chat AI may claim estimation work.** (M13)
 
 ## 18. What changed from Draft 1
 
-For Sam's re-read:
+For Sam's re-read. Section numbers are Draft 1's where they say so.
 
-- **§2 and §5 are rewritten for DEC-006.** The handover is an approved design
-  and a human's Send. It is no longer a chat-written spec. The spec author
-  role stays. Draft 1's §12 items 2 and 3 are reversed accordingly.
-- **Spec review is rewritten for DEC-006 Amendment 1.** The agent reviewer is
+**The workflow:**
+- **"Planning" is renamed "Designing"**, and the handover is an approved design
+  plus a human's **Send to development**. It is no longer a chat-written spec
+  (DEC-006). Draft 1 §12 item 2 is reversed: the spec author stays
+  orchestrated.
+- **Button names.** Draft 1's "Submit to development" is now **Send to
+  development**, and "Start" is now **Start building**. Both are timing
+  controls. "Exactly two moments where the system waits" is now "two routine
+  buttons".
+- **Development planning** is re-listed. There is no separate "Validation" step,
+  because validation runs on submission as it always has. The spec is written
+  by the spec author, and there is an optional hold for a human.
+- **Draft 1's per-run model override at Submit is dropped.** The send screen
+  shows models but doesn't change them. Per-role models stay configurable per
+  project. Say if the override is still wanted.
+- **Spec review is rewritten for DEC-006 Amendment 1**: the agent reviewer is
   the normal approver, humans raise issues, there is an optional hold, and
   there is always at least one reviewer.
-- **§5c is new.** It sets out what the chat agent may and may not do, by
-  consequence rather than by channel. This resolves Draft 1's contradiction
-  between "tell the chat agent to approve" and "the chat AI has no approve
-  tool".
-- **§6, planning and tracking, is new.** Draft 1 had these only as vocabulary.
-- **§4:** roadmaps are ordered milestones only (DESIGN-008 D-11), and features
-  and bugs are in the deliverable list.
-- **§7 is revised for the GitHub research.** Identity lives in front matter, and
-  location is free. Existing documents are adopted where they sit. The folder
-  scheme is only a default for new documents. *Save & commit* is the main
-  button.
-- **§9:** bugs have a dedicated triage queue, and GitHub-filed bugs come in.
-- **§10:** a spike's budget is a hard stop, with a project default.
-- **§12, working with GitHub, and §13, people, are new.**
-- **§16, the v1 line, is new.**
-- **Draft 1's §13 open questions are answered**, from the decisions of
-  2026-09-28:
-  - the ID and folder scheme (§7);
-  - Save & commit (§7);
-  - reviewer models for chat work (DEC-007 decision 10);
-  - bug triage (§9);
-  - the spike budget (§10);
-  - the formal decision records (DEC-006 and DEC-007 are written).
+- **Minor review findings** now become bug reports in the triage queue.
+  Draft 1 recorded them and dropped them.
+- **New subsections:** the cascade in §5, and §5c, what the chat agent may do.
+  §5c resolves Draft 1's contradiction between "tell the chat agent to approve"
+  and "the chat AI has no approve tool".
 
-  What remains is in §17.
+**The team:** the design reviewer's retirement is carried over from Draft 1,
+now marked as a proposal (§17a), because DEC-006 left it open.
+
+**Vocabulary and planning:**
+- **§6, planning and tracking, is new.** Draft 1 had these only as vocabulary.
+- **Specs are also written in chat, or come from bug reports.**
+- **Revision is described with successors throughout.** Approved documents are
+  never reopened.
+
+**Documents:**
+- **§7 is revised for the GitHub research.** Identity lives in front matter,
+  and location is free. Existing documents are adopted where they sit. The
+  folder scheme is only a default for new documents.
+- *Save & commit* is the main button, lands through the documents fast lane,
+  and has a defined author.
+- The ID table and the document revision scheme are new; parts are proposals.
+
+**Bugs, spikes and decisions:**
+- **§9, bugs:** a dedicated triage queue, GitHub-filed bugs come in, and there
+  is a proposed send path.
+- **§10, spikes:** the budget is a hard stop with a project default, and there
+  are proposals for who starts a spike and how a chat-run spike is bounded.
+  Draft 1's "anyone can run a spike" is kept, under DEC-007.
+- **§11, decisions:** amendments are now a recognised way to change a
+  decision.
+
+**New sections:** §12, working with GitHub; §13, people; §16, the v1 line;
+§17, open items. §14 has new entries: no unreviewed specs, no committing
+resources from chat, and no two-way GitHub sync.
+
+**Draft 1's §13 open questions are answered** from the decisions of
+2026-09-28:
+- the ID and folder scheme (§7);
+- Save & commit (§7);
+- reviewer models for chat-executed work (§5b, DEC-007 decision 10);
+- bug triage (§9);
+- the spike budget (§10);
+- the formal decision records (DEC-006 and DEC-007 are written).
+
+## 19. Consistency review
+
+Draft 2 was reviewed on 2026-09-28 by an independent agent that hadn't written
+it. The review was checked against DEC-004 to DEC-007, the roadmap decisions,
+DESIGN-008, SPEC-009 as built, and the GitHub research. It raised eleven major
+and nine minor findings. All twenty are addressed in this text:
+
+- **The two unflagged contradictions** are now marked as proposals for Sam's
+  ruling (§17a items 1 and 2):
+  - the design reviewer's retirement;
+  - the chat lock ban.
+- **The missing mechanics** are now written down:
+  - the hold step;
+  - what happens when the agent review is off;
+  - issues on unsent features;
+  - successor vocabulary;
+  - document revision IDs;
+  - the GitHub merge-order exception;
+  - the bug send path;
+  - who starts a spike.
+- **The v1 line** now places identity, the design reviewer and withdrawing a
+  send in named milestones.
+- **§18** now lists every change the review found missing.
