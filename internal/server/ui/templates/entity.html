@@ -16,7 +16,8 @@
 <div class="page-head">
   <div class="page-head-top">
     <span class="page-head-icon">
-      <svg class="icon icon-md icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+      {{$icon := .Kind}}{{if .Bug}}{{$icon = "bug"}}{{end}}
+      <svg class="icon icon-md icon-entity" data-entity="{{$icon}}" aria-hidden="true"><use href="#i-{{$icon}}"/></svg>
     </span>
     <div class="page-head-titles">
       <h1 class="t-page">{{template "ident" .PublicID}}{{.Title}}</h1>
@@ -138,6 +139,8 @@
 {{/* "Other" documents: the one rendered as the body is not repeated here
      (round 4 §2). The count stays, because a collapsed drawer needs a legible
      handle — one of the things round 4 deliberately kept. */}}
+{{template "bug-list" .}}
+
 {{with nonPrimary .Documents}}
 <details class="section" id="documents" open>
   <summary>
@@ -292,7 +295,10 @@
 
   {{/* A blocked action, and only a blocked action, gets its own card: it has to
        show the reason it is blocked, which a closed menu cannot do (round 4 §1). */}}
-  {{if eq .Kind "feature"}}{{template "send-card" .}}{{end}}
+  {{/* A bug's triage comes first; until it is accepted there is nothing to
+       send (SPEC-019 FR-2.5). */}}
+  {{if .Bug}}{{template "bug-triage-card" .}}{{end}}
+  {{if and (eq .Kind "feature") (or (not .Bug) (eq .Bug.Triage "accepted"))}}{{template "send-card" .}}{{end}}
   {{if and (eq .Kind "feature") .ShowStartCard}}
   <div class="rail-card">
     <div class="rail-card-body">
@@ -348,9 +354,13 @@
     <button class="menu-item" type="button" data-open-dialog="dlg-new-roadmap">
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-roadmap"/></svg>New roadmap here</button>
     {{end}}
-    {{if or (eq .Kind "feature") (eq .Kind "initiative")}}
+    {{if or (eq .Kind "feature") (eq .Kind "initiative")}}{{if or (not .Bug) (eq .Bug.Triage "accepted")}}
     <button class="menu-item" type="button" data-open-dialog="dlg-milestones">
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-add-to-milestone"/></svg>Add to a milestone…</button>
+    {{end}}{{end}}
+    {{if .CanReportBug}}
+    <button class="menu-item" type="button" data-open-dialog="dlg-report-bug">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-bug"/></svg>Report a bug…</button>
     {{end}}
 
     {{if .Editable}}
@@ -363,7 +373,7 @@
     <div class="menu-sep"></div>
     {{if and (eq .Kind "feature") .CanAbandon}}
     <button class="menu-item menu-item--danger" type="button" data-open-dialog="dlg-abandon">
-      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-abandon"/></svg>Abandon this feature</button>
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-abandon"/></svg>Abandon this {{if .Bug}}bug{{else}}feature{{end}}</button>
     {{end}}
     {{if eq .Kind "initiative"}}
     <button class="menu-item menu-item--danger" type="button" data-open-dialog="dlg-archive">
@@ -380,6 +390,7 @@
 
 {{define "entity-modals"}}
 {{template "adopt-modal" .}}
+{{template "bug-report-dialog" .}}
 {{if or (eq .Kind "project") (eq .Kind "initiative")}}{{template "plan-create-modals" .}}{{end}}
 {{if or (eq .Kind "feature") (eq .Kind "initiative")}}{{template "member-milestones-modal" .Membership}}{{end}}
 <dialog class="modal" id="dlg-estimate" aria-labelledby="t-estimate">
@@ -559,7 +570,7 @@
 {{if and (eq .Kind "feature") .CanAbandon}}
 <dialog class="modal" id="dlg-abandon" aria-labelledby="t-abandon">
   <div class="modal-head">
-    <h2 class="modal-title" id="t-abandon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-abandon"/></svg> Abandon this feature</h2>
+    <h2 class="modal-title" id="t-abandon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-abandon"/></svg> Abandon this {{if .Bug}}bug{{else}}feature{{end}}</h2>
     <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
   </div>
@@ -576,7 +587,7 @@
     </div>
     <div class="modal-foot">
       <button class="btn" type="button" data-close-dialog>Cancel</button>
-      <button class="btn btn--danger" type="submit">Abandon this feature</button>
+      <button class="btn btn--danger" type="submit">Abandon this {{if .Bug}}bug{{else}}feature{{end}}</button>
     </div>
   </form>
 </dialog>

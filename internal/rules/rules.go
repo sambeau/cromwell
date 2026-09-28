@@ -360,6 +360,17 @@ type DocSnap struct {
 type FeatureSnap struct {
 	ID    uuid.UUID
 	State lifecycle.FeatureState
+	// Kind is "feature" or "bug" (SPEC-019 SD-1): a bug's spec is its report.
+	Kind string
+}
+
+// SpecType is the document type that is this feature's spec: a bug's report,
+// or a feature's spec (SPEC-019 FR-4.2).
+func (f *FeatureSnap) SpecType() string {
+	if f != nil && f.Kind == "bug" {
+		return lifecycle.DocTypeBugReport
+	}
+	return lifecycle.DocTypeSpec
 }
 
 // Snapshot carries exactly the state a rule may consult. The server
@@ -420,7 +431,7 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 		// (DESIGN-005 §6, FR-10.1). This is in addition to queuing its review.
 		if snap.Doc.IsSuccessor && snap.Doc.OwnerType == "feature" && snap.OwnerFeature != nil &&
 			(snap.OwnerFeature.State == lifecycle.FeatActive || snap.OwnerFeature.State == lifecycle.FeatReview) &&
-			(snap.Doc.Type == "spec" || snap.Doc.Type == "dev_plan") {
+			lifecycle.IsContractType(snap.Doc.Type) {
 			actions = append(actions, MarkRevisionInFlight{
 				FeatureID: snap.OwnerFeature.ID, DocID: snap.Doc.ID, DocType: snap.Doc.Type,
 			})
@@ -437,7 +448,7 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 		// back to its author (SPEC-011 FR-3.1). The server decides whether
 		// the feature is sent and whether the round cap has been reached.
 		if e.Event == lifecycle.DocRequestChanges && snap.Doc != nil && snap.Doc.OwnerType == "feature" &&
-			(snap.Doc.Type == "spec" || snap.Doc.Type == "dev_plan") {
+			lifecycle.IsContractType(snap.Doc.Type) {
 			return []Action{ReviseAuthoredDocument{DocID: snap.Doc.ID, FeatureID: snap.Doc.OwnerID, DocType: snap.Doc.Type}}
 		}
 		return nil
@@ -475,7 +486,7 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 		// Contract documents approved while the feature is still forming:
 		// a dev-plan decomposes into tasks (before G1), and both spec and
 		// dev-plan approvals re-evaluate the now-two-part contract gate.
-		if f.State == lifecycle.FeatIdea && (snap.Doc.Type == "spec" || snap.Doc.Type == "dev_plan") {
+		if f.State == lifecycle.FeatIdea && lifecycle.IsContractType(snap.Doc.Type) {
 			var actions []Action
 			if snap.Doc.Type == "dev_plan" {
 				actions = append(actions, DecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID})
@@ -483,7 +494,7 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 			// An approved spec is what releases the dev-plan invariant. Without
 			// this the chain stalls one step past gate 1: G1 needs both halves
 			// of the contract and nothing would ever write the second.
-			if snap.Doc.Type == "spec" {
+			if lifecycle.IsSpecType(snap.Doc.Type) {
 				actions = append(actions, ReconcileAuthoring{OwnerType: "feature", OwnerID: f.ID})
 			}
 			actions = append(actions, EvaluateContractGate{FeatureID: f.ID})

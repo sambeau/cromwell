@@ -33,6 +33,10 @@ type Context struct {
 	TaskID       string
 	Commands     map[string]CommandSpec
 	Profile      map[string]bool // tool names this dispatch's role may call
+	// DispatchID and Role name the run, set by the dispatch loop, so a tool
+	// that records something — report_bug (SPEC-019 FR-3.3) — knows who did.
+	DispatchID string
+	Role       string
 }
 
 // InProfile reports whether the role may call the named tool. The outcome

@@ -78,6 +78,11 @@
         <svg class="icon" aria-hidden="true"><use href="#i-inbox"/></svg><span>Inbox</span>
         <span class="nav-count nav-count--attention" id="inbox-badge"
               hx-get="/ui/frag/inbox-badge" hx-trigger="sse:changed, load" hx-swap="innerHTML"></span></a>
+      {{/* The triage queue, with its own count (SPEC-019 FR-2.4, SD-12). */}}
+      <a class="nav-item" href="/ui/triage" {{if eq $a "triage"}}aria-current="page"{{end}}>
+        <svg class="icon" aria-hidden="true"><use href="#i-bug"/></svg><span>Triage</span>
+        <span class="nav-count" id="triage-badge"
+              hx-get="/ui/frag/triage-badge" hx-trigger="sse:changed, load" hx-swap="innerHTML"></span></a>
       <a class="nav-item" href="/ui/documents" {{if eq $a "documents"}}aria-current="page"{{end}}>
         <svg class="icon" aria-hidden="true"><use href="#i-document"/></svg><span>Documents</span></a>
       <a class="nav-item" href="/ui/work" {{if eq $a "work"}}aria-current="page"{{end}}>

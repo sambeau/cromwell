@@ -34,6 +34,21 @@ is met because the code looks like it should work; find the evidence.
 
 ## Mechanics
 
+## Verifying a bug
+
+When the specification is a **bug report**, its steps to reproduce are the
+heart of it. For the criterion "The defect no longer reproduces", the evidence
+is the reproduction followed against the fixed code — running the steps, or a
+test that encodes them and now passes — and saying what happened. "The code
+looks fixed" is not evidence. Check any other criteria the report lists in the
+usual way.
+
+## What is out of scope for your task
+
+If you notice a defect that isn't among the criteria you are checking, report
+it with `report_bug` and carry on; don't let it change your verdict on the
+criteria. A person decides in triage whether it is fixed.
+
 Call `submit_verification` once, with the `criteria` array (each with id,
 met, and evidence) and your overall verdict.
 

@@ -106,8 +106,30 @@ func toolDef(name string) (provider.ToolDef, bool) {
 				"args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extra arguments, if the command permits"},
 			}, "name"),
 		}, true
+	case "report_bug":
+		return ReportBugTool(), true
 	}
 	return provider.ToolDef{}, false
+}
+
+// ReportBugTool files a bug report in the triage queue mid-work (SPEC-019
+// FR-3.3). It is not an outcome tool: the agent carries on with its own task.
+// Whether the bug is fixed is a person's decision, made in triage.
+func ReportBugTool() provider.ToolDef {
+	return provider.ToolDef{
+		Name: "report_bug",
+		Description: "Report a defect you have noticed that is outside your own task: something broken that this task " +
+			"didn't ask you to change. It goes into the triage queue, where a person decides whether it is fixed. " +
+			"Don't fix it yourself, and don't let it change what you do for your task: report it, then carry on. " +
+			"Report only real defects, with steps someone else could follow; a run may file at most three.",
+		InputSchema: obj(map[string]any{
+			"title":    str("A short name for the defect, as a person would say it: \"Login accepts an empty password\""),
+			"steps":    str("How to make it happen, as numbered steps someone else could follow"),
+			"expected": str("What should happen"),
+			"actual":   str("What happens instead"),
+			"notes":    str("Optional: where in the code you saw it, a guess at the cause, a log line"),
+		}, "title", "steps", "expected", "actual"),
+	}
 }
 
 // ProfileToolDefs resolves a role's declared tool names to definitions,

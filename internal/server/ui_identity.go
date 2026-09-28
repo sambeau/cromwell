@@ -49,7 +49,7 @@ func (s *Server) urlForID(ctx context.Context, raw string) (string, error) {
 			}
 			path, err := s.initiativePath(ctx, in.ID)
 			return "/ui/i/" + path, err
-		case "feature":
+		case "feature", "bug":
 			f, err := store.FeatureByPublicID(ctx, pool, ref.ID)
 			if err != nil {
 				return "", ignoreNotFound(err)

@@ -34,3 +34,13 @@ description: Procedure for implementing one task from a dev-plan in a worktree
 Call `submit_implementation` once, with a summary of what you changed and the
 list of files. The summary is what the code reviewer reads first — make it
 tell them what to look for. Do not call it until the code builds.
+
+## What is out of scope for your task
+
+You will sometimes notice a defect that this task didn't ask you to touch:
+a bug in code nearby, a wrong message, a missing check. **Don't fix it in
+passing**, and don't let it change what you do for your task. Report it with
+`report_bug` — a title, steps someone else could follow, what should happen
+and what happens instead — and carry on. It goes into the triage queue, where
+a person decides whether it is fixed. Report only real defects you can
+describe; a run may file at most three.

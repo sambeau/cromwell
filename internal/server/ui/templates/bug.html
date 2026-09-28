@@ -1,0 +1,251 @@
+{{/* Bugs (SPEC-019): the triage queue, the triage card on a bug's page, the
+     open bugs on an initiative's or feature's page, and the report dialog.
+     Anyone reports a bug; a person decides whether it is fixed. Every form
+     posts to a service method the chat agent's tools also call. */}}
+
+{{/* ---------- The triage queue (FR-2.3) ---------- */}}
+
+{{define "page-triage"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">Triage</h1>
+      <div class="page-head-meta"><span class="count-pill">{{len .Queue}}</span> <span class="t-meta">waiting</span></div>
+    </div>
+  </div>
+  <p class="page-lede">Bugs anyone has reported, waiting for a person to decide whether they are fixed. Accepting one
+     makes it committed work, which can then be sent to development from its page. Rejecting one, or marking it as a
+     duplicate, closes it.</p>
+</div>
+
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg>
+  <div>{{.Notice}}</div>
+</div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg>
+  <div>{{.Error}}</div>
+</div>
+{{end}}
+
+<div class="u-mt-4" id="triage-queue">
+{{if .Queue}}
+  {{range .Queue}}
+  <article class="checkpoint bug-report" id="bug-{{.PublicID}}">
+    <div class="checkpoint-head">
+      <svg class="icon icon-lg icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg>
+      <div>
+        <h2 class="checkpoint-question"><a href="{{.URL}}">{{template "ident" .PublicID}}{{.Title}}</a></h2>
+        <p class="t-meta u-mt-2">{{.ReportedBy}} {{ago .ReportedAt}} ago, on {{if .OriginName}}<a href="{{.OriginURL}}">{{.OriginName}}</a>, under {{end}}{{.HangsOn}}.</p>
+      </div>
+    </div>
+    <div class="checkpoint-context">
+      {{template "bug-report-summary" .}}
+    </div>
+    {{template "triage-actions" (triageFor . "queue")}}
+  </article>
+  {{end}}
+{{else}}
+  <section class="panel">
+    <div class="panel-body">
+      <div class="empty">
+        <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-check"/></svg></span>
+        <p class="empty-title">Nothing is waiting for triage</p>
+        <p class="empty-text">When someone reports a bug — a person here, the chat agent, or an agent at work — it waits here for a decision.</p>
+      </div>
+    </div>
+  </section>
+{{end}}
+</div>
+
+{{if .Recent}}
+<details class="section u-mt-6" id="recently-triaged" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-activity"/></svg>
+    <span class="section-title">Recently triaged</span>
+    <span class="section-summary"><span class="count-pill">{{len .Recent}}</span></span>
+  </summary>
+  <div class="section-body section-body--flush">
+    <div class="rows">
+      {{range .Recent}}
+      <a class="row row--edge" data-state="{{if eq .Triage "accepted"}}ready{{else}}abandoned{{end}}" href="{{.URL}}">
+        <svg class="icon icon-sm icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg>
+        <span class="row-main">
+          <span class="row-title">{{template "ident" .PublicID}}{{.Title}}</span>
+          <span class="row-sub">{{.DecidedWord}} by {{.DecidedBy}}{{if .DecidedAt}}, {{ago .DecidedAt}} ago{{end}}.{{if .DupOf}} It repeats {{.DupOf}}.{{else if .Reason}} {{.Reason}}{{end}}{{if .Quote}} Their words: “{{.Quote}}”{{end}}</span>
+        </span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</details>
+{{end}}
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+{{define "frag-triage-badge"}}{{if .}}{{.}}{{end}}{{end}}
+
+{{define "frag-triage-line"}}{{if .}}
+<div class="banner banner--info" role="status">
+  <svg class="icon icon-md icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg>
+  <div>{{.}} <a href="/ui/triage">Open the triage queue</a>.</div>
+</div>
+{{end}}{{end}}
+
+{{/* What the report says, in three lines: the summary, what should happen, and
+     what happens instead. */}}
+{{define "bug-report-summary"}}
+<dl class="bug-summary">
+  {{if .Summary}}<dt class="t-label">Summary</dt><dd>{{.Summary}}</dd>{{end}}
+  {{if .Expected}}<dt class="t-label">Expected</dt><dd>{{.Expected}}</dd>{{end}}
+  {{if .Actual}}<dt class="t-label">Actual</dt><dd class="bug-summary-actual">{{.Actual}}</dd>{{end}}
+</dl>
+{{if .ReportURL}}<p class="t-meta u-mt-2"><a href="{{.ReportURL}}">Read the whole report</a>, with its steps to reproduce.</p>{{end}}
+{{end}}
+
+{{/* The three decisions. Each says what it will do, because a decision about
+     scope deserves a sentence (D-6). */}}
+{{define "triage-actions"}}
+{{$c := .Card}}
+<div class="checkpoint-answers triage-actions">
+  <form method="post" action="/ui/bugs/triage">
+    <input type="hidden" name="bug_id" value="{{$c.ID}}">
+    <input type="hidden" name="from" value="{{.From}}">
+    <input type="hidden" name="decision" value="accept">
+    <button class="answer" type="submit">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-approve"/></svg>
+      <span><b>Accept it</b><span class="answer-consequence">It becomes committed work. Nothing starts until someone sends it to development.</span></span>
+    </button>
+  </form>
+  <form method="post" action="/ui/bugs/triage" class="triage-with-field">
+    <input type="hidden" name="bug_id" value="{{$c.ID}}">
+    <input type="hidden" name="from" value="{{.From}}">
+    <input type="hidden" name="decision" value="reject">
+    <label class="field-label" for="reject-{{$c.PublicID}}">Why it won't be fixed</label>
+    <input class="input" id="reject-{{$c.PublicID}}" name="reason" required placeholder="It works as intended, because…">
+    <button class="btn" type="submit">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-request-changes"/></svg>Reject it</button>
+  </form>
+  <form method="post" action="/ui/bugs/triage" class="triage-with-field">
+    <input type="hidden" name="bug_id" value="{{$c.ID}}">
+    <input type="hidden" name="from" value="{{.From}}">
+    <input type="hidden" name="decision" value="duplicate">
+    <label class="field-label" for="dup-{{$c.PublicID}}">The bug it repeats</label>
+    <input class="input" id="dup-{{$c.PublicID}}" name="duplicate_of" required placeholder="BUG-004">
+    <button class="btn" type="submit">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-copy-path"/></svg>Mark as a duplicate</button>
+  </form>
+</div>
+{{end}}
+
+{{/* ---------- On a bug's page: its triage (FR-2.5) ---------- */}}
+
+{{define "bug-triage-card"}}
+{{with .Bug}}
+<div class="rail-card" id="triage">
+  <div class="rail-card-body">
+    <div class="rail-field">
+      <span class="rail-field-label">Triage</span>
+      <span class="rail-field-value">{{.DecidedWord}}</span>
+      <p class="t-meta">{{.ReportedBy}}</p>
+      {{if .OriginName}}<p class="t-meta">Reported on <a href="{{.OriginURL}}">{{.OriginName}}</a>.</p>{{end}}
+    </div>
+    {{if eq .Triage "reported"}}
+    <p class="t-meta u-mt-2">A person decides whether this is fixed. Until then nothing runs on it, and it can't be sent to development.</p>
+    <a class="btn btn--sm btn--block u-mt-2" href="/ui/triage#bug-{{.PublicID}}">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-bug"/></svg>Triage it</a>
+    {{else}}
+    <div class="rail-divider"></div>
+    <p class="t-meta">{{.DecidedWord}} by {{.DecidedBy}}{{if .DecidedAt}}, {{ago .DecidedAt}} ago{{end}}.</p>
+    {{if .DupOf}}<p class="t-meta">It repeats <a href="{{.DupOfURL}}">{{.DupOf}}</a>.</p>{{else if .Reason}}<p class="t-meta">{{.Reason}}</p>{{end}}
+    {{if .Quote}}<p class="t-meta">Their words, relayed from chat: “{{.Quote}}”</p>{{end}}
+    {{end}}
+  </div>
+</div>
+{{end}}
+{{end}}
+
+{{/* ---------- Open bugs on an initiative or feature (FR-5.2) ---------- */}}
+
+{{define "bug-list"}}
+{{with .Bugs}}
+<details class="section" id="bugs" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg>
+    <span class="section-title">Bugs</span>
+    <span class="section-summary"><span class="count-pill">{{len .}}</span></span>
+  </summary>
+  <div class="section-body section-body--flush">
+    <div class="rows">
+      {{range .}}
+      <a class="row row--edge" data-state="{{.State}}" href="{{.URL}}">
+        <svg class="icon icon-sm icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg>
+        <span class="row-main">
+          <span class="row-title">{{template "ident" .PublicID}}{{.Title}}</span>
+          <span class="row-sub">{{if eq .Triage "reported"}}Waiting for triage{{else}}Accepted{{end}}</span>
+        </span>
+        <span class="row-end">{{if ne .Triage "reported"}}{{template "state-badge" .State}}{{end}}</span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</details>
+{{end}}
+{{end}}
+
+{{/* ---------- Reporting a bug (FR-3.1) ---------- */}}
+
+{{define "bug-report-dialog"}}
+{{if .CanReportBug}}
+<dialog class="modal" id="dlg-report-bug" aria-labelledby="t-report-bug">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-report-bug"><svg class="icon icon-md icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg> Report a bug</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/bugs">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">The bug is filed on {{.Title}} with a report written from what you say here, and waits in the triage queue until someone decides whether it is fixed.</p>
+        <div class="field">
+          <label class="field-label" for="bug-title">Title</label>
+          <input class="input" id="bug-title" name="title" required placeholder="Login accepts an empty password">
+        </div>
+        <div class="field">
+          <label class="field-label" for="bug-steps">Steps to reproduce</label>
+          <textarea class="textarea" id="bug-steps" name="steps" rows="4" required placeholder="One step per line"></textarea>
+          <p class="field-hint">Steps someone else could follow. Each line becomes a numbered step.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="bug-expected">What should happen</label>
+          <textarea class="textarea" id="bug-expected" name="expected" rows="2" required></textarea>
+        </div>
+        <div class="field">
+          <label class="field-label" for="bug-actual">What happens instead</label>
+          <textarea class="textarea" id="bug-actual" name="actual" rows="2" required></textarea>
+        </div>
+        <div class="field">
+          <label class="field-label" for="bug-notes">Notes <span class="t-meta">(optional)</span></label>
+          <textarea class="textarea" id="bug-notes" name="notes" rows="2"></textarea>
+        </div>
+      </div>
+      <input type="hidden" name="owner_type" value="{{.RefType}}">
+      <input type="hidden" name="owner_id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Report the bug</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+{{end}}

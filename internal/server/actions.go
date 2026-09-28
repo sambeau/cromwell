@@ -52,7 +52,7 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		if doc.OwnerType == "feature" && doc.OwnerID != nil {
 			f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID)
 			if err == nil {
-				snap.OwnerFeature = &rules.FeatureSnap{ID: f.ID, State: f.State}
+				snap.OwnerFeature = &rules.FeatureSnap{ID: f.ID, State: f.State, Kind: f.Kind}
 			} else if err != store.ErrNotFound {
 				return err
 			}
@@ -88,7 +88,7 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		if err != nil {
 			return err
 		}
-		snap.RefFeature = &rules.FeatureSnap{ID: f.ID, State: f.State}
+		snap.RefFeature = &rules.FeatureSnap{ID: f.ID, State: f.State, Kind: f.Kind}
 		return nil
 	}
 
@@ -255,7 +255,7 @@ func (s *Server) queueReview(ctx context.Context, a rules.QueueReview) error {
 	// With agent spec review switched off, a submitted spec is held for a
 	// person rather than reviewed (FR-5.3). A person's request is the one
 	// exception: a one-off review, whose approval is held again.
-	if a.DocType == "spec" && !a.Fresh && !cfg.AgentSpecReview() {
+	if lifecycle.IsSpecType(a.DocType) && !a.Fresh && !cfg.AgentSpecReview() {
 		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			return store.SetDocumentHold(ctx, tx, a.DocID, nil, "orchestrator",
 				"agent review is switched off for this project, so the spec waits for a person")
@@ -500,7 +500,7 @@ func (s *Server) returnForChangesAs(ctx context.Context, a rules.ReturnForChange
 		for _, c := range a.Comments {
 			// A person sending a spec or plan back — on an escalation — raises
 			// an issue: their objection must be addressed (SPEC-011 SD-15).
-			if a.DispatchID == nil && (doc.Type == "spec" || doc.Type == "dev_plan") {
+			if a.DispatchID == nil && lifecycle.IsContractType(doc.Type) {
 				if _, err := store.InsertIssue(ctx, tx, doc.ID, a.Actor, c.SectionRef, c.Body, "ui", ""); err != nil {
 					return err
 				}
@@ -644,7 +644,7 @@ func (s *Server) evaluateContractGate(ctx context.Context, featureID uuid.UUID) 
 		return nil
 	}
 	specApproved := false
-	spec, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", f.ID)
+	spec, err := store.CurrentDocForOwner(ctx, s.Store.Pool, specTypeOf(f), "feature", f.ID)
 	if err != nil && err != store.ErrNotFound {
 		return err
 	}

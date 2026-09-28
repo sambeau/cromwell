@@ -80,7 +80,9 @@ type mcpTool struct {
 // SPEC-011 and SPEC-014 (mcpRelayTools, which carry a person's quoted decision
 // and never send or start building), submit_for_review beside them (SPEC-017
 // FR-1: the chat agent hands in its own draft, and the reviewer decides), and
-// the two read-only tools of SPEC-017 FR-4 (mcpObserveTools), and nothing else. A
+// the two read-only tools of SPEC-017 FR-4 (mcpObserveTools), the bug tools of
+// SPEC-019 FR-6 (mcpBugTools: report and read, and relay a person's triage
+// decision with their words), and nothing else. A
 // development-side or gate tool would have to be added here to exist at all,
 // which is what makes the line reviewable.
 func (s *Server) mcpTools() []mcpTool {
@@ -210,7 +212,7 @@ func (s *Server) mcpTools() []mcpTool {
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
-	}, append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...)...)
+	}, append(append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...), s.mcpBugTools()...)...)
 }
 
 // mcpToolNames is the sorted list of advertised tool names — the assertion
@@ -308,6 +310,8 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				"decisions on documents — a verdict, an issue, a request for an agent review, or " +
 				"letting the reviewer decide on a held specification — and their word that a job is " +
 				"done (relay_tick_job), always quoting their words; " +
+				"you can report bugs and read them (report_bug, list_bugs, get_bug), and carry a person's " +
+				"decision to accept or reject one (relay_triage), quoting them — whether a bug is fixed is theirs; " +
 				"you hold no verdict of your own. You cannot send work to development, start " +
 				"building, override a gate or answer the Inbox — a person does " +
 				"those from the command centre.",

@@ -90,6 +90,9 @@ func stampIdentity(body, id string, revision int) (string, error) {
 // the caller's transaction: the row, its ID if it has one, and its section
 // index, all together.
 func registerInTx(ctx context.Context, tx pgx.Tx, path string, raw []byte, docType, ownerType string, ownerID, supersedes *uuid.UUID, publicID string, revision int, actor string, by writerAct) (*store.Document, error) {
+	if err := checkContractOwner(ctx, tx, docType, ownerType, ownerID); err != nil {
+		return nil, err
+	}
 	parsed, perr := content.Parse(string(raw))
 	title := path
 	if perr == nil {
@@ -441,7 +444,7 @@ func (s *Server) checkAdoptRequest(ctx context.Context, req AdoptRequest) error 
 	default:
 		return errors.New("A file is adopted as a draft or as already approved.")
 	}
-	if req.DocType == "spec" || req.DocType == "dev_plan" {
+	if lifecycle.IsContractType(req.DocType) {
 		if req.OwnerType != "feature" || req.OwnerID == nil {
 			return fmt.Errorf("A %s belongs to a feature.", strings.ReplaceAll(req.DocType, "_", "-"))
 		}
@@ -973,7 +976,8 @@ func (s *Server) initiativeByRef(ctx context.Context, ref string) (*store.Initia
 // featureByRef resolves a feature from its path ("auth/login") or its ID
 // ("FEAT-023"), returning its path either way.
 func (s *Server) featureByRef(ctx context.Context, ref string) (*store.Feature, string, error) {
-	if r, ok := ident.Parse(ref); ok && r.Shape == ident.ShapeEntity && r.Kind.Name == "feature" && ref == r.ID {
+	// A bug is a feature row, so its ID resolves here too (SPEC-019 SD-1).
+	if r, ok := ident.Parse(ref); ok && r.Shape == ident.ShapeEntity && (r.Kind.Name == "feature" || r.Kind.Name == "bug") && ref == r.ID {
 		f, err := store.FeatureByPublicID(ctx, s.Store.Pool, r.ID)
 		if err != nil {
 			return nil, ref, err

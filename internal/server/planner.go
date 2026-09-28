@@ -390,6 +390,7 @@ func (s *Server) contractBodies(ctx context.Context, featureID uuid.UUID) (spec,
 }
 
 func (s *Server) contractBody(ctx context.Context, featureID uuid.UUID, docType string) string {
+	docType = s.contractDocType(ctx, featureID, docType) // a bug's spec is its report (SPEC-019 FR-4.6)
 	d, err := store.CurrentApprovedDocForOwner(ctx, s.Store.Pool, docType, "feature", featureID)
 	if err != nil {
 		if d, err = store.CurrentDocForOwner(ctx, s.Store.Pool, docType, "feature", featureID); err != nil {
@@ -456,7 +457,7 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 	if err != nil {
 		return nil, err
 	}
-	docType := "spec"
+	docType := specTypeOf(f) // a bug's is its report, revised when sent back (SPEC-019 SD-7)
 	if d.Purpose == "write-dev-plan" {
 		docType = "dev_plan"
 	}
@@ -471,7 +472,7 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 
 	var b strings.Builder
 	b.WriteString("# Project\n\n" + filepath.Base(s.RepoRoot) + "\n")
-	b.WriteString("\n# The feature to write for\n\n")
+	b.WriteString("\n# The " + bugOrFeature(f) + " to write for\n\n")
 	fmt.Fprintf(&b, "%s (%s), under initiative %s\n", f.Name, f.Slug, path)
 	if f.Description != "" {
 		b.WriteString("\n" + strings.TrimSpace(f.Description) + "\n")
@@ -483,7 +484,11 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 	if err != nil {
 		return nil, err
 	}
-	if len(designs) == 0 {
+	if f.IsBug() {
+		// A bug's report is its spec, and translates no design (SPEC-019 SD-7).
+		designs = nil
+		b.WriteString("\n" + bugAuthorNote + "\n")
+	} else if len(designs) == 0 {
 		b.WriteString("\n# Design\n\nNo approved design is attached. Write only what the feature's description and the documents below support, and put anything you had to decide into Open questions.\n")
 	}
 	for _, dd := range designs {
@@ -518,6 +523,8 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 		switch r.Kind {
 		case "min_list_items":
 			fmt.Fprintf(&b, "\n%s must contain at least %d list item(s).\n", r.Section, r.Min)
+		case "contains_text":
+			fmt.Fprintf(&b, "\n%s must have a list item that starts %q.\n", r.Section, r.Text)
 		case "table_parses":
 			fmt.Fprintf(&b, "\n%s must be a Markdown table with these columns, in order: %s. The engine parses this table into real tasks, so the ids and the column names are load-bearing.\n",
 				r.Section, strings.Join(r.Columns, ", "))

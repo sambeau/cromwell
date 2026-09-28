@@ -148,6 +148,13 @@ type entityPage struct {
 	// replaces Activity, whose events it carries as its detail level (SD-7).
 	Timeline *timelineView
 
+	// Bugs (SPEC-019 FR-2.5, FR-5.1, FR-5.2): the triage card on a bug's
+	// page, the open bugs hanging off this initiative or feature, and
+	// whether a bug can be reported here.
+	Bug          *bugCard
+	Bugs         []bugRow
+	CanReportBug bool
+
 	Notice string
 	Error  string
 }
@@ -571,6 +578,9 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 	if page.Activity, err = s.Store.AuditTail(ctx, "initiative", &in.ID, 10); err != nil {
 		return nil, err
 	}
+	if err := s.bugPageParts(ctx, page); err != nil {
+		return nil, err
+	}
 	return page, nil
 }
 
@@ -627,6 +637,9 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 	if page.Timeline, err = s.featureTimeline(ctx, f.ID); err != nil {
 		return nil, err
 	}
+	if err := s.bugPageParts(ctx, page); err != nil {
+		return nil, err
+	}
 	return page, nil
 }
 
@@ -636,6 +649,7 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 // approved, matching evaluateContractGate's reading: a missing document is not
 // an error, it is simply not approved.
 func (s *Server) currentDocApproved(ctx context.Context, docType string, featureID uuid.UUID) bool {
+	docType = s.contractDocType(ctx, featureID, docType) // a bug's spec is its report
 	d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, docType, "feature", featureID)
 	return err == nil && d.State == lifecycle.DocApproved
 }

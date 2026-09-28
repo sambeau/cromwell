@@ -295,6 +295,8 @@ func planError(err error) string {
 	switch {
 	case errors.Is(err, store.ErrMilestoneCycle):
 		return "A milestone can't contain itself, directly or through another milestone inside it."
+	case errors.Is(err, store.ErrBugNotAccepted):
+		return "That bug hasn't been accepted in triage, so it isn't committed work yet. Accept it first."
 	case errors.Is(err, store.ErrNotFound):
 		return "That is no longer there. The page may be out of date, so reload it and try again."
 	case strings.Contains(err.Error(), "membership is frozen"):

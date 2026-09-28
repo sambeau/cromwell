@@ -66,6 +66,8 @@ func runPurpose(purpose, label string) string {
 		return "Reviewing the specification" + about
 	case "review-dev_plan":
 		return "Reviewing the development plan" + about
+	case "review-bug_report":
+		return "Reviewing the bug report" + about
 	case "review-design":
 		return "Commenting on the design" + about
 	case "implement-task":

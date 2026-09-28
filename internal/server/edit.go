@@ -143,7 +143,7 @@ func (s *Server) editRefusal(ctx context.Context, doc *store.Document) string {
 // so an edit here would only start that (SD-11, R16-4). While the Inbox asks
 // whether to allow the author another round, the person may take it over.
 func (s *Server) authorDueRefusal(ctx context.Context, doc *store.Document) string {
-	if doc.OwnerType != "feature" || doc.OwnerID == nil || (doc.Type != "spec" && doc.Type != "dev_plan") {
+	if doc.OwnerType != "feature" || doc.OwnerID == nil || !lifecycle.IsContractType(doc.Type) {
 		return ""
 	}
 	if doc.State != lifecycle.DocDraft && doc.State != lifecycle.DocReviewing {
@@ -172,7 +172,7 @@ func (s *Server) authorDueRefusal(ctx context.Context, doc *store.Document) stri
 // revision means for work in flight, and withdrawing it would leave that
 // question about a submission that no longer exists (R16-6).
 func (s *Server) revisionInFlightRefusal(ctx context.Context, doc *store.Document) string {
-	if doc.SupersedesID == nil || doc.OwnerType != "feature" || doc.OwnerID == nil || (doc.Type != "spec" && doc.Type != "dev_plan") {
+	if doc.SupersedesID == nil || doc.OwnerType != "feature" || doc.OwnerID == nil || !lifecycle.IsContractType(doc.Type) {
 		return ""
 	}
 	if !s.pendingKindOn(ctx, "revision-in-flight", "feature", *doc.OwnerID) {
@@ -572,7 +572,7 @@ func (s *Server) editWarnings(ctx context.Context, doc *store.Document) []string
 		}
 		out = append(out, w)
 	}
-	if doc.State == lifecycle.DocDraft && (doc.Type == "spec" || doc.Type == "dev_plan") && doc.OwnerType == "feature" && doc.OwnerID != nil {
+	if doc.State == lifecycle.DocDraft && lifecycle.IsContractType(doc.Type) && doc.OwnerType == "feature" && doc.OwnerID != nil {
 		// A sent feature's draft that waits for its author is refused
 		// (authorDueRefusal), unless the Inbox asks about another round.
 		if waits, err := s.waitsForAuthor(ctx, doc); err == nil && waits {
@@ -585,7 +585,7 @@ func (s *Server) editWarnings(ctx context.Context, doc *store.Document) []string
 	}
 	words := docTypeWords(doc.Type)
 	switch {
-	case doc.OwnerType == "feature" && doc.OwnerID != nil && (doc.Type == "spec" || doc.Type == "dev_plan"):
+	case doc.OwnerType == "feature" && doc.OwnerID != nil && lifecycle.IsContractType(doc.Type):
 		f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID)
 		if err != nil {
 			break
@@ -666,7 +666,7 @@ func (s *Server) revisionNotes(ctx context.Context, doc *store.Document) []strin
 	switch doc.Type {
 	case "design":
 		notes = append(notes, "Approving a revised design starts the cascade. Subutai finds the approved specifications written from this design. If there is one, it is superseded, or, for a feature being built, rewritten as a revision; if there are several, one question in the Inbox asks, spec by spec, whether to keep or redo each. A feature not yet sent to development is left without a specification until it is sent.")
-	case "spec":
+	case "spec", "bug_report":
 		if doc.OwnerType == "feature" && doc.OwnerID != nil {
 			if f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID); err == nil && (f.State == lifecycle.FeatIdea || f.State == lifecycle.FeatReady) {
 				notes = append(notes, "Approving a revised specification also supersedes this feature's approved plan, so the plan is written again, and a feature that was ready to build goes back to waiting for it.")

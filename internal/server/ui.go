@@ -92,8 +92,11 @@ var uiFuncs = template.FuncMap{
 	"verbIcon":        verbIcon,
 	"verbConsequence": verbConsequence,
 	"add":             func(a, b int) int { return a + b },
-	"inc":             func(i int) int { return i + 1 },
-	"dec":             func(i int) int { return i - 1 },
+	// triageFor carries a bug's card and where its triage form was posted
+	// from, so the decision returns there (SPEC-019 FR-2.3, FR-2.5).
+	"triageFor": func(c bugCard, from string) map[string]any { return map[string]any{"Card": c, "From": from} },
+	"inc":       func(i int) int { return i + 1 },
+	"dec":       func(i int) int { return i - 1 },
 	// nonPrimary drops the document that is already rendered as the page body,
 	// so the Documents section lists the *other* documents rather than repeating
 	// the one you are looking at (design round 4 §2).
@@ -325,6 +328,10 @@ func eventLabel(v any) string {
 		return "merged this feature"
 	case "feature.spec_stale":
 		return "flagged the specification as out of date"
+	case "bug.reported":
+		return "reported this bug"
+	case "bug.triaged":
+		return "triaged this bug"
 	case "task.created":
 		return "added a task"
 	case "task.deleted":
@@ -483,7 +490,7 @@ func docIcon(v any) string {
 	switch str(v) {
 	case "design":
 		return "doc-design"
-	case "spec":
+	case "spec", "bug_report":
 		return "doc-spec"
 	case "dev_plan":
 		return "doc-devplan"
@@ -601,6 +608,8 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 		http.Redirect(w, r, "/ui", http.StatusFound)
 	})
 	mux.HandleFunc("GET /ui/inbox", s.handleUIInbox)
+	// The triage queue (SPEC-019 FR-2.3).
+	mux.HandleFunc("GET /ui/triage", s.handleUITriage)
 	mux.HandleFunc("GET /ui/documents", s.handleUIDocuments)
 	mux.HandleFunc("GET /ui/work", s.handleUIWork)
 	// The verb-shaped Planning view and the money-denominated Cost view are
@@ -677,6 +686,10 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/document/request-review", s.handleDocRequestReview)
 	mux.HandleFunc("POST /ui/document/release", s.handleDocRelease)
 	mux.HandleFunc("POST /ui/feature/abandon", s.handleEntityFeatureAbandon)
+	// Bugs (SPEC-019): report one from an initiative's or feature's page, and
+	// triage it from the queue or its own page.
+	mux.HandleFunc("POST /ui/bugs", s.handleUIReportBug)
+	mux.HandleFunc("POST /ui/bugs/triage", s.handleUITriageDecide)
 	mux.HandleFunc("POST /ui/feature/new", s.handleEntityFeatureCreate)
 	mux.HandleFunc("POST /ui/initiative/new", s.handleEntityInitiativeCreate)
 	mux.HandleFunc("POST /ui/initiative/archive", s.handleEntityInitiativeArchive)
@@ -706,6 +719,8 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/frag/calibration", s.handleFragCalibration)
 	mux.HandleFunc("GET /ui/frag/inbox", s.handleFragInbox)
 	mux.HandleFunc("GET /ui/frag/inbox-badge", s.handleFragInboxBadge)
+	mux.HandleFunc("GET /ui/frag/triage-badge", s.handleFragTriageBadge)
+	mux.HandleFunc("GET /ui/frag/triage-line", s.handleFragTriageLine)
 	mux.HandleFunc("GET /ui/frag/timeline", s.handleFragTimeline)
 	mux.HandleFunc("GET /ui/frag/run/{id}", s.handleFragRunProgress)
 	mux.HandleFunc("GET /ui/frag/review-health", s.handleFragReviewHealth)

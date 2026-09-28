@@ -83,9 +83,12 @@ type ApproveTaskCode struct {
 	TaskID uuid.UUID
 	Actor  string
 	// DroppedMinor are findings the reviewer raised that were not major
-	// enough to send the work back. They are audited so a later
-	// retrospective can pick them up rather than losing them (audit §3.3a).
+	// enough to send the work back. They are audited, and filed as one bug
+	// report in the triage queue (DESIGN-010 §5, SPEC-019 SD-9).
 	DroppedMinor []ReviewComment
+	// DispatchID is the approving review's run, when an agent approved: the
+	// bug its minor findings become is reported by it (SPEC-019 FR-3.4).
+	DispatchID *uuid.UUID
 }
 
 func (ApproveTaskCode) ActionKind() string { return "approve_task_code" }
@@ -262,7 +265,9 @@ func decideDispatchSucceededPhase2(purpose string, dispatchID uuid.UUID, actor s
 			return []Action{unparseableCheckpoint("feature", snap.RefFeature.ID, dispatchID,
 				fmt.Errorf("authoring outcome had no document body"))}, true
 		}
-		docType := "spec"
+		// write-spec writes the feature's spec, which for a bug is its
+		// report: the spec author revises one sent back (SPEC-019 SD-7).
+		docType := snap.RefFeature.SpecType()
 		if purpose == "write-dev-plan" {
 			docType = "dev_plan"
 		}
@@ -296,7 +301,7 @@ func decideDispatchSucceededPhase2(purpose string, dispatchID uuid.UUID, actor s
 			// Minor findings are dropped from the loop but not from the
 			// record: they are what a later retrospective picks up.
 			return []Action{ApproveTaskCode{
-				TaskID: snap.Task.ID, Actor: actor, DroppedMinor: o.MinorComments(),
+				TaskID: snap.Task.ID, Actor: actor, DroppedMinor: o.MinorComments(), DispatchID: &id,
 			}}, true
 		case "request_changes":
 			// The cap catches the case severity gating cannot: reviewer and

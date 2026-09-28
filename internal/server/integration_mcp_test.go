@@ -154,6 +154,16 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// authoring-safe under DEC-004 (the M6 handoff's follow-up 1).
 		"get_agent_run",
 		"get_timeline",
+		// SPEC-019 FR-6: bugs. Reporting one is planning authoring under
+		// DEC-004 — it creates an idea and commits nothing — so report_bug
+		// takes no quote; list_bugs and get_bug are reads.
+		"get_bug",
+		"list_bugs",
+		"report_bug",
+		// relay_triage carries a person's triage decision with their words:
+		// the relay DESIGN-010 §17a item 6 allowed (SD-11). The chat agent
+		// has no triage decision of its own.
+		"relay_triage",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -174,6 +184,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-017 NFR-2: the chat agent holds no verdict of its own, and the
 		// dispatched authors' outcome tool is never offered to it.
 		"approve_document", "submit_document", "submit_review",
+		// SPEC-019 FR-6.4: triage is a person's decision, carried only with
+		// their words, and a bug is sent only from the web UI.
+		"accept_bug", "reject_bug", "triage_bug", "send_bug",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

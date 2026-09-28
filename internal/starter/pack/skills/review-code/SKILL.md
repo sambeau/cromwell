@@ -58,3 +58,13 @@ The verdict follows from the findings; it is not a separate judgement.
 
 Complete the review by calling `submit_review` exactly once, with comments in
 the `comments` array.
+
+## What is out of scope for your task
+
+You will sometimes notice a defect that this task's diff didn't cause:
+a bug in code nearby, a wrong message, a missing check. **Don't fix it in
+passing**, and don't hold this task's verdict hostage to it: judge the diff against its task. Report it with
+`report_bug` — a title, steps someone else could follow, what should happen
+and what happens instead — and carry on. It goes into the triage queue, where
+a person decides whether it is fixed. Report only real defects you can
+describe; a run may file at most three.

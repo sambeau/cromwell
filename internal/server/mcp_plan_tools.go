@@ -81,11 +81,19 @@ func (s *Server) mcpMemberArg(ctx context.Context, args map[string]any) (string,
 	}
 	switch memberType {
 	case "feature":
-		f, err := s.featureByPath(ctx, ref)
+		f, _, err := s.featureByRef(ctx, ref)
 		if err != nil {
 			return "", uuid.Nil, "", fmt.Errorf("there is no feature at %q; call get_tree to see what exists", ref)
 		}
 		return memberType, f.ID, f.Name, nil
+	case "bug":
+		// A bug is a feature row and is stored as one; "bug" is only the
+		// name the tool takes (SPEC-019 SD-13).
+		b, err := s.bugByRef(ctx, ref)
+		if err != nil {
+			return "", uuid.Nil, "", err
+		}
+		return "feature", b.Feature.ID, b.Feature.PublicID + " " + b.Feature.Name, nil
 	case "initiative":
 		in, err := s.Store.InitiativeBySlugPath(ctx, strings.Split(ref, "/"))
 		if err != nil {
@@ -105,7 +113,7 @@ func (s *Server) mcpMemberArg(ctx context.Context, args map[string]any) (string,
 		}
 		return memberType, c.ID, c.Name, nil
 	}
-	return "", uuid.Nil, "", fmt.Errorf("member_type must be \"feature\", \"initiative\", \"checklist\" or \"milestone\", not %q", memberType)
+	return "", uuid.Nil, "", fmt.Errorf("member_type must be \"feature\", \"bug\", \"initiative\", \"checklist\" or \"milestone\", not %q", memberType)
 }
 
 // argInt reads a whole-number argument. JSON numbers arrive as float64; a
@@ -139,6 +147,8 @@ func mcpPlanError(err error) error {
 	switch {
 	case errors.Is(err, store.ErrMilestoneCycle):
 		return errors.New("a milestone can't contain itself, directly or through another milestone inside it")
+	case errors.Is(err, store.ErrBugNotAccepted):
+		return errors.New("that bug hasn't been accepted in triage, so it isn't committed work yet; a person accepts it first, which you can relay with relay_triage")
 	case strings.Contains(err.Error(), "membership is frozen"):
 		return errors.New("that milestone is marked as shipped, so what it contains can't change; " +
 			"if the person wants to change it, reopen it first with reopen_milestone")
@@ -610,7 +620,7 @@ func (s *Server) mcpPlanTools() []mcpTool {
 				"shipped can't change.",
 			Schema: objectSchema(map[string]any{
 				"milestone":   milestoneRef,
-				"member_type": stringProp("What is being added: \"feature\", \"initiative\", \"checklist\" or \"milestone\"."),
+				"member_type": stringProp("What is being added: \"feature\", \"bug\" (an accepted bug, by its ID), \"initiative\", \"checklist\" or \"milestone\"."),
 				"member":      stringProp("For a feature or initiative, its path, such as \"auth/login\". For a checklist or a milestone, its id or exact name."),
 			}, "milestone", "member_type", "member"),
 			Handler: s.mcpAddMilestoneMember,
@@ -622,7 +632,7 @@ func (s *Server) mcpPlanTools() []mcpTool {
 				"audit trail. A milestone marked as shipped can't change.",
 			Schema: objectSchema(map[string]any{
 				"milestone":   milestoneRef,
-				"member_type": stringProp("What is being taken out: \"feature\", \"initiative\", \"checklist\" or \"milestone\"."),
+				"member_type": stringProp("What is being taken out: \"feature\", \"bug\", \"initiative\", \"checklist\" or \"milestone\"."),
 				"member":      stringProp("For a feature or initiative, its path. For a checklist or a milestone, its id or exact name."),
 				"reason":      stringProp("Optional. Why it is coming out, in a sentence."),
 			}, "milestone", "member_type", "member"),
