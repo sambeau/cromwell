@@ -1,0 +1,202 @@
+{{/* Editing in the browser (SPEC-016). The document page's edit banner, the
+     editor, and its fragments. Kept here so entity.html, which other work
+     shares, gains one include (SD-16). All prose is human-facing (D-6). */}}
+
+{{/* The document page's include: the file can be edited here or anywhere,
+     and the Edit button says what editing will do (FR-7). */}}
+{{define "doc-edit"}}
+{{$d := .Document}}
+<div class="banner banner--info" id="doc-edit">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-edit"/></svg>
+  <div>
+    {{if eq $d.State "superseded"}}
+    <b>A superseded document is a record, so it isn't edited.</b>Its file is kept as it was when it was replaced.
+    {{else}}
+    <b>Edit this document here, or in your own editor.</b>It is a plain Markdown file in git either way, and this page follows the file.
+    {{end}}
+  </div>
+  {{if ne $d.State "superseded"}}
+  <div class="banner-end">
+    {{if .Actions.SuccessorURL}}
+    <a class="btn btn--sm" href="/ui/edit/{{$d.Path}}">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit the open revision</a>
+    {{else if eq $d.State "approved"}}
+    <a class="btn btn--sm" href="/ui/edit/{{$d.Path}}">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit — starts a revision</a>
+    {{else}}
+    <a class="btn btn--primary btn--sm" href="/ui/edit/{{$d.Path}}">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit</a>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* The freshness check's warning (FR-3.3). */}}
+{{define "edit-stale"}}
+<div class="banner banner--warning" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg>
+  <div><b>This file has changed on disk since you opened it.</b>Saving will stop and show you the difference. Copy your text first if you want to keep it, then <a href="{{.EditURL}}" data-leave-check>reload the file from disk</a>.</div>
+</div>
+{{end}}
+
+{{/* A line diff (SD-7): marks as well as colours, for readers who can't
+     tell the colours apart. */}}
+{{define "edit-diff"}}
+{{if .TooLarge}}
+<p class="t-meta">These versions are too long to compare line by line, so both are shown whole.</p>
+<div class="edit-whole">
+  <div><p class="field-label">Before</p><pre class="diff">{{.Before}}</pre></div>
+  <div><p class="field-label">After</p><pre class="diff">{{.After}}</pre></div>
+</div>
+{{else if .Empty}}
+<p class="t-meta">No lines changed.</p>
+{{else}}
+<p class="t-meta">{{.Removed}} line{{if ne .Removed 1}}s{{end}} taken out, {{.Added}} line{{if ne .Added 1}}s{{end}} put in.</p>
+<div class="diff" role="table" aria-label="Line differences">
+  {{range $i, $h := .Hunks}}{{if $i}}<div class="diff-gap" aria-hidden="true">⋯</div>{{end}}{{range $h}}<div class="diff-line diff-line--{{.Class}}" role="row"><span class="diff-no" role="cell">{{if .No}}{{.No}}{{end}}</span><span class="diff-mark" role="cell">{{.Mark}}</span><span class="diff-text" role="cell">{{.Text}}</span></div>{{end}}{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "page-edit"}}{{template "pagetop" .}}
+{{with .Data}}
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
+
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-edit"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">Editing {{template "ident" (idFor .Doc.PublicID .Doc.Title)}}{{.Doc.Title}}</h1>
+      <div class="page-head-meta">
+        {{template "state-badge" .Doc.State}}
+        <span class="t-meta">{{.Doc.Type}}{{if .Doc.Revision}}, revision {{.Doc.Revision}}{{end}}</span>
+        {{if .OwnerCrumb.Label}}
+        <span class="t-meta u-row">
+          <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
+          <span>Belongs to <a href="{{.OwnerCrumb.URL}}">{{.OwnerCrumb.Label}}</a></span>
+        </span>
+        {{end}}
+        <span class="t-meta u-nowrap"><code>{{.Doc.Path}}</code></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{/* The state, always, and what editing it means (SD-8, FR-4). */}}
+<div class="banner banner--info u-mt-4" id="edit-state">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-state-{{if eq .Doc.State "approved"}}done{{else if eq .Doc.State "reviewing"}}review{{else if eq .Doc.State "superseded"}}superseded{{else}}draft{{end}}"/></svg>
+  <div>{{.StateLine}}</div>
+</div>
+{{range .Warnings}}
+<div class="banner banner--warning u-mt-2 edit-warning" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg><div>{{.}}</div>
+</div>
+{{end}}
+
+{{if .Approved}}
+<section class="panel u-mt-4" id="edit-revise">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-edit"/></svg> Editing an approved document starts a revision</h2>
+  </div>
+  <div class="panel-body">
+    {{range .RevisionNotes}}<p class="u-mb-4">{{.}}</p>{{end}}
+    {{if .ReviseWhy}}
+    <p class="action-reason"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{.ReviseWhy}}</span></p>
+    <div class="action-row u-mt-4"><a class="btn" href="{{.DocURL}}">Back to the document</a></div>
+    {{else}}
+    <div class="action-row">
+      <form method="post" action="/ui/edit/revise">
+        <input type="hidden" name="doc_id" value="{{.Doc.ID}}">
+        <button class="btn btn--primary" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Start a revision and edit it</button>
+      </form>
+      <a class="btn" href="{{.DocURL}}">Cancel</a>
+    </div>
+    {{end}}
+  </div>
+</section>
+
+{{else if .Refusal}}
+<section class="panel u-mt-4">
+  <div class="panel-body">
+    <p class="action-reason"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{.Refusal}}</span></p>
+    <div class="action-row u-mt-4"><a class="btn" href="{{.DocURL}}">Back to the document</a></div>
+  </div>
+</section>
+
+{{else}}
+{{if .Conflict}}
+<section class="panel u-mt-4" id="edit-conflict">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-diff"/></svg> Your save was stopped</h2>
+  </div>
+  <div class="panel-body">
+    {{if .Conflict.Stale}}
+    <p class="u-mb-4">Nothing was written, and your text is still below. Copy it, then open the editor again and put your changes back in.</p>
+    {{else}}
+    <p class="u-mb-4">Someone changed this file on disk after you opened it, perhaps in another editor. Nothing was written, so their change is safe, and your text is still below. Copy your text, then reload the file and put your changes back in.</p>
+    <h3 class="t-section">What changed on disk</h3>
+    {{template "edit-diff" .Conflict.OnDisk}}
+    {{end}}
+    <h3 class="t-section u-mt-4">What you changed</h3>
+    {{template "edit-diff" .Conflict.Mine}}
+    <div class="action-row u-mt-4">
+      <button class="btn btn--primary" type="button" data-copy-target="ed-text">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-copy-path"/></svg><span data-copy-label>Copy your text</span></button>
+      <a class="btn" href="{{.EditURL}}" data-leave-check>
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"/></svg>Reload from disk</a>
+    </div>
+  </div>
+</section>
+{{else}}
+<div id="edit-fresh" hx-get="{{.FreshURL}}" hx-trigger="every 10s" hx-swap="innerHTML" class="u-mt-2"></div>
+{{end}}
+
+<form method="post" action="/ui/edit/save" class="editor u-mt-4" id="editor" data-editor>
+  <input type="hidden" name="doc_id" value="{{.Doc.ID}}">
+  <input type="hidden" name="base_hash" value="{{.BaseHash}}">
+  <input type="hidden" name="shown_state" value="{{.Doc.State}}">
+  <input type="hidden" name="shown_path" value="{{.Doc.Path}}">
+  <textarea name="base" hidden aria-hidden="true" tabindex="-1">
+{{.Base}}</textarea>
+  <div class="editor-grid">
+    <div class="editor-pane">
+      <label class="field-label" for="ed-text">The file, in Markdown</label>
+      <textarea class="textarea editor-text" id="ed-text" name="text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="soft">
+{{.Text}}</textarea>
+      {{if .Doc.PublicID}}<p class="field-hint">Keep the lines <code>id: {{.Doc.PublicID}}</code> and <code>revision: {{.Doc.Revision}}</code> in the front matter. They are how Subutai recognises this file wherever it moves.</p>{{end}}
+    </div>
+    <div class="editor-pane">
+      <p class="field-label" id="ed-preview-label">Preview</p>
+      <div class="doc editor-preview" id="ed-preview" aria-labelledby="ed-preview-label" aria-live="off"
+           hx-post="/ui/edit/preview" hx-trigger="input changed delay:400ms from:#ed-text" hx-include="#ed-text" hx-swap="innerHTML">{{.Preview}}</div>
+    </div>
+  </div>
+  {{if not .Conflict}}
+  <div class="field u-mt-4 editor-subject">
+    <label class="field-label" for="ed-subject">Commit message <span class="t-meta">(optional)</span></label>
+    <input class="input" id="ed-subject" name="subject" value="{{.Subject}}" placeholder="Edit {{if .Doc.PublicID}}{{.Doc.PublicID}}{{else}}{{.Doc.Path}}{{end}} in the browser">
+    <p class="field-hint">Used by Save &amp; commit, which commits this file and nothing else, as {{$.Actor}}.</p>
+  </div>
+  <div class="action-row u-mt-4">
+    <button class="btn btn--primary" type="submit" name="action" value="commit" id="ed-commit">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg>Save &amp; commit</button>
+    <button class="btn" type="submit" name="action" value="save" id="ed-save">Save</button>
+    <a class="btn btn--ghost" href="{{.DocURL}}" data-leave-check>Cancel</a>
+  </div>
+  <p class="field-hint u-mt-2">Save writes the file and leaves committing to you. Ctrl-S or ⌘-S saves.{{if eq .Doc.State "reviewing"}} Either takes this document back to draft.{{end}}</p>
+  {{end}}
+</form>
+{{end}}
+{{end}}
+{{template "pagebottom" .}}{{end}}

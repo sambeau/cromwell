@@ -662,6 +662,12 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/send", s.handleUISendPost)
 	mux.HandleFunc("POST /ui/send/withdraw", s.handleUISendWithdraw)
 	// The document page's actions (SPEC-011 FR-5.5, FR-6, FR-9).
+	// The browser editor (SPEC-016 SD-15).
+	mux.HandleFunc("GET /ui/edit/{path...}", s.handleUIEdit)
+	mux.HandleFunc("POST /ui/edit/save", s.handleUIEditSave)
+	mux.HandleFunc("POST /ui/edit/preview", s.handleUIEditPreview)
+	mux.HandleFunc("POST /ui/edit/revise", s.handleUIEditRevise)
+	mux.HandleFunc("GET /ui/frag/edit-fresh", s.handleFragEditFresh)
 	mux.HandleFunc("POST /ui/document/submit", s.handleDocSubmit)
 	mux.HandleFunc("POST /ui/document/revise", s.handleDocRevise)
 	mux.HandleFunc("POST /ui/document/detach", s.handleDocDetach)

@@ -5,8 +5,9 @@ locking became a reversible *Mark as shipped*, which the chat agent may also
 do (§5c, §6, §17a item 2; SPEC-010 SD-11; DEC-004 Amendment 1). *And again
 with M5:* dated notes in §5c, §6 and §17a item 4 record how checklists and
 jobs were built (SPEC-014). *And with M10:* a dated note in §5c records that
-the chat agent submits its own drafts without a quote (SPEC-017). This is
-Draft 2, consistency-
+the chat agent submits its own drafts without a quote (SPEC-017). *And with
+M9:* a dated note in §7 records how browser editing treats approved decisions
+and untemplated types (SPEC-016). This is Draft 2, consistency-
 reviewed (§19). The seven proposals in §17a were accepted with it. Drafted by
 Claude; the author isn't the approval gate, and wasn't.
 **Date:** 2026-09-28 (Draft 1: 2026-07-31)
@@ -650,6 +651,15 @@ case of fixing and polishing documents without leaving the browser.
     cascade (§5).
   - The editor warns before you edit a document under review, or one that
     feeds work in progress.
+
+  > **Note, 2026-09-28 (Sam, accepted with [SPEC-016](../specs/SPEC-016-edit-in-the-browser.md)
+  > SD-9, SD-11 and SD-12).** An approved **decision** isn't revised in the
+  > editor, because §11 says an accepted decision is never edited. An approved
+  > document of a **type with no template** isn't revised there either, until
+  > a person can rule on any type (M10), because its successor couldn't be
+  > submitted. Saving a document under review takes it back to draft. The
+  > editor stands aside, rather than warning, where the author agent is due to
+  > rewrite the document.
 
 Documents remain plain Markdown files in git throughout. The browser editor is
 a convenience, never a requirement, and never a special format.

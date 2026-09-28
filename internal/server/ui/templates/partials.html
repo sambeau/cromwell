@@ -22,6 +22,10 @@
   {{/* The only bespoke script: one delegated listener that calls showModal() on
        a native <dialog>. Nothing else on the page needs JavaScript. */}}
   <script src="/ui/static/dialog.js?v={{.AssetV}}" defer></script>
+  {{/* The browser editor's few conveniences: Ctrl-S, copy, and a warning
+       before leaving unsaved text (SPEC-016 SD-1). Delegated like dialog.js,
+       and idle on every page without an editor. */}}
+  <script src="/ui/static/editor.js?v={{.AssetV}}" defer></script>
 </head>
 <body hx-ext="sse" sse-connect="/ui/events" hx-boost="true">
 {{template "icon-sprite"}}
