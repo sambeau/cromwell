@@ -193,6 +193,46 @@ func TestConfigFieldValidation(t *testing.T) {
 	}
 }
 
+// SPEC-012 FR-2.1: the transcripts section is optional, every field has a
+// default, retention 0 means keep for ever, and a negative value is an error
+// naming its field.
+func TestTranscriptConfigDefaults(t *testing.T) {
+	root := validCompartment(t)
+	c, err := Load(root, testRuleKinds)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	tc := c.Config.Transcripts
+	if tc.MaxToolResultBytes != DefaultMaxToolResultBytes || tc.MaxEntryBytes != DefaultMaxEntryBytes ||
+		tc.MaxAttemptBytes != DefaultMaxAttemptBytes || tc.Retention() != DefaultRetentionDays {
+		t.Errorf("defaults not applied: %+v retention %d", tc, tc.Retention())
+	}
+
+	cfg, err := os.ReadFile(filepath.Join(root, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, "config.yaml", string(cfg)+"transcripts:\n  retention_days: 0\n  max_tool_result_bytes: 100\n")
+	c2, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if c2.Transcripts.Retention() != 0 || c2.Transcripts.MaxToolResultBytes != 100 {
+		t.Errorf("explicit values not kept: %+v", c2.Transcripts)
+	}
+
+	write(t, root, "config.yaml", string(cfg)+"transcripts:\n  retention_days: -1\n  max_attempt_bytes: -5\n")
+	_, err = LoadConfig(root)
+	if err == nil {
+		t.Fatal("negative values should fail")
+	}
+	for _, want := range []string{"transcripts.retention_days", "transcripts.max_attempt_bytes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name field %q: %v", want, err)
+		}
+	}
+}
+
 // F-2: env-var indirection, and a clear message when the variable is unset.
 func TestEnvIndirection(t *testing.T) {
 	root := validCompartment(t)

@@ -36,6 +36,10 @@ type Server struct {
 
 	ui      *uiTemplates
 	bootCfg *config.Config
+
+	// lastPrune paces the transcript retention sweep to once an hour; only
+	// the heartbeat goroutine touches it (SPEC-012 FR-2.4).
+	lastPrune time.Time
 }
 
 // New validates the compartment, connects the store, and assembles the
@@ -237,6 +241,7 @@ func (s *Server) heartbeat(ctx context.Context) {
 			s.Dispatcher.RetrySweep(ctx)
 			s.ReconcileAuthoringSweep(ctx)
 			s.GCWorktrees(ctx)
+			s.PruneTranscriptsSweep(ctx, time.Now())
 			s.Dispatcher.Kick()
 		}
 	}

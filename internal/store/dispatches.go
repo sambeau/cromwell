@@ -137,6 +137,38 @@ func (s *Store) SetQueueReason(ctx context.Context, id uuid.UUID, reason string)
 	return err
 }
 
+// HeartbeatAttempt updates liveness for one attempt, and reports whether that
+// attempt is still the run's current, running one. False means the run was
+// given up on — failed by the stall sweep, perhaps already retried — and the
+// loop holding it should stop (SPEC-012 FR-1.9).
+func (s *Store) HeartbeatAttempt(ctx context.Context, id uuid.UUID, attempt int) (bool, error) {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE dispatches SET heartbeat_at = now() WHERE id = $1 AND attempt = $2 AND state = 'running'`, id, attempt)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// MarkAttemptSucceeded is MarkDispatchSucceeded for one attempt: it refuses
+// when the attempt is no longer the run's current, running one, so a loop
+// that was given up on can't record its outcome over a retry's (FR-1.9).
+func MarkAttemptSucceeded(ctx context.Context, tx pgx.Tx, id uuid.UUID, attempt int, usage TokenUsage, costUSD float64, outcome any) error {
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM dispatches
+		WHERE id = $1 AND attempt = $2 AND state = 'running'`, id, attempt).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrAttemptGivenUp
+	}
+	return MarkDispatchSucceeded(ctx, tx, id, usage, costUSD, outcome)
+}
+
+// ErrAttemptGivenUp is returned when an attempt is no longer the run's
+// current, running one.
+var ErrAttemptGivenUp = errors.New("this attempt was given up on while it was still running")
+
 // Heartbeat updates liveness for stall detection.
 func (s *Store) Heartbeat(ctx context.Context, id uuid.UUID) error {
 	_, err := s.Pool.Exec(ctx,
@@ -202,6 +234,11 @@ func MarkDispatchFailed(ctx context.Context, tx pgx.Tx, id uuid.UUID, reason str
 		Scan(&refType, &refID); err != nil {
 		return err
 	}
+	// The attempt's transcript ends with why it failed (SPEC-012 SD-3). This
+	// is the one place every failure passes through — a loop error, a stalled
+	// process, a refusal at admission — and RequeueDispatch later clears
+	// dispatches.error, so the transcript is where the reason survives.
+	appendErrorEntry(ctx, tx, id, reason)
 	return Audit(ctx, tx, "orchestrator", "dispatch.failed", refType, &refID,
 		map[string]any{"dispatch_id": id.String(), "error": reason})
 }

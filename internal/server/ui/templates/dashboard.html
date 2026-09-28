@@ -157,6 +157,10 @@
     <div class="rail-card" id="events" hx-get="/ui/frag/events" hx-trigger="sse:changed" hx-swap="innerHTML">
       {{template "frag-events" .}}
     </div>
+    <div class="rail-card" id="review-health" hx-get="/ui/frag/review-health" hx-trigger="load, sse:changed" hx-swap="innerHTML">
+      <p class="rail-card-head">How the reviewers are doing</p>
+      <div class="rail-card-body"><a class="btn btn--sm" href="/ui/review-health">See each reviewer</a></div>
+    </div>
   </aside>
 </div>
 

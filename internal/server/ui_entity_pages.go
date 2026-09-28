@@ -214,6 +214,7 @@ type taskPage struct {
 	Task        store.Task
 	FeatureName string
 	FeatureURL  string
+	Runs        []runRow // the agent runs on this task (SPEC-012 FR-4.1)
 }
 
 func (s *Server) handleUITaskPage(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +230,10 @@ func (s *Server) handleUITaskPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page := taskPage{Task: *t}
+	if page.Runs, err = s.runRowsFor(ctx, "task", t.ID); err != nil {
+		s.uiError(w, err)
+		return
+	}
 	if f, err := store.GetFeature(ctx, s.Store.Pool, t.FeatureID); err == nil {
 		page.FeatureName = f.Name
 		if path, err := s.featurePath(ctx, f); err == nil {
@@ -246,6 +251,7 @@ type entityDocPage struct {
 	*docPageData
 	Breadcrumbs []crumb
 	OwnerCrumb  crumb
+	Runs        []runRow // the agent reviews of this document (SPEC-012 FR-4.2)
 }
 
 func (s *Server) handleUIDocumentPage(w http.ResponseWriter, r *http.Request) {
@@ -260,5 +266,9 @@ func (s *Server) handleUIDocumentPage(w http.ResponseWriter, r *http.Request) {
 		OwnerCrumb:  s.ownerCrumb(r.Context(), view.Document.OwnerType, view.Document.OwnerID),
 	}
 	page.Breadcrumbs = []crumb{page.OwnerCrumb, {Label: view.Document.Title, Here: true}}
+	if page.Runs, err = s.runRowsFor(r.Context(), "document", view.Document.ID); err != nil {
+		s.uiError(w, err)
+		return
+	}
 	s.render(w, "page-entity-document", s.page(r.Context(), "documents", page))
 }

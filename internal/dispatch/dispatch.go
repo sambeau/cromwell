@@ -329,6 +329,12 @@ func (dp *Dispatcher) runOne(ctx context.Context, d *store.Dispatch, price confi
 	outcome, usage, runErr := dp.runLoop(ctx, d)
 	cost := Cost(usage, price)
 
+	if errors.Is(runErr, store.ErrAttemptGivenUp) {
+		// The stall sweep already failed this attempt and wrote down why; a
+		// retry may be running on the same row. Nothing more to record.
+		dp.Log.Warn("dispatcher: attempt given up on while still running", "dispatch", d.ID, "attempt", d.Attempt)
+		return
+	}
 	if runErr != nil {
 		err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			return store.MarkDispatchFailed(ctx, tx, d.ID, runErr.Error())
@@ -341,7 +347,7 @@ func (dp *Dispatcher) runOne(ctx context.Context, d *store.Dispatch, price confi
 	}
 
 	err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		return store.MarkDispatchSucceeded(ctx, tx, d.ID, store.TokenUsage{
+		return store.MarkAttemptSucceeded(ctx, tx, d.ID, d.Attempt, store.TokenUsage{
 			Input: usage.Input, Output: usage.Output,
 			CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
 		}, cost, json.RawMessage(outcome))
@@ -381,11 +387,21 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 		return nil, total, err
 	}
 
+	// The transcript starts with what the agent is told, before the first
+	// model call, so even a run that fails on its first call shows its prompt
+	// (SPEC-012 FR-1.2).
+	rec := dp.newRecorder(d, cfg.Transcripts)
+	rec.prompts(ctx, plan.System, plan.User)
+
 	msgs := []provider.Message{provider.UserText(plan.User)}
 	seq := 0
 	for turn := 0; turn < plan.TurnCap; turn++ {
-		_ = dp.Store.Heartbeat(ctx, d.ID)
+		if err := dp.stillCurrent(ctx, d); err != nil {
+			return nil, total, err
+		}
+		n := turn + 1
 
+		began := time.Now()
 		resp, err := dp.completeWithRetry(ctx, prov, provider.Request{
 			Model: d.Model, System: plan.System, MaxTokens: dp.MaxOutputTokens,
 			Messages: msgs, Tools: plan.Tools,
@@ -394,6 +410,13 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 			return nil, total, err
 		}
 		total.Add(resp.Usage)
+		// A model call can outlast the stall threshold. If the attempt was
+		// given up on meanwhile, stop here: its transcript already ends with
+		// why, and acting on this reply could race a retry (SPEC-012 FR-1.9).
+		if err := dp.stillCurrent(ctx, d); err != nil {
+			return nil, total, err
+		}
+		rec.turn(ctx, n, resp, time.Since(began))
 
 		// Collect every tool_use block in the turn. Providers may return
 		// parallel tool calls in one assistant message, and the API requires a
@@ -408,9 +431,11 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 		if len(toolUses) == 0 {
 			// No tool call this turn: nudge (free text carries no workflow
 			// effect, DESIGN-002 §4).
+			nudge := "Call a tool to proceed; finish by calling " + plan.OutcomeTool + "."
 			msgs = append(msgs,
 				provider.Message{Role: "assistant", Blocks: resp.Blocks},
-				provider.UserText("Call a tool to proceed; finish by calling "+plan.OutcomeTool+"."))
+				provider.UserText(nudge))
+			rec.nudge(ctx, n, nudge)
 			continue
 		}
 
@@ -418,31 +443,51 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 		// call completes the dispatch; an invalid one, or any other tool, is
 		// answered and the loop continues so the model can proceed.
 		results := make([]provider.Block, 0, len(toolUses))
+		recorded := make([]store.TranscriptEntry, 0, len(toolUses))
 		for _, tu := range toolUses {
 			if tu.ToolName == plan.OutcomeTool {
 				if plan.ValidateOutcome != nil {
 					if verr := plan.ValidateOutcome(tu.ToolInput); verr != nil {
+						msg := "Invalid input: " + verr.Error()
 						results = append(results, provider.Block{
 							Type: "tool_result", ToolUseID: tu.ToolUseID,
-							Result: "Invalid input: " + verr.Error(), IsError: true,
+							Result: msg, IsError: true,
 						})
+						recorded = append(recorded, rec.toolResult(n, tu, msg, true, 0))
 						continue
 					}
 				}
+				rec.outcome(ctx, n, tu, recorded)
 				return tu.ToolInput, total, nil // dispatch complete
 			}
+			began := time.Now()
 			result, isErr := dp.execTool(ctx, plan, tu)
+			took := time.Since(began)
 			seq++
-			dp.recordToolCall(ctx, d.ID, seq, tu.ToolName, len(tu.ToolInput), len(result), isErr)
+			dp.recordToolCall(ctx, d.ID, seq, tu.ToolName, len(tu.ToolInput), len(result), int(took.Milliseconds()), isErr)
 			results = append(results, provider.Block{
 				Type: "tool_result", ToolUseID: tu.ToolUseID, Result: result, IsError: isErr,
 			})
+			recorded = append(recorded, rec.toolResult(n, tu, result, isErr, took))
 		}
+		rec.write(ctx, recorded...)
 		msgs = append(msgs,
 			provider.Message{Role: "assistant", Blocks: resp.Blocks},
 			provider.Message{Role: "user", Blocks: results})
 	}
 	return nil, total, fmt.Errorf("turn cap %d reached without %s", plan.TurnCap, plan.OutcomeTool)
+}
+
+// stillCurrent refreshes the attempt's heartbeat and reports
+// store.ErrAttemptGivenUp when the attempt is no longer the run's current,
+// running one. A database error is not a reason to stop; the stall sweep is
+// the backstop.
+func (dp *Dispatcher) stillCurrent(ctx context.Context, d *store.Dispatch) error {
+	ok, err := dp.Store.HeartbeatAttempt(ctx, d.ID, d.Attempt)
+	if err == nil && !ok {
+		return store.ErrAttemptGivenUp
+	}
+	return nil
 }
 
 // execTool runs one non-outcome tool call, enforcing the profile as
@@ -455,12 +500,14 @@ func (dp *Dispatcher) execTool(ctx context.Context, plan *Plan, tu *provider.Blo
 	return dp.Tools.Execute(ctx, plan.ToolCtx, tu.ToolName, tu.ToolInput)
 }
 
-func (dp *Dispatcher) recordToolCall(ctx context.Context, dispatchID uuid.UUID, seq int, tool string, argBytes, resultBytes int, isErr bool) {
+// recordToolCall appends the tool ledger row, with the call's measured
+// latency (SPEC-012 FR-1.8).
+func (dp *Dispatcher) recordToolCall(ctx context.Context, dispatchID uuid.UUID, seq int, tool string, argBytes, resultBytes, latencyMs int, isErr bool) {
 	status := "ok"
 	if isErr {
 		status = "error"
 	}
-	if err := dp.Store.RecordToolCall(ctx, dispatchID, seq, tool, argBytes, resultBytes, 0, status); err != nil {
+	if err := dp.Store.RecordToolCall(ctx, dispatchID, seq, tool, argBytes, resultBytes, latencyMs, status); err != nil {
 		dp.Log.Error("tool-call ledger", "dispatch", dispatchID, "err", err)
 	}
 }

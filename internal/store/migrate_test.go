@@ -55,7 +55,7 @@ func TestMigrateFromEmpty(t *testing.T) {
 	for _, table := range []string{
 		"initiatives", "features", "documents", "document_sections",
 		"document_comments", "audit_events", "dispatches", "tool_calls",
-		"checkpoints", "schema_migrations",
+		"checkpoints", "schema_migrations", "transcript_entries",
 	} {
 		var n int
 		if err := conn.QueryRow(ctx,
@@ -95,7 +95,11 @@ func TestBrokenMigrationLeavesPriorVersion(t *testing.T) {
 		name:    "9999_broken.sql",
 		sql:     `CREATE TABLE will_rollback (id int); SELECT this_is_not_valid_sql;`,
 	}}
-	if err := applyMigrations(ctx, conn, before, broken); err == nil {
+	applied, err := appliedVersions(ctx, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigrations(ctx, conn, applied, broken); err == nil {
 		t.Fatal("broken migration should fail")
 	}
 
@@ -108,5 +112,36 @@ func TestBrokenMigrationLeavesPriorVersion(t *testing.T) {
 		`SELECT count(*) FROM information_schema.tables WHERE table_name='will_rollback'`).Scan(&n)
 	if n != 0 {
 		t.Error("partial migration state leaked: will_rollback exists")
+	}
+}
+
+// TestMigrationGapIsFilledLater is SPEC-012 SD-10: a database that received a
+// higher version first still gets the lower one when it arrives, and a gap in
+// the numbering loads.
+func TestMigrationGapIsFilledLater(t *testing.T) {
+	conn := freshConn(t)
+	ctx := context.Background()
+	if err := Migrate(ctx, conn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	top, _ := SchemaVersion(ctx, conn)
+
+	high := migration{version: top + 2, name: "high.sql", sql: `CREATE TABLE gap_high (id int)`}
+	low := migration{version: top + 1, name: "low.sql", sql: `CREATE TABLE gap_low (id int)`}
+	applied, _ := appliedVersions(ctx, conn)
+	if err := applyMigrations(ctx, conn, applied, []migration{high}); err != nil {
+		t.Fatalf("apply high: %v", err)
+	}
+	applied, _ = appliedVersions(ctx, conn)
+	if err := applyMigrations(ctx, conn, applied, []migration{low, high}); err != nil {
+		t.Fatalf("apply low after high: %v", err)
+	}
+	for _, table := range []string{"gap_low", "gap_high"} {
+		var n int
+		_ = conn.QueryRow(ctx,
+			`SELECT count(*) FROM information_schema.tables WHERE table_name=$1`, table).Scan(&n)
+		if n != 1 {
+			t.Errorf("table %s missing", table)
+		}
 	}
 }
