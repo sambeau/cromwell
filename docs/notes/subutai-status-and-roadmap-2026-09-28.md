@@ -614,7 +614,7 @@ the recommended defaults.
 
 ### Phase B: the Subutai core
 
-**M3 — Send to development** · M · needs M1 · lane 1
+**M3 — Send to development** · M · needs M1 · lane 1 · ✅ **done 2026-09-28**, see the [M3 handoff](handoff-M3-2026-09-28.md)
 *Goal: a human decides when agents start work on a design.*
 - Approving a design no longer triggers anything.
 - Add the *Send to development* button on features and initiatives, with the
