@@ -647,7 +647,7 @@ stops. The cascade smoke (§7) runs in the same session.
 entirely in the browser, and the chat agent can do the same. **Done:** see the
 [M4 handoff](handoff-M4-2026-09-28.md); SPEC-010 approved by Sam.
 
-**M5 — Checklists and jobs** · S · needs M4 · lane 2
+**M5 — Checklists and jobs** · S · needs M4 · lane 2 · ✅ **done 2026-09-28**, see the [M5 handoff](handoff-M5-2026-09-28.md)
 *Goal: human chores count towards milestones.*
 - Add checklists and jobs with a table and pages.
 - Tick jobs in the UI, or relay them from chat, with the tick audited.
