@@ -566,7 +566,7 @@ to.
 
 ### Phase A: restart and decide
 
-**M0 — Restart** · S
+**M0 — Restart** · S · ✅ **done 2026-09-28**, see the [M0 handoff](handoff-M0-2026-09-28.md)
 *Goal: make the project safe to pick up again.*
 - Add a cloud setup step that starts Postgres. The suite already passes by
   hand.

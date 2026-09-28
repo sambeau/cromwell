@@ -10,7 +10,10 @@ against a throwaway project.
 - **Postgres 16.** A dev container is already running for the test suite —
   `cromwell-pg-dev` on port **54329** (`postgres` / `cromwell`). You can reuse it
   for manual play by creating a dedicated database (below), or point at any
-  Postgres you like.
+  Postgres you like. Without Docker, `eval "$(scripts/test-db.sh)"` starts a
+  local cluster on 54329 from the installed PostgreSQL binaries and sets
+  `CROMWELL_TEST_DATABASE_URL` (user `postgres`, no password). Claude Code
+  cloud sessions do this automatically through the SessionStart hook.
 - **No LLM provider is needed** for most of the surface. Reads, estimates,
   milestones, roadmaps, the tree lifecycle, and the archive → checkpoint →
   respond loop all work without one. Only the *agent* flows (a document review
@@ -182,6 +185,57 @@ set its key in the environment, then `submit` a document. When the reviewer
 escalates, the checkpoint appears in the Inbox *and* the Documents view offers
 **approve / request changes** on that document. This costs real (small) money and
 is not needed to exercise everything above.
+
+## 8. The smoke project, rebuilt with one script
+
+The live smokes of the authoring chain ([SPEC-009 walkthrough](walkthrough-spec-009-stage1.md))
+ran against a smoke project in `/tmp/cromwell-smoke`. That project is gone.
+`scripts/smoke-project.sh` rebuilds it:
+
+```sh
+eval "$(scripts/test-db.sh)"     # or set SMOKE_DATABASE_URL to a local Postgres
+scripts/smoke-project.sh
+```
+
+It makes no AI calls. It:
+
+- builds `/tmp/cromwell` and runs `cromwell init` in `/tmp/cromwell-smoke`,
+  against a database called `cromwell_smoke`;
+- puts every role on one model, by default `deepseek-chat` through DeepSeek's
+  Anthropic-compatible gateway, keyed by `DEEPSEEK_API_KEY`;
+- turns on the `write-spec` and `write-dev-plan` assignments, so approving a
+  design writes the spec and an approved spec writes the dev-plan;
+- checks the design template is installed (`init` ships it);
+- commits a one-sentence example design, `docs/greet/time/design.md`, in the
+  template's shape;
+- serves the UI on `127.0.0.1:8801`.
+
+It prints the commands to run next: start the server, create `greet` and
+`greet/time`, register the design, and submit it. Submitting is the first step
+that costs money, because the design reviewer runs.
+
+To use another model or provider, set these before running it:
+
+| Variable | Default |
+|---|---|
+| `SMOKE_MODEL` | `deepseek-chat` |
+| `SMOKE_PROVIDER` | `deepseek` |
+| `SMOKE_BASE_URL` | `https://api.deepseek.com/anthropic` (set it empty for Anthropic's own endpoint) |
+| `SMOKE_API_KEY_ENV` | `DEEPSEEK_API_KEY` |
+| `SMOKE_PRICE_IN`, `SMOKE_PRICE_OUT` | `0.27`, `1.10` USD per million tokens |
+| `SMOKE_DIR`, `SMOKE_BIN` | `/tmp/cromwell-smoke`, `/tmp/cromwell` |
+| `SMOKE_HTTP`, `SMOKE_SOCKET` | `127.0.0.1:8801`, `/tmp/cromwell-smoke.sock` |
+
+For example, on Anthropic:
+
+```sh
+SMOKE_MODEL=claude-sonnet-5 SMOKE_PROVIDER=anthropic SMOKE_BASE_URL= \
+  SMOKE_API_KEY_ENV=ANTHROPIC_API_KEY SMOKE_PRICE_IN=3 SMOKE_PRICE_OUT=15 \
+  scripts/smoke-project.sh
+```
+
+It refuses to overwrite an existing project or database; set `SMOKE_FORCE=1`
+to rebuild both. It also refuses a database URL that isn't on `localhost`.
 
 ## Gotchas
 

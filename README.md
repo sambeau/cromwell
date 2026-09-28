@@ -4,17 +4,22 @@ A document-led, specification-centred workflow system that takes a software
 project from initial concept to shipped features — humans driving planning,
 AI agents driving development. Greenfield successor to kanbanzai.
 
-**Status:** phases 1 and 2 complete. The implementation loop runs end to end
-against a Supabase-hosted project and a live provider: an approved spec and
-dev-plan decompose into tasks that agents implement, code-review, verify, and
-merge to `main` — with humans gating only on escalation. Session records:
-[phase-1 walkthrough](docs/walkthrough.md), [phase-2 walkthrough](docs/walkthrough-phase-2.md).
-The full `go test -race ./...` suite is green on plain Postgres and the
-Supabase local stack.
+**Status:** the engine is built and proven live. Phases 1 to 4, SPEC-006,
+SPEC-007, SPEC-008 and SPEC-009 Stage 1 have shipped: the implementation loop,
+planning and tracking, the web command centre, the MCP facet for planning, and
+the authoring chain, in which agents write and review the spec and dev-plan
+from an approved design. Cromwell is now being revised as **Subutai**: the
+same engine with a clearer workflow and a new name. Where that stands, and the
+milestones to finish it, are in the
+[Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md);
+the first decision taken is [DEC-006](docs/decisions/DEC-006-humans-start-development.md).
 
-Build: `go build ./cmd/cromwell` · Test: `CROMWELL_TEST_DATABASE_URL=<plain
-postgres url> go test -race ./...` · Start: `cromwell init` then
-`cromwell serve` (needs `CROMWELL_DATABASE_URL`, `ANTHROPIC_API_KEY`).
+Build: `go build ./cmd/cromwell` · Test: `eval "$(scripts/test-db.sh)"` then
+`go test -race -count=1 ./...` (without `CROMWELL_TEST_DATABASE_URL` the
+integration tests skip silently; Claude Code cloud sessions set it through
+the SessionStart hook) · Start: `cromwell init` then `cromwell serve` (needs
+`CROMWELL_DATABASE_URL` and a provider key) · Smoke project:
+`scripts/smoke-project.sh` ([manual testing](docs/manual-testing.md)).
 
 ## Document map
 
@@ -25,6 +30,9 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [vision-v1](docs/vision/vision-v1.md) | Product vision and architectural sketch (draft v1) |
 | [DEC-001](docs/decisions/DEC-001-server-language-go.md) | Server language: **Go** |
 | [DEC-002](docs/decisions/DEC-002-postgres-via-supabase.md) | State store: **Supabase-hosted Postgres**, plain-Postgres compatible |
+| [DEC-003](docs/decisions/DEC-003-cli-scope.md) | The CLI shrinks to `init`, `serve`, `status` and `hook`; the rest moves to the UI and MCP ([removal checklist](docs/notes/dec-003-cli-removal-checklist.md)) |
+| [DEC-004](docs/decisions/DEC-004-mcp-planning-authoring.md) | The MCP facet may author the planning layer, but not drive development |
+| [DEC-005](docs/decisions/DEC-005-the-orchestration-boundary.md) | The boundary is bypassing the orchestrator, not spawning agents (supersedes DEC-004 in part) |
 | [DEC-006](docs/decisions/DEC-006-humans-start-development.md) | Subutai: approving a design starts nothing; a human presses **Send to development** |
 | [DESIGN-001](docs/design/DESIGN-001-data-model-and-schema.md) | Data model and Postgres schema |
 | [DESIGN-002](docs/design/DESIGN-002-orchestrator.md) | The orchestrator: events, dispatch, tool host, governance |
@@ -32,17 +40,36 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DESIGN-004](docs/design/DESIGN-004-config-compartment.md) | The `.cromwell/` compartment: config, roles, skills, templates, pack lock |
 | [DESIGN-005](docs/design/DESIGN-005-dev-plans-tasks-decomposition.md) | Phase 2: dev-plans, tasks, decomposition, G1 extension, revision-in-flight |
 | [DESIGN-006](docs/design/DESIGN-006-tool-host-and-worktrees.md) | Phase 2: the tool host, worktrees, implementer/verifier dispatch, merge |
+| [DESIGN-007](docs/design/DESIGN-007-web-command-centre.md) | Phase 4: the web command centre |
+| [DESIGN-008](docs/design/DESIGN-008-the-workflow-surface.md) | The workflow surface: browsable, document-led pages, and the MCP facet |
+| [DESIGN-009](docs/design/DESIGN-009-the-authoring-half.md) | The authoring half: agents write specs and dev-plans from an approved design |
+| [DESIGN-010](docs/design/DESIGN-010-subutai.md) | Subutai: the revised workflow (draft, being rewritten) |
 | [SPEC-001](docs/specs/SPEC-001-phase-1-vertical-slice.md) | Phase 1: the vertical slice (**binding**) |
 | [SPEC-002](docs/specs/SPEC-002-phase-2-implementation-loop.md) | Phase 2: the implementation loop (**binding**) |
 | [SPEC-003](docs/specs/SPEC-003-phase-3-planning-and-tracking.md) | Phase 3 (first slice): sizing, calibration, milestones (**binding**) |
+| [SPEC-004](docs/specs/SPEC-004-phase-4-web-command-centre.md) | Phase 4: the web command centre, operational slice (**binding**) |
+| [SPEC-006](docs/specs/SPEC-006-command-centre-mutations.md) | The command centre's mutation slice: planning and review actions (**binding**) |
+| [SPEC-007](docs/specs/SPEC-007-workflow-surface-stage-a.md) | The workflow surface, Stage A: document-led browsing (**binding**) |
+| [SPEC-008](docs/specs/SPEC-008-mcp-facet-planning-authoring.md) | The MCP facet, slice 1: planning authoring (**binding**) |
+| [SPEC-009](docs/specs/SPEC-009-the-authoring-chain.md) | The authoring chain, Stage 1 (**binding**) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
 | [REVIEW-003](docs/reviews/REVIEW-003-phase-3-planning-package.md) | Consistency review + approval of SPEC-003 |
+| [REVIEW-004](docs/reviews/REVIEW-004-phase-4-web-command-centre-package.md) | Consistency review + approval of DESIGN-007 and SPEC-004 |
+| [REVIEW-006](docs/reviews/REVIEW-006-command-centre-mutations-package.md) | Consistency review + approval of SPEC-006 |
+| [REVIEW-009](docs/reviews/REVIEW-009-authoring-chain-package.md) | Consistency review + approval of SPEC-009 |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
+| [walkthrough-phase-3](docs/walkthrough-phase-3.md) | Phase 3: sizing, calibration and milestones |
+| [walkthrough-phase-4](docs/walkthrough-phase-4.md) | Phase 4: the web command centre |
+| [walkthrough-spec-006](docs/walkthrough-spec-006.md) | SPEC-006: the command centre's mutation slice |
+| [walkthrough-spec-007-008](docs/walkthrough-spec-007-008.md) | SPEC-007 and SPEC-008: the workflow surface and the MCP facet |
+| [walkthrough-spec-009-stage1](docs/walkthrough-spec-009-stage1.md) | SPEC-009 Stage 1: approval to gate 2, live, for 15,976 tokens |
+| [manual testing](docs/manual-testing.md) | Running Cromwell by hand, and rebuilding the smoke project |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
 | [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |
 | [Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) | Where the Subutai revision stands (2026-09-28), and the milestone plan to finish it |
+| [research](docs/research/README.md) | The research behind the design, and the writing guide |
 
 ## Phase plan
 
@@ -56,10 +83,25 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
   (jailed, hash-anchored, whitelisted commands), implementer dispatch in
   per-feature worktrees, code review of diffs, close-out verification (G3),
   and merge — a task carried from approved contract to merged code by agents.
-  Semantic retrieval and the graph-project integration are deferred (see the
-  phase-3 entry criteria).
-- **Phase 3 — command centre** (next): web UI, MCP facet, milestones,
-  roadmaps, estimates and calibration, defects, checklists.
+- **Phase 3 — planning and tracking** (SPEC-003) ✅ **delivered**: token
+  sizing, estimates with confidence tiers, calibration from actuals,
+  milestones and roadmaps.
+- **Phase 4 — the web command centre** (SPEC-004, SPEC-006) ✅ **delivered**:
+  read-everywhere views and checkpoint responses, then the planning and review
+  actions from the browser.
+- **The workflow surface and the MCP facet** (SPEC-007 Stage A, SPEC-008
+  slice 1) ✅ **delivered**: a browsable, document-led UI, and nine MCP tools
+  a chat agent uses to author the planning layer. Their human-confirmed live
+  smokes still await Sam.
+- **The authoring chain** (SPEC-009 Stage 1) ✅ **delivered**: an approved
+  design produces a reviewed spec, dev-plan and tasks with no further human
+  act, and stops at gate 2; proven live for 15,976 tokens. The revision-cascade
+  smoke (DoD 3) has not run.
+- **Subutai** (next): the revision planned in the
+  [roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) §11. A human
+  presses Send to development ([DEC-006](docs/decisions/DEC-006-humans-start-development.md)),
+  milestone and roadmap editing, checklists, executors, the rename, and GitHub
+  adoption.
 
 ## Design notes
 
