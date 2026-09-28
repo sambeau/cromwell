@@ -232,7 +232,7 @@
       <div class="roadmap-card-head">
         <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
         <div>
-          <h3 class="roadmap-card-title"><a href="{{$m.URL}}">{{$m.Name}}</a></h3>
+          <h3 class="roadmap-card-title"><a href="{{$m.URL}}">{{template "ident" $m.PublicID}}{{$m.Name}}</a></h3>
         </div>
         <div class="roadmap-card-end">
           {{if $m.Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}

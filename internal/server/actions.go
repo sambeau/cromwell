@@ -312,6 +312,18 @@ func (s *Server) configErrorCheckpoint(ctx context.Context, refType string, refI
 // human's remarks — join the comment thread in the same transaction rather
 // than being discarded (C-1a).
 func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) error {
+	// From the rules engine an approval is an agent's, with its run, or a
+	// person's answer to a review escalation (SPEC-017 FR-2.3).
+	v := store.Verdict{DocumentID: a.DocID, Verdict: store.VerdictApprove, Kind: store.GiverPerson,
+		Actor: a.Actor, Via: "escalation", DispatchID: s.escalatedReview(ctx, a.DocID)}
+	if a.DispatchID != nil {
+		v = s.agentVerdict(ctx, a.DocID, store.VerdictApprove, a.Actor, *a.DispatchID)
+	}
+	return s.approveDocumentAs(ctx, a, v)
+}
+
+// approveDocumentAs is approveDocument with the verdict it records.
+func (s *Server) approveDocumentAs(ctx context.Context, a rules.ApproveDocument, v store.Verdict) error {
 	docID, actor := a.DocID, a.Actor
 	doc, err := store.GetDocument(ctx, s.Store.Pool, docID)
 	if err != nil {
@@ -331,7 +343,10 @@ func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) e
 	var archived string
 	var planMoves []archivedMove
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocApprove, actor, nil); err != nil {
+		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocApprove, actor, verdictPayload(v)); err != nil {
+			return err
+		}
+		if err := store.RecordVerdict(ctx, tx, v); err != nil {
 			return err
 		}
 		if err := store.ClearDocumentHold(ctx, tx, doc.ID); err != nil {
@@ -444,14 +459,28 @@ func (s *Server) takeOverCanonicalPath(successorPath, canonicalPath, archived st
 }
 
 func (s *Server) returnForChanges(ctx context.Context, a rules.ReturnForChanges) error {
+	v := store.Verdict{DocumentID: a.DocID, Verdict: store.VerdictSendBack, Kind: store.GiverPerson,
+		Actor: a.Actor, Via: "escalation", DispatchID: s.escalatedReview(ctx, a.DocID)}
+	if a.DispatchID != nil {
+		v = s.agentVerdict(ctx, a.DocID, store.VerdictSendBack, a.Actor, *a.DispatchID)
+	}
+	return s.returnForChangesAs(ctx, a, v)
+}
+
+// returnForChangesAs is returnForChanges with the verdict it records.
+func (s *Server) returnForChangesAs(ctx context.Context, a rules.ReturnForChanges, v store.Verdict) error {
 	doc, err := store.GetDocument(ctx, s.Store.Pool, a.DocID)
 	if err != nil {
 		return err
 	}
 	from := doc.State
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocRequestChanges, a.Actor,
-			map[string]any{"comments": len(a.Comments)}); err != nil {
+		payload := verdictPayload(v)
+		payload["comments"] = len(a.Comments)
+		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocRequestChanges, a.Actor, payload); err != nil {
+			return err
+		}
+		if err := store.RecordVerdict(ctx, tx, v); err != nil {
 			return err
 		}
 		if err := store.ClearDocumentHold(ctx, tx, doc.ID); err != nil {
@@ -515,6 +544,39 @@ func (s *Server) recordReviewComments(ctx context.Context, a rules.RecordReviewC
 	})
 }
 
+// escalatedReview is the review run a person's answer to an escalation rules
+// on: the one named by the document's latest answered review-escalation
+// question (SPEC-017 FR-2.3, M6 follow-up 2). Nil when there is none.
+func (s *Server) escalatedReview(ctx context.Context, docID uuid.UUID) *uuid.UUID {
+	var raw *string
+	err := s.Store.Pool.QueryRow(ctx, `SELECT context->>'dispatch_id' FROM checkpoints
+		WHERE kind = 'review-escalation' AND ref_type = 'document' AND ref_id = $1 AND state = 'answered'
+		ORDER BY answered_at DESC NULLS LAST LIMIT 1`, docID).Scan(&raw)
+	if err != nil || raw == nil {
+		return nil
+	}
+	id, err := uuid.Parse(*raw)
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+// verdictPayload is what a verdict adds to its transition's audit row: the
+// review run behind an agent's (M6 follow-up 2), or how a person's came, so
+// the timeline can tell a relayed verdict from the chat agent's own acts
+// (SPEC-017 FR-2.7).
+func verdictPayload(v store.Verdict) map[string]any {
+	p := map[string]any{"verdict_by": v.Kind}
+	if v.DispatchID != nil {
+		p["dispatch_id"] = v.DispatchID.String()
+	}
+	if v.Via != "" {
+		p["via"] = v.Via
+	}
+	return p
+}
+
 // HumanApproveDocument is the human approve action (SPEC-009 FR-2.3): the
 // single place a person moves a human-approved document out of reviewing. The
 // authority gate is here rather than in the handler so no surface can reach
@@ -529,12 +591,20 @@ func (s *Server) HumanApproveDocument(ctx context.Context, docID uuid.UUID, acto
 	if !s.humanApprovalType(doc.Type) {
 		return fmt.Errorf("a %s is decided by its agent reviewer; it comes to you only when the reviewer escalates", doc.Type)
 	}
-	return s.approveDocument(ctx, rules.ApproveDocument{DocID: docID, Actor: actor})
+	return s.approveDocumentAs(ctx, rules.ApproveDocument{DocID: docID, Actor: actor},
+		personVerdict(docID, store.VerdictApprove, relayAct{Actor: actor, Via: "ui"}))
 }
 
 // HumanReturnDocument is the request-changes half of FR-2.3: the document goes
 // back to draft with the person's reason attached as a comment for its author.
 func (s *Server) HumanReturnDocument(ctx context.Context, docID uuid.UUID, actor, reason string) error {
+	return s.humanReturnDocument(ctx, docID, reason, relayAct{Actor: actor, Via: "ui"})
+}
+
+// humanReturnDocument is HumanReturnDocument for a person's act from either
+// surface, recorded as their verdict (SPEC-017 FR-2.3).
+func (s *Server) humanReturnDocument(ctx context.Context, docID uuid.UUID, reason string, act relayAct) error {
+	actor := act.Actor
 	doc, err := store.GetDocument(ctx, s.Store.Pool, docID)
 	if err != nil {
 		return err
@@ -545,10 +615,10 @@ func (s *Server) HumanReturnDocument(ctx context.Context, docID uuid.UUID, actor
 	if strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("requesting changes needs a reason the author can act on")
 	}
-	return s.returnForChanges(ctx, rules.ReturnForChanges{
+	return s.returnForChangesAs(ctx, rules.ReturnForChanges{
 		DocID: docID, Actor: actor,
 		Comments: []rules.ReviewComment{{Body: strings.TrimSpace(reason)}},
-	})
+	}, personVerdict(docID, store.VerdictSendBack, act))
 }
 
 // evaluateContractGate runs G1 and, on pass, advances the feature — the

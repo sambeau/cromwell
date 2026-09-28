@@ -31,8 +31,9 @@ import (
 // checklistCard is a checklist summarised for an owner's plan section: how
 // many of its jobs are ticked, and whether it is done (SD-9).
 type checklistCard struct {
-	ID     uuid.UUID
-	Name   string
+	ID       uuid.UUID
+	PublicID string // "CL-002" (SPEC-017 FR-3.3)
+	Name     string
 	URL    string
 	Jobs   int
 	Ticked int
@@ -134,7 +135,7 @@ func (s *Server) checklistCardFor(ctx context.Context, c store.Checklist) (check
 	if err != nil {
 		return checklistCard{}, err
 	}
-	return checklistCard{ID: c.ID, Name: c.Name, URL: checklistURL(c.ID),
+	return checklistCard{ID: c.ID, PublicID: c.PublicID, Name: c.Name, URL: checklistURL(c.ID),
 		Jobs: st.Jobs, Ticked: st.Ticked, Done: st.Done()}, nil
 }
 

@@ -692,7 +692,7 @@
         </span>
         <span class="check-title">
           <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
-          <a href="{{.URL}}">{{.Label}}</a>
+          <a href="{{.URL}}">{{template "ident" .PublicID}}{{.Label}}</a>
         </span>
         <span class="check-end"><span class="t-meta">{{.Kind}}</span></span>
       </div>
@@ -834,6 +834,7 @@
     </div>
   </div>
 </div>
+{{template "doc-written-by" .Provenance}}
 
 {{/* This document is edited in the author's own editor and committed to git;
      the page re-renders itself when the file changes (§5.5). */}}

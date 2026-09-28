@@ -66,6 +66,7 @@ type docCard struct {
 // per DESIGN-008 D-10.
 type milestoneCard struct {
 	ID          uuid.UUID
+	PublicID    string // "MS-004" (SPEC-017 FR-3.3)
 	Name        string
 	URL         string
 	Done        int
@@ -89,6 +90,7 @@ func (m milestoneCard) TokenPct() int {
 
 type roadmapCard struct {
 	ID         uuid.UUID
+	PublicID   string // "RM-001" (SPEC-017 FR-3.3)
 	Name       string
 	URL        string
 	Milestones []milestoneCard
@@ -289,7 +291,7 @@ func (s *Server) milestoneCardFor(ctx context.Context, m store.Milestone) (miles
 		return milestoneCard{}, err
 	}
 	return milestoneCard{
-		ID: m.ID, Name: m.Name, URL: "/ui/m/" + m.ID.String(),
+		ID: m.ID, PublicID: m.PublicID, Name: m.Name, URL: "/ui/m/" + m.ID.String(),
 		Done: prog.Done, Total: prog.Total, DoneTokens: done, TotalTokens: total, Locked: locked,
 	}, nil
 }
@@ -362,7 +364,7 @@ func (s *Server) ownedRoadmapCards(ctx context.Context, ownerType string, ownerI
 		if err != nil {
 			return nil, err
 		}
-		card := roadmapCard{ID: rm.ID, Name: rm.Name, URL: "/ui/r/" + rm.ID.String()}
+		card := roadmapCard{ID: rm.ID, PublicID: rm.PublicID, Name: rm.Name, URL: "/ui/r/" + rm.ID.String()}
 		for _, e := range entries {
 			m, err := store.GetMilestone(ctx, s.Store.Pool, e.MilestoneID)
 			if err != nil {

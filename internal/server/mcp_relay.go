@@ -10,6 +10,11 @@ package server
 // that a job on a checklist is done, or not done after all. It is the only way
 // the chat agent can tick or untick a job.
 //
+// submit_for_review (SPEC-017 FR-1) lives here too, beside the relays, but is
+// not one: it hands the chat agent's own work to the reviewer, which DEC-005
+// counts as asking the orchestrator to do what it would do anyway. It takes no
+// quote, and it gives no verdict; the reviewer decides (SD-1, Sam's choice).
+//
 // What is NOT here is the boundary (DEC-006 Amendment 1, DESIGN-010 §5c): no
 // tool sends to development, withdraws a send, starts building, overrides a
 // gate or answers a checkpoint, and none holds a verdict of the agent's own.
@@ -19,14 +24,20 @@ package server
 // TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet fails on anything unnamed.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/ident"
+	"subutai/internal/lifecycle"
 	"subutai/internal/store"
 )
+
+// docProp is the document argument every relay and submit_for_review share.
+var docProp = stringProp("The document's path in the repository, as list_documents gives it, or its ID, such as \"FEAT-003-spec\" or \"DEC-005\".")
 
 // quoteProp is the one argument every relay shares.
 var quoteProp = stringProp("Required. The person's own words that asked for this, quoted exactly as they said them. " +
@@ -35,6 +46,19 @@ var quoteProp = stringProp("Required. The person's own words that asked for this
 func (s *Server) mcpRelayTools() []mcpTool {
 	return []mcpTool{
 		{
+			Name: "submit_for_review",
+			Description: "Submit a draft you have written — a specification, a dev-plan or a design — for review, " +
+				"once the person and you think it's ready. It is checked against its template first; if it fails, " +
+				"you are told what to fix. A specification or dev-plan then goes to its independent agent reviewer, " +
+				"whose verdict is its own, never yours; a design waits for a person to approve it. Submitting " +
+				"doesn't send anything to development: a person does that from the command centre. For a document " +
+				"already in review, a fresh review is the person's call: relay it with relay_review_request.",
+			Schema: objectSchema(map[string]any{
+				"document": docProp,
+			}, "document"),
+			Handler: s.mcpSubmitForReview,
+		},
+		{
 			Name: "relay_verdict",
 			Description: "Carry a person's verdict on a document in review: approve it, or send it back. Use this only " +
 				"when the person has told you their decision, and quote their words. You have no verdict of your own " +
@@ -42,7 +66,7 @@ func (s *Server) mcpRelayTools() []mcpTool {
 				"records the reason as an issue its reviewer must see answered. A document whose review is waiting in " +
 				"the Inbox is decided there, not here.",
 			Schema: objectSchema(map[string]any{
-				"path":    stringProp("The document's path in the repository, as list_documents gives it."),
+				"path":    docProp,
 				"verdict": stringProp("\"approve\" or \"send_back\"."),
 				"reason":  stringProp("For a send-back: what must change, in the person's terms."),
 				"quote":   quoteProp,
@@ -56,7 +80,7 @@ func (s *Server) mcpRelayTools() []mcpTool {
 				"addressed, or why it doesn't apply. On a feature that has been sent to development it goes to the " +
 				"author at once; on an approved specification it opens a revision. Quote the person's words.",
 			Schema: objectSchema(map[string]any{
-				"path":    stringProp("The document's path in the repository."),
+				"path":    docProp,
 				"issue":   stringProp("The issue, written clearly for the author and the reviewer."),
 				"section": stringProp("Optional. The heading of the section it is about."),
 				"quote":   quoteProp,
@@ -65,12 +89,14 @@ func (s *Server) mcpRelayTools() []mcpTool {
 		},
 		{
 			Name: "relay_review_request",
-			Description: "Carry a person's request for an agent review of a specification or dev-plan. A draft is " +
-				"submitted, which queues its review; a document already in review gets a fresh review. The " +
-				"independent reviewer decides, not you. Designs have no agent reviewer: for a cold read of a design, " +
-				"use the review-design chat skill. Quote the person's words.",
+			Description: "Carry a person's request for a fresh agent review of a specification or dev-plan already " +
+				"in review — for example when agent review is switched off for the project, or a review failed. " +
+				"To hand in a draft you wrote, use submit_for_review instead; this relay still submits a draft " +
+				"when the person asks for it in their own words. The independent reviewer decides, not you. " +
+				"Designs have no agent reviewer: for a cold read of a design, use the review-design chat skill. " +
+				"Quote the person's words.",
 			Schema: objectSchema(map[string]any{
-				"path":  stringProp("The document's path in the repository."),
+				"path":  docProp,
 				"quote": quoteProp,
 			}, "path", "quote"),
 			Handler: s.mcpRelayReviewRequest,
@@ -81,7 +107,7 @@ func (s *Server) mcpRelayTools() []mcpTool {
 				"reviewer's approval then stands. This is only possible once the reviewer has approved it and no " +
 				"issue is open, and not when agent review is switched off for the project. Quote the person's words.",
 			Schema: objectSchema(map[string]any{
-				"path":  stringProp("The specification's path in the repository."),
+				"path":  docProp,
 				"quote": quoteProp,
 			}, "path", "quote"),
 			Handler: s.mcpRelayRelease,
@@ -93,7 +119,7 @@ func (s *Server) mcpRelayTools() []mcpTool {
 				"their words: the tick is recorded as theirs, relayed by you, with the quote beside it. Never " +
 				"tick a job on your own judgement. A note, if given, replaces the job's note.",
 			Schema: objectSchema(map[string]any{
-				"checklist": stringProp("The checklist's id, or its exact name if no other checklist shares it."),
+				"checklist": stringProp("The checklist's ID, such as \"CL-002\", or its exact name if no other checklist shares it."),
 				"job":       stringProp("The job's id, or its exact title if no other job on this checklist shares it."),
 				"ticked":    map[string]any{"type": "boolean", "description": "true to tick the job (the person says it is done), false to untick it (they say it isn't)."},
 				"note":      stringProp("Optional. Something the person said about it, such as where the key is kept."),
@@ -151,20 +177,72 @@ func (s *Server) mcpRelayTickJob(r *http.Request, args map[string]any) (any, err
 
 // relayTarget resolves the document and the person's quote every relay needs.
 func (s *Server) relayTarget(r *http.Request, args map[string]any) (*store.Document, relayAct, error) {
-	path, ok := argString(args, "path")
+	ref, ok := argString(args, "path")
 	if !ok {
-		return nil, relayAct{}, errors.New("the document's path is required; call list_documents to find it")
+		return nil, relayAct{}, errors.New("the document's path or ID is required; call list_documents to find it")
 	}
 	quote, ok := argString(args, "quote")
 	if !ok {
 		return nil, relayAct{}, errors.New("the person's words are required in quote: a relay carries what they said, " +
 			"and without it there is nothing to relay. If they haven't told you to do this, don't")
 	}
-	doc, err := store.LiveDocumentByPath(r.Context(), s.Store.Pool, path)
+	doc, err := s.documentByRef(r.Context(), ref)
 	if err != nil {
-		return nil, relayAct{}, fmt.Errorf("there is no current document at %q; call list_documents to see what exists", path)
+		return nil, relayAct{}, err
 	}
 	return doc, relayAct{Actor: s.mcpActor(), Via: "mcp", Quote: quote}, nil
+}
+
+// documentByRef finds the document a relay or submit_for_review names: by
+// its path, or by its ID (SPEC-017 FR-3.1). An ID names its newest revision
+// that isn't superseded — the one in review while a revision is open —
+// because a person's verdict or issue is about the text in front of them.
+// "FEAT-003-spec.r2" names that revision exactly.
+func (s *Server) documentByRef(ctx context.Context, ref string) (*store.Document, error) {
+	if doc, err := store.LiveDocumentByPath(ctx, s.Store.Pool, ref); err == nil {
+		return doc, nil
+	} else if err != store.ErrNotFound {
+		return nil, err
+	}
+	if id, ok := ident.Parse(ref); ok && (id.Shape == ident.ShapeDocument || id.Shape == ident.ShapeDecision) {
+		var doc *store.Document
+		var err error
+		if id.Revision > 0 {
+			doc, err = store.DocumentByIdentity(ctx, s.Store.Pool, id.ID, id.Revision)
+		} else {
+			doc, err = store.LiveDocumentByPublicID(ctx, s.Store.Pool, id.ID)
+		}
+		if err == nil {
+			if doc.State == lifecycle.DocSuperseded {
+				return nil, fmt.Errorf("%s revision %d has been superseded; name the current one, %s", id.ID, doc.Revision, id.ID)
+			}
+			return doc, nil
+		}
+		if err != store.ErrNotFound {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("there is no current document at or called %q; call list_documents to see what exists", ref)
+}
+
+// mcpSubmitForReview is submit_for_review (SPEC-017 FR-1): SubmitDoc, the
+// document page's Submit, as the chat agent, with no quote (SD-1). The
+// refusals are the page's, in the page's words.
+func (s *Server) mcpSubmitForReview(r *http.Request, args map[string]any) (any, error) {
+	ctx := r.Context()
+	ref, ok := argString(args, "document")
+	if !ok {
+		return nil, errors.New("say which document to submit, by its path or its ID, in \"document\"")
+	}
+	doc, err := s.documentByRef(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	next, err := s.SubmitFromChat(ctx, doc)
+	if err != nil {
+		return nil, err
+	}
+	return s.relayResult(r, doc, next)
 }
 
 func (s *Server) mcpRelayVerdict(r *http.Request, args map[string]any) (any, error) {
@@ -240,8 +318,7 @@ func (s *Server) relayResult(r *http.Request, doc *store.Document, done string) 
 	if err != nil {
 		fresh = doc
 	}
-	return map[string]any{
-		"done": done, "path": fresh.Path, "state": string(fresh.State),
-		"url": "/ui/d/" + fresh.Path,
-	}, nil
+	out := s.mcpDoc(r.Context(), *fresh)
+	out["done"] = done
+	return out, nil
 }

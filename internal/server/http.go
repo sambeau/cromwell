@@ -358,7 +358,7 @@ func (s *Server) handleRevise(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	successor, err := s.ReviseDoc(r.Context(), req.Path, actor(r))
+	successor, err := s.reviseDocBy(r.Context(), req.Path, actor(r), s.writerFor(store.ActOpenedRevision, actor(r), "api"))
 	if err != nil {
 		writeErr(w, 409, err)
 		return

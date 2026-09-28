@@ -145,6 +145,15 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"relay_review_request",
 		"relay_tick_job",
 		"relay_verdict",
+		// SPEC-017 FR-1: the chat agent hands in a draft it wrote. Submitting
+		// is asking the orchestrator to do what it would do anyway (DEC-005);
+		// the independent reviewer decides, and the tool takes no quote
+		// because it carries no verdict (SD-1, Sam's choice).
+		"submit_for_review",
+		// SPEC-017 FR-4: read-only views of what the web UI already shows,
+		// authoring-safe under DEC-004 (the M6 handoff's follow-up 1).
+		"get_agent_run",
+		"get_timeline",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -162,6 +171,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-014 FR-7.10: ticking without a person's quoted words isn't an
 		// act the chat agent has.
 		"tick_job", "untick_job", "set_job_ticked",
+		// SPEC-017 NFR-2: the chat agent holds no verdict of its own, and the
+		// dispatched authors' outcome tool is never offered to it.
+		"approve_document", "submit_document", "submit_review",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

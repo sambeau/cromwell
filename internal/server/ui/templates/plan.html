@@ -44,7 +44,7 @@
     <div class="u-mt-6 u-mb-6">
       <div class="u-row u-mb-4">
         <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
-        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+        <a class="t-row-title" href="{{.URL}}">{{template "ident" .PublicID}}{{.Name}}</a>
         <span class="u-push u-row">
           <span class="t-meta">In intended order</span>
           <button class="btn btn--sm" type="button" aria-label="Edit the roadmap {{.Name}}"
@@ -61,7 +61,7 @@
     <div class="u-mb-4">
       <div class="u-row u-mb-4">
         <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
-        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+        <a class="t-row-title" href="{{.URL}}">{{template "ident" .PublicID}}{{.Name}}</a>
         <span class="u-push u-row">
           {{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}
           <button class="btn btn--sm" type="button" aria-label="Edit the milestone {{.Name}}"
@@ -79,7 +79,7 @@
     <div class="u-mb-4">
       <div class="u-row">
         <svg class="icon icon-md icon-entity" data-entity="checklist" aria-hidden="true"><use href="#i-checklist"/></svg>
-        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+        <a class="t-row-title" href="{{.URL}}">{{template "ident" .PublicID}}{{.Name}}</a>
         <span class="u-push u-row">
           <span class="t-meta">{{.Status}}</span>
           <button class="btn btn--sm" type="button" aria-label="Edit the checklist {{.Name}}"
@@ -307,7 +307,7 @@
         </span>
         <span class="check-title">
           <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
-          <a href="{{.URL}}">{{.Label}}</a>
+          <a href="{{.URL}}">{{template "ident" .PublicID}}{{.Label}}</a>
         </span>
         <span class="check-end">
           <span class="t-meta">{{if .Sub}}{{.Sub}} · {{end}}{{.Kind}}</span>

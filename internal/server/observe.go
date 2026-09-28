@@ -274,11 +274,10 @@ func (s *Server) featureTimeline(ctx context.Context, featureID uuid.UUID) (*tim
 			QueuedAt: r.QueuedAt, FinishedAt: r.FinishedAt, Tokens: r.Tokens(), Verdict: r.Verdict})
 	}
 
-	chatActor := ""
-	if cfg, err := s.freshConfig(); err == nil {
-		chatActor = cfg.Server.MCPActor
-	}
-	moments := timeline.Build(events, truns, timeline.Options{Progress: progress, ChatActor: chatActor})
+	// The chat agent's name is mcpActor's, which has a default: reading the
+	// setting alone credited its acts to a person called chat-agent when the
+	// setting was unset (SPEC-017 FR-2.7).
+	moments := timeline.Build(events, truns, timeline.Options{Progress: progress, ChatActor: s.mcpActor()})
 	view := &timelineView{FeatureID: featureID, Line: timeline.Line(moments)}
 	for i, m := range moments {
 		mv := momentView{Moment: m, Index: i, Current: i == len(moments)-1}

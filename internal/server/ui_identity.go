@@ -68,9 +68,15 @@ func (s *Server) urlForID(ctx context.Context, raw string) (string, error) {
 				return "", ignoreNotFound(err)
 			}
 			return roadmapURL(rm.ID), nil
+		case "checklist":
+			// SPEC-017 FR-3.4, the M8 follow-up SD-19 left for after M5.
+			c, err := store.ChecklistByPublicID(ctx, pool, ref.ID)
+			if err != nil {
+				return "", ignoreNotFound(err)
+			}
+			return checklistURL(c.ID), nil
 		}
-		// Checklists have no page on this branch yet (SD-19); bugs and spikes
-		// don't exist.
+		// Bugs and spikes don't exist yet.
 		return "", nil
 	case ident.ShapeTask:
 		t, err := store.TaskByPublicID(ctx, pool, ref.ID)

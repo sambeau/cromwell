@@ -144,7 +144,8 @@ func TestUIChecklists(t *testing.T) {
 	}
 	// A boosted post from outside the editor gets the checklist page.
 	_, page = h.postPlan("/ui/job/move", map[string]string{"checklist_id": cid, "job_id": icon.ID.String(), "place": "3"}, false)
-	mustContain(t, "boosted gets the page", page, `<h1 class="t-page">Launch paperwork</h1>`)
+	// The heading carries the checklist's ID (SPEC-017 FR-3.3).
+	mustContain(t, "boosted gets the page", page, `<h1 class="t-page"><span class="ident">CL-001</span>Launch paperwork</h1>`)
 
 	// FR-6: into a milestone from the milestone's picker; FR-4.4: out and back
 	// in from the checklist's own page.
@@ -300,7 +301,12 @@ func TestMCPChecklistTools(t *testing.T) {
 	}
 	callErr("create_checklist", map[string]any{"name": "x", "owner_path": "nope"}, "no initiative at \"nope\"")
 	callErr("create_checklist", map[string]any{"name": "x", "jobs": "one"}, "list of job titles")
+	// Results name a checklist by its ID, and keep its row id beside it
+	// (SPEC-017 SD-9).
 	cid := cl["id"].(string)
+	if cid != "CL-001" || cl["row_id"] == nil {
+		t.Errorf("a new checklist's id = %v, row_id = %v; want CL-001 and its row id", cl["id"], cl["row_id"])
+	}
 
 	// FR-7.2 to FR-7.5: add, rename, move, remove.
 	out := call("add_job", map[string]any{"checklist": "Launch paperwork", "title": "Choose an icon", "position": 1})
@@ -407,7 +413,7 @@ func TestMCPChecklistTools(t *testing.T) {
 		t.Errorf("milestones = %v", got["milestones"])
 	}
 	// The relayed words show on the checklist page (SD-8).
-	_, page := h.getUI("/ui/c/" + cid)
+	_, page := h.getUI("/ui/c/" + cl["row_id"].(string))
 	mustContain(t, "quote on the page", page, "We picked the blue icon")
 
 	// Every write is on the trail under the MCP actor.

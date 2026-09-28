@@ -35,7 +35,12 @@ func (s *Server) executePhase2(ctx context.Context, action rules.Action) (bool, 
 	case rules.AbandonTask:
 		return true, s.abandonTask(ctx, a)
 	case rules.FileAuthoredDocument:
-		return true, s.fileAuthoredDocument(ctx, a.FeatureID, a.DocType, a.Body, a.Actor)
+		var run *uuid.UUID
+		if a.DispatchID != uuid.Nil {
+			id := a.DispatchID
+			run = &id
+		}
+		return true, s.fileAuthoredDocument(ctx, a.FeatureID, a.DocType, a.Body, a.Actor, run)
 	case rules.MergeFeature:
 		return true, s.mergeFeature(ctx, a.FeatureID, a.Actor)
 	case rules.ReturnFeatureForCriteria:

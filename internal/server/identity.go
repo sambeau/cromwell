@@ -89,7 +89,7 @@ func stampIdentity(body, id string, revision int) (string, error) {
 // registerInTx registers a file already on disk, with the content given, in
 // the caller's transaction: the row, its ID if it has one, and its section
 // index, all together.
-func registerInTx(ctx context.Context, tx pgx.Tx, path string, raw []byte, docType, ownerType string, ownerID, supersedes *uuid.UUID, publicID string, revision int, actor string) (*store.Document, error) {
+func registerInTx(ctx context.Context, tx pgx.Tx, path string, raw []byte, docType, ownerType string, ownerID, supersedes *uuid.UUID, publicID string, revision int, actor string, by writerAct) (*store.Document, error) {
 	parsed, perr := content.Parse(string(raw))
 	title := path
 	if perr == nil {
@@ -99,6 +99,10 @@ func registerInTx(ctx context.Context, tx pgx.Tx, path string, raw []byte, docTy
 	}
 	doc, err := store.RegisterDocument(ctx, tx, docType, ownerType, ownerID, path, title, content.Hash(raw), supersedes, actor)
 	if err != nil {
+		return nil, err
+	}
+	// Who wrote it, in the same transaction (SPEC-017 FR-2.2).
+	if err := recordWriter(ctx, tx, doc.ID, by); err != nil {
 		return nil, err
 	}
 	if publicID != "" {
@@ -187,7 +191,8 @@ func (s *Server) startDesign(ctx context.Context, tx pgx.Tx, ownerType string, o
 	}
 	undo = func() { _ = os.Remove(abs) }
 	oid := ownerID
-	doc, err := registerInTx(ctx, tx, path, []byte(body), "design", ownerType, &oid, nil, id, revision, actor)
+	doc, err := registerInTx(ctx, tx, path, []byte(body), "design", ownerType, &oid, nil, id, revision, actor,
+		s.writerFor(store.ActStarted, actor, ""))
 	if err != nil {
 		undo()
 		return "", func() {}, err
@@ -360,7 +365,11 @@ func (s *Server) AdoptDocument(ctx context.Context, req AdoptRequest) (*AdoptRes
 			}
 			doc.ContentHash = hash
 		} else {
-			if doc, err = registerInTx(ctx, tx, path, []byte(newRaw), req.DocType, req.OwnerType, req.OwnerID, nil, id, revision, req.Actor); err != nil {
+			by := writerAct{Act: store.ActAdded, Kind: store.WriterPerson, Actor: req.Actor, Via: req.Via}
+			if req.Via == "mcp" {
+				by.Kind = store.WriterChat
+			}
+			if doc, err = registerInTx(ctx, tx, path, []byte(newRaw), req.DocType, req.OwnerType, req.OwnerID, nil, id, revision, req.Actor, by); err != nil {
 				return err
 			}
 			if req.State == lifecycle.DocApproved {
@@ -468,6 +477,9 @@ func (s *Server) recordAlreadyApproved(ctx context.Context, tx pgx.Tx, doc *stor
 		return err
 	}
 	if err := store.MarkDocumentAdoptedApproved(ctx, tx, doc.ID); err != nil {
+		return err
+	}
+	if err := store.RecordVerdict(ctx, tx, personVerdict(doc.ID, store.VerdictApprove, relayAct{Actor: actor, Via: via})); err != nil {
 		return err
 	}
 	doc.State = lifecycle.DocApproved

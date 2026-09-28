@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/ident"
 	"subutai/internal/store"
 )
 
@@ -31,6 +32,13 @@ import (
 func (s *Server) checklistByRef(ctx context.Context, ref string) (*store.Checklist, error) {
 	if id, err := uuid.Parse(ref); err == nil {
 		return store.GetChecklist(ctx, s.Store.Pool, id)
+	}
+	// Its ID, "CL-002" (SPEC-017 FR-3.2); a checklist named like one is
+	// still found by its name.
+	if r, ok := ident.Parse(ref); ok && r.Shape == ident.ShapeEntity && r.Kind.Name == "checklist" {
+		if c, err := store.ChecklistByPublicID(ctx, s.Store.Pool, r.ID); err != store.ErrNotFound {
+			return c, err
+		}
 	}
 	return store.ChecklistByName(ctx, s.Store.Pool, ref)
 }
@@ -124,7 +132,7 @@ func (s *Server) mcpChecklistSummary(ctx context.Context, c *store.Checklist) (m
 		return nil, err
 	}
 	return map[string]any{
-		"id": c.ID.String(), "name": c.Name, "description": c.Description,
+		"id": publicOrRow(c.PublicID, c.ID), "row_id": c.ID.String(), "name": c.Name, "description": c.Description,
 		"owner":       s.mcpOwnerOf(ctx, c.OwnerType, c.OwnerID),
 		"jobs_ticked": st.Ticked, "jobs_total": st.Jobs, "done": st.Done(),
 		"url": checklistURL(c.ID),
@@ -153,7 +161,7 @@ func (s *Server) mcpChecklistDetail(ctx context.Context, c *store.Checklist) (ma
 	}
 	in := make([]any, 0, len(ms))
 	for _, m := range ms {
-		in = append(in, map[string]any{"id": m.ID.String(), "name": m.Name})
+		in = append(in, map[string]any{"id": publicOrRow(m.PublicID, m.ID), "row_id": m.ID.String(), "name": m.Name})
 	}
 	out["milestones"] = in
 	return out, nil

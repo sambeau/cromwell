@@ -78,7 +78,9 @@ type mcpTool struct {
 // (FR-3), plus the milestone and roadmap tools of SPEC-010 (mcpPlanTools), plus
 // the checklist tools of SPEC-014 (mcpChecklistTools), plus the relay tools of
 // SPEC-011 and SPEC-014 (mcpRelayTools, which carry a person's quoted decision
-// and never send or start building), and nothing else. A
+// and never send or start building), submit_for_review beside them (SPEC-017
+// FR-1: the chat agent hands in its own draft, and the reviewer decides), and
+// the two read-only tools of SPEC-017 FR-4 (mcpObserveTools), and nothing else. A
 // development-side or gate tool would have to be added here to exist at all,
 // which is what makes the line reviewable.
 func (s *Server) mcpTools() []mcpTool {
@@ -102,10 +104,10 @@ func (s *Server) mcpTools() []mcpTool {
 		},
 		{
 			Name: "create_feature",
-			Description: "Create a feature under an initiative. The feature starts as an idea; it is " +
-				"not started into development — a person does that from the command centre when its " +
-				"specification has been approved. Its design document is started from the template " +
-				"unless you say otherwise; a feature can also build from its initiative's design.",
+			Description: "Create a feature under an initiative. The feature starts as an idea; nothing " +
+				"runs on it until a person sends it to development from the command centre, which they can do " +
+				"once its own or its initiative's design is approved. Its design document is started from the " +
+				"template unless you say otherwise; a feature can also build from its initiative's design.",
 			Schema: objectSchema(map[string]any{
 				"initiative_path": stringProp("The path of the initiative that will own this feature, for example \"auth\", or its ID, such as \"INIT-003\"."),
 				"design_document": boolProp("Optional, true unless you say otherwise. Whether to start the feature's own design document. Say false for a placeholder, or for a feature that will build from its initiative's design."),
@@ -208,7 +210,7 @@ func (s *Server) mcpTools() []mcpTool {
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
-	}, append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...)...)
+	}, append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...)...)
 }
 
 // mcpToolNames is the sorted list of advertised tool names — the assertion
@@ -298,7 +300,11 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				"features, titles, descriptions and document attachments, and plan with milestones " +
 				"and roadmaps: create them, fill them, order them, and mark a milestone as shipped " +
 				"when the person says it has gone out. You can keep checklists of jobs only a person " +
-				"can do, and put them in milestones. You can also carry a person's " +
+				"can do, and put them in milestones. You can write a specification or dev-plan yourself, " +
+				"with the person, add the file, and submit it for review (submit_for_review): its independent " +
+				"reviewer decides, not you, and a spec written this way is used as it is when the feature is " +
+				"sent. You can read a feature's timeline (get_timeline) and any agent run (get_agent_run). " +
+				"You can also carry a person's " +
 				"decisions on documents — a verdict, an issue, a request for an agent review, or " +
 				"letting the reviewer decide on a held specification — and their word that a job is " +
 				"done (relay_tick_job), always quoting their words; " +

@@ -25,6 +25,8 @@ type memberRow struct {
 	Done  bool
 	Kind  string
 	Sub   string // a short status beside it, such as a checklist's jobs ticked
+	// PublicID is its ID, "FEAT-003" or "CL-002" (SPEC-017 FR-3.2).
+	PublicID string
 }
 
 type milestonePage struct {
@@ -109,7 +111,7 @@ func (s *Server) milestoneMemberRows(ctx context.Context, milestoneID uuid.UUID)
 				return nil, err
 			}
 			out = append(out, memberRow{ID: f.ID, Label: f.Name, URL: "/ui/f/" + path,
-				Done: f.State == "done", Kind: "feature"})
+				Done: f.State == "done", Kind: "feature", PublicID: f.PublicID})
 		case "initiative":
 			in, err := store.GetInitiative(ctx, s.Store.Pool, mem.MemberID)
 			if err != nil {
@@ -124,14 +126,14 @@ func (s *Server) milestoneMemberRows(ctx context.Context, milestoneID uuid.UUID)
 				return nil, err
 			}
 			out = append(out, memberRow{ID: in.ID, Label: in.Name, URL: "/ui/i/" + path,
-				Done: n == 0, Kind: "initiative"})
+				Done: n == 0, Kind: "initiative", PublicID: in.PublicID})
 		case "milestone":
 			sub, err := store.GetMilestone(ctx, s.Store.Pool, mem.MemberID)
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, memberRow{ID: sub.ID, Label: sub.Name, URL: "/ui/m/" + sub.ID.String(),
-				Done: sub.LockedAt != nil, Kind: "milestone"})
+				Done: sub.LockedAt != nil, Kind: "milestone", PublicID: sub.PublicID})
 		case "checklist":
 			// Done when it has jobs and every one is ticked (SPEC-014 FR-2.6).
 			c, err := store.GetChecklist(ctx, s.Store.Pool, mem.MemberID)
@@ -143,7 +145,7 @@ func (s *Server) milestoneMemberRows(ctx context.Context, milestoneID uuid.UUID)
 				return nil, err
 			}
 			out = append(out, memberRow{ID: c.ID, Label: c.Name, URL: card.URL,
-				Done: card.Done, Kind: "checklist", Sub: card.Status()})
+				Done: card.Done, Kind: "checklist", Sub: card.Status(), PublicID: c.PublicID})
 		}
 	}
 	return out, nil
@@ -216,7 +218,7 @@ func (s *Server) handleUIRoadmapPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if card.ID == uuid.Nil {
-		card = roadmapCard{ID: rm.ID, Name: rm.Name, URL: "/ui/r/" + rm.ID.String()}
+		card = roadmapCard{ID: rm.ID, PublicID: rm.PublicID, Name: rm.Name, URL: "/ui/r/" + rm.ID.String()}
 	}
 	page := roadmapPage{Roadmap: *rm, Owner: s.ownerCrumb(ctx, rm.OwnerType, rm.OwnerID), Card: card}
 	s.render(w, "page-roadmap", s.page(r.Context(), "browse", page))

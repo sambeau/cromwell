@@ -667,7 +667,7 @@ func TestFreshDocumentAfterSupersessionReusesTheID(t *testing.T) {
 	}
 	var docID uuid.UUID
 	_ = h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		d, err := registerInTx(ctx, tx, "docs/s.md", []byte("x"), "spec", "feature", &f.ID, nil, "FEAT-001-spec", 1, "t")
+		d, err := registerInTx(ctx, tx, "docs/s.md", []byte("x"), "spec", "feature", &f.ID, nil, "FEAT-001-spec", 1, "t", writerAct{})
 		if err == nil {
 			docID = d.ID
 		}
@@ -693,7 +693,7 @@ func TestAuthoredDocumentsGoHomeByID(t *testing.T) {
 	h.uiCreateFeature("auth", "login", "Login", false)
 	f, _, _ := h.srv.featureByRef(ctx, "FEAT-001")
 	body := "---\ntitle: Login spec\ntype: spec\nowner: auth/login\n---\n\n# Login spec\n"
-	if err := h.srv.fileAuthoredDocument(ctx, f.ID, "spec", body, "spec-author"); err != nil {
+	if err := h.srv.fileAuthoredDocument(ctx, f.ID, "spec", body, "spec-author", nil); err != nil {
 		t.Fatal(err)
 	}
 	d := h.docAt("docs/work/INIT-001-auth/FEAT-001-spec.md")
@@ -710,7 +710,7 @@ func TestAuthoredDocumentsGoHomeByID(t *testing.T) {
 	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE features SET legacy_doc_paths = true WHERE id = $1`, old.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.srv.fileAuthoredDocument(ctx, old.ID, "spec", body, "spec-author"); err != nil {
+	if err := h.srv.fileAuthoredDocument(ctx, old.ID, "spec", body, "spec-author", nil); err != nil {
 		t.Fatal(err)
 	}
 	ld := h.docAt("docs/auth/old/spec.md")

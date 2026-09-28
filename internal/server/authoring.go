@@ -551,7 +551,10 @@ func (s *Server) invalidateSpecForRevision(ctx context.Context, af affectedSpec,
 	f, spec := af.Feature, af.Spec
 
 	if f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview {
-		if _, err := s.ReviseDoc(ctx, spec.Path, actor); err != nil {
+		// The cascade opens it, whoever answered the question that let it
+		// (SPEC-017 FR-2.2).
+		if _, err := s.reviseDocBy(ctx, spec.Path, actor,
+			writerAct{Act: store.ActOpenedRevision, Kind: store.WriterSystem, Actor: "subutai"}); err != nil {
 			return err
 		}
 		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
@@ -734,10 +737,18 @@ func validateAuthoredDocument(m *config.Manifest) func(json.RawMessage) error {
 // The agent chose none of this: not the path, not the owner, not the moment it
 // is committed. That is the standing convention for implicit context (vision
 // §8), and it is why submit_document takes a body and nothing else.
-func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, docType, body, actor string) error {
+func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, docType, body, actor string, run *uuid.UUID) error {
 	f, err := store.GetFeature(ctx, s.Store.Pool, featureID)
 	if err != nil {
 		return err
+	}
+	// The writer is the agent: its role, its model and the run (SPEC-017
+	// FR-2.2).
+	by := writerAct{Act: store.ActWrote, Kind: store.WriterAgent, Actor: actor, DispatchID: run, Via: "agent"}
+	if run != nil {
+		if d, err := store.GetDispatch(ctx, s.Store.Pool, *run); err == nil {
+			by.Model = d.Model
+		}
 	}
 
 	// If the feature already holds a current draft of this type, the dispatch
@@ -787,7 +798,7 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 		return err
 	}
 	if register {
-		if _, err := s.registerDocWithIdentity(ctx, path, docType, "feature", &f.ID, actor, publicID, revision); err != nil {
+		if _, err := s.registerDocWithIdentity(ctx, path, docType, "feature", &f.ID, actor, publicID, revision, by); err != nil {
 			return err
 		}
 	}
@@ -796,7 +807,23 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 	// moment it happens, so the notification comes from SubmitDoc's own
 	// transition rather than from git (FR-7.2).
 	s.commitDocument(path, fmt.Sprintf("subutai: %s authored for %s", docType, f.Slug))
-	_, _, err = s.SubmitDoc(ctx, path, actor)
+	if register {
+		_, _, err = s.SubmitDoc(ctx, path, actor)
+		return err
+	}
+	// Filling a draft that already exists — a revision, or a draft written in
+	// chat and sent back after Send — is recorded in the submission's own
+	// transaction (SPEC-017 FR-2.2).
+	_, _, err = s.submitDocWith(ctx, path, actor, nil, func(ctx context.Context, tx pgx.Tx, doc *store.Document) error {
+		has, err := store.HasWriter(ctx, tx, doc.ID)
+		if err != nil {
+			return err
+		}
+		if has {
+			by.Act = store.ActRevised
+		}
+		return recordWriter(ctx, tx, doc.ID, by)
+	})
 	return err
 }
 
