@@ -181,6 +181,20 @@ func AddMember(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, memberType
 			return ErrMilestoneCycle
 		}
 	}
+	if memberType == "feature" {
+		// A bug is a feature row, and joins a milestone as one — once it is
+		// committed scope, which is what accepting it in triage means
+		// (SPEC-019 SD-13).
+		var triage *string
+		err := tx.QueryRow(ctx, `SELECT b.triage FROM features f LEFT JOIN bugs b ON b.feature_id = f.id
+			WHERE f.id = $1 AND f.kind = 'bug'`, memberID).Scan(&triage)
+		if err == nil && (triage == nil || *triage != "accepted") {
+			return ErrBugNotAccepted
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO milestone_members (milestone_id, member_type, member_id)
 		VALUES ($1, $2, $3)
@@ -219,6 +233,10 @@ func RemoveMember(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, memberT
 // ErrMilestoneCycle is returned when adding a milestone would put it inside
 // itself.
 var ErrMilestoneCycle = errors.New("a milestone can't contain itself, directly or through another milestone")
+
+// ErrBugNotAccepted refuses a bug in a milestone before triage accepts it
+// (SPEC-019 SD-13).
+var ErrBugNotAccepted = errors.New("this bug hasn't been accepted in triage, so it isn't committed work yet; accept it first")
 
 // MilestoneContains reports whether inner is a member of outer, directly or
 // through nested milestones. Initiatives and features are not followed: only
@@ -340,7 +358,9 @@ func resolveLeaves(ctx context.Context, q Querier, milestoneID uuid.UUID) (featu
 }
 
 // descendantFeatureIDs returns every feature in an initiative's subtree
-// (transitive over nested initiatives).
+// (transitive over nested initiatives). Bugs aren't brought in: a bug counts
+// when it is added to the milestone itself, as a checklist does (SPEC-019
+// SD-13).
 func descendantFeatureIDs(ctx context.Context, q Querier, initiativeID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := q.Query(ctx, `
 		WITH RECURSIVE subtree AS (
@@ -349,6 +369,7 @@ func descendantFeatureIDs(ctx context.Context, q Querier, initiativeID uuid.UUID
 			SELECT i.id FROM initiatives i JOIN subtree s ON i.parent_id = s.id
 		)
 		SELECT f.id FROM features f JOIN subtree s ON f.initiative_id = s.id
+		WHERE f.kind = 'feature'
 		ORDER BY f.id`, initiativeID)
 	if err != nil {
 		return nil, err

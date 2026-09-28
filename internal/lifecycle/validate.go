@@ -37,10 +37,11 @@ func (r *Report) add(check, format string, args ...any) {
 type LinkChecker func(target string) bool
 
 // RuleKinds is the registry of manifest rule kinds (DESIGN-004 §7, F-6).
-// Phase 1 shipped min_list_items; phase 2 adds table_parses. New kinds are
+// Phase 1 shipped min_list_items; phase 2 adds table_parses; SPEC-019 adds
+// contains_text, which a bug report's built-in criterion needs. New kinds are
 // added here and listed in DESIGN-004.
 func RuleKinds() map[string]bool {
-	return map[string]bool{"min_list_items": true, "table_parses": true}
+	return map[string]bool{"min_list_items": true, "table_parses": true, "contains_text": true}
 }
 
 // Validate runs the full check suite for a document of the manifest's type.
@@ -101,10 +102,14 @@ func Validate(m *config.Manifest, raw string, resolves LinkChecker) Report {
 		}
 	}
 	for _, sec := range doc.Sections {
-		if i := strings.Index(sec.Content, "{{"); i >= 0 && strings.Contains(sec.Content[i:], "}}") {
+		// Fenced code is quoted text — a log line, a stack trace, a template
+		// — not the writer's own placeholder, so it is left out of this check
+		// (SPEC-019 R19-3). The parser already treats it as text.
+		prose := outsideFences(sec.Content)
+		if i := strings.Index(prose, "{{"); i >= 0 && strings.Contains(prose[i:], "}}") {
 			report.add("placeholders", "section %q contains an unresolved {{...}} placeholder", sec.Heading)
 		}
-		if containsWord(sec.Content, "TODO") {
+		if containsWord(prose, "TODO") {
 			report.add("placeholders", "section %q contains TODO", sec.Heading)
 		}
 	}
@@ -134,6 +139,21 @@ func Validate(m *config.Manifest, raw string, resolves LinkChecker) Report {
 			}
 			if _, err := ParseTaskTable(sec.Content); err != nil {
 				report.add("rule:table_parses", "%v", err)
+			}
+		case "contains_text":
+			// A section must say something in so many words: a bug report's
+			// Acceptance criteria must keep "The defect no longer reproduces".
+			// Case and spacing are forgiven, not wording.
+			sec := doc.SectionByHeading(rule.Section)
+			if sec == nil {
+				report.add("rule:contains_text", "section %q is missing", rule.Section)
+				continue
+			}
+			// The text must open a list item: "The defect no longer reproduces"
+			// is a criterion of its own, not a phrase inside another
+			// (SPEC-019 SD-5, R19-14).
+			if !listItemStartsWith(sec.Content, rule.Text) {
+				report.add("rule:contains_text", "section %q must have a list item that starts %q", rule.Section, rule.Text)
 			}
 		default:
 			// Unknown kinds are caught at config load (DESIGN-004 §9);
@@ -183,4 +203,74 @@ func containsWord(body, word string) bool {
 
 func isWordChar(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+}
+
+// normaliseSpace lower-cases s and collapses runs of white space, so a
+// contains_text rule doesn't fail on a line break or a capital.
+func normaliseSpace(s string) string {
+	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
+}
+
+// outsideFences returns the lines of s that aren't inside a fenced code
+// block.
+func outsideFences(s string) string {
+	var b strings.Builder
+	in := false
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			in = !in
+			continue
+		}
+		if !in {
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+// listItemStartsWith reports whether a list item in s, outside fenced code,
+// begins with text, ignoring case and spacing. A list item runs on across
+// indented continuation lines.
+func listItemStartsWith(s, text string) bool {
+	want := normaliseSpace(text)
+	lines := strings.Split(outsideFences(s), "\n")
+	for i, line := range lines {
+		item, ok := listItemText(line)
+		if !ok {
+			continue
+		}
+		for j := i + 1; j < len(lines); j++ {
+			l := lines[j]
+			if strings.TrimSpace(l) == "" || !(strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")) {
+				break
+			}
+			if _, next := listItemText(strings.TrimSpace(l)); next {
+				break
+			}
+			item += " " + l
+		}
+		if strings.HasPrefix(normaliseSpace(item), want) {
+			return true
+		}
+	}
+	return false
+}
+
+// listItemText returns a list line's text after its marker.
+func listItemText(line string) (string, bool) {
+	t := strings.TrimSpace(line)
+	for _, m := range []string{"- ", "* ", "+ "} {
+		if strings.HasPrefix(t, m) {
+			return t[len(m):], true
+		}
+	}
+	i := 0
+	for i < len(t) && t[i] >= '0' && t[i] <= '9' {
+		i++
+	}
+	if i > 0 && i+1 < len(t) && (t[i] == '.' || t[i] == ')') && t[i+1] == ' ' {
+		return t[i+2:], true
+	}
+	return "", false
 }

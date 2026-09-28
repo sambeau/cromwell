@@ -25,6 +25,10 @@ func KnownTools() map[string]bool {
 	return map[string]bool{
 		"read_file": true, "list_files": true,
 		"edit_file": true, "write_file": true, "run_command": true,
+		// report_bug files a bug report in the triage queue (SPEC-019
+		// FR-3.3). It writes nothing to the worktree, so read-only roles —
+		// the code reviewer, the verifier — may declare it.
+		"report_bug": true,
 	}
 }
 
@@ -33,6 +37,21 @@ func KnownTools() map[string]bool {
 // §4.4, FR-1.4).
 func MutatingTools() map[string]bool {
 	return map[string]bool{"edit_file": true, "write_file": true}
+}
+
+// isWorktreePurpose reports whether a purpose runs in a worktree, with the
+// role's profile tools offered: implementation, code review, verification.
+func isWorktreePurpose(p string) bool {
+	return p == "implement-task" || p == "review-code" || p == "verify-feature"
+}
+
+func hasTool(tools []string, name string) bool {
+	for _, t := range tools {
+		if t == name {
+			return true
+		}
+	}
+	return false
 }
 
 // readOnlyPurposes are dispatch purposes whose role must not mutate the
@@ -204,12 +223,13 @@ type SectionRef struct {
 // validation engine, and Load verifies kinds against the set the caller
 // passes in. Fields beyond kind/section are per-kind: min for
 // min_list_items, columns for table_parses (documentary — the columns are
-// fixed by the rule).
+// fixed by the rule), text for contains_text.
 type Rule struct {
 	Kind    string   `yaml:"kind"`
 	Section string   `yaml:"section"`
 	Min     int      `yaml:"min"`
 	Columns []string `yaml:"columns"`
+	Text    string   `yaml:"text"`
 }
 
 // LoadManifest reads templates/<docType>/manifest.yaml fresh (O-6).
@@ -376,12 +396,25 @@ func Load(root string, knownRuleKinds map[string]bool) (*Compartment, error) {
 					}
 				}
 			}
+			// Authors and the estimator work on documents, and are never
+			// offered worktree tools, so report_bug on one would be ignored
+			// without a word (SPEC-019 R19-10). Say so instead.
+			if !isWorktreePurpose(purpose) && hasTool(r.Tools, "report_bug") {
+				errs = append(errs, errf(filepath.Join("roles", role+".yaml"), "tools",
+					"role is bound to %q, which is never offered worktree tools, so it can't use report_bug; "+
+						"report_bug is for implementers, code reviewers and verifiers", purpose))
+			}
 		}
 	}
 	for docType, m := range c.Manifests {
 		if _, ok := c.Roles[m.ReviewerRole]; !ok && m.ReviewerRole != "" {
 			errs = append(errs, errf(filepath.Join("templates", docType, "manifest.yaml"),
 				"reviewer_role", "unknown role %q", m.ReviewerRole))
+		}
+		if r, ok := c.Roles[m.ReviewerRole]; ok && hasTool(r.Tools, "report_bug") {
+			errs = append(errs, errf(filepath.Join("roles", m.ReviewerRole+".yaml"), "tools",
+				"role reviews %s documents, which is never offered worktree tools, so it can't use report_bug; "+
+					"report_bug is for implementers, code reviewers and verifiers", docType))
 		}
 		for i, rule := range m.Rules {
 			if knownRuleKinds != nil && !knownRuleKinds[rule.Kind] {
