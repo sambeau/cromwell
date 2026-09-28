@@ -11,8 +11,15 @@ the authoring chain, in which agents write and review the spec and dev-plan
 from an approved design. Cromwell is now being revised as **Subutai**: the
 same engine with a clearer workflow and a new name. Where that stands, and the
 milestones to finish it, are in the
-[Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md);
-the first decision taken is [DEC-006](docs/decisions/DEC-006-humans-start-development.md).
+[Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md).
+The design ([DESIGN-010](docs/design/DESIGN-010-subutai.md)) is approved.
+Phase A and the first three build milestones are merged:
+- M4: milestones and roadmaps are editable in the browser and from chat;
+- M3: approving a design starts nothing, and a human presses **Send to
+  development**;
+- M6: every agent run keeps its transcript, and each feature has a timeline.
+
+Their specs (SPEC-010 to SPEC-012) await Sam's approval.
 
 Build: `go build ./cmd/cromwell` · Test: `eval "$(scripts/test-db.sh)"` then
 `go test -race -count=1 ./...` (without `CROMWELL_TEST_DATABASE_URL` the
@@ -98,11 +105,14 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
   design produces a reviewed spec, dev-plan and tasks with no further human
   act, and stops at gate 2; proven live for 15,976 tokens. The revision-cascade
   smoke (DoD 3) has not run.
-- **Subutai** (next): the revision planned in the
-  [roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) §11. A human
-  presses Send to development ([DEC-006](docs/decisions/DEC-006-humans-start-development.md)),
-  milestone and roadmap editing, checklists, executors, the rename, and GitHub
-  adoption.
+- **Subutai** (in progress): the revision planned in the
+  [roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) §11.
+  - **Merged:**
+    - Send to development ([DEC-006](docs/decisions/DEC-006-humans-start-development.md), SPEC-011);
+    - milestone and roadmap editing (SPEC-010);
+    - transcripts, the feature timeline and review health (SPEC-012).
+  - **Next:** checklists, the rename, document identity and the editor,
+    executors, bugs, spikes, decisions, and GitHub adoption.
 
 ## Design notes
 
