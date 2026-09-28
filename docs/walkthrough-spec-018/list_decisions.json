@@ -1,0 +1,142 @@
+{
+  "conventions": {
+    "id": "PROJECT-conventions",
+    "path": "docs/conventions.md",
+    "state": "accepted"
+  },
+  "decisions": [
+    {
+      "id": "DEC-001",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-001-server-language-go.md",
+      "reason": "One static binary, and the team's experience.",
+      "revision": 2,
+      "ruling": "The server, the CLI and all tooling are written in Go.",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "DEC-001: Server Language — Go",
+      "told_as": "DEC-001: The server, the CLI and all tooling are written in Go. Why: One static binary, and the team's experience."
+    },
+    {
+      "id": "DEC-002",
+      "note": "No ruling is recorded, so agents are told its title.",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-002-postgres-via-supabase.md",
+      "revision": 1,
+      "ruling": "",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "DEC-002: State Store — Supabase-hosted Postgres, plain-Postgres compatible",
+      "told_as": "DEC-002: State Store — Supabase-hosted Postgres, plain-Postgres compatible"
+    },
+    {
+      "id": "DEC-003",
+      "note": "No ruling is recorded, so agents are told its title.",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-003-cli-scope.md",
+      "revision": 1,
+      "ruling": "",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "DEC-003: The CLI shrinks to the vision's three components",
+      "told_as": "DEC-003: The CLI shrinks to the vision's three components"
+    },
+    {
+      "amendments": [
+        "Amendment 1 — milestones and roadmaps (2026-09-28)"
+      ],
+      "id": "DEC-004",
+      "note": "No ruling is recorded, so agents are told its title.",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-004-mcp-planning-authoring.md",
+      "revision": 1,
+      "ruling": "",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "DEC-004: The MCP facet may author the planning layer, but not drive development",
+      "told_as": "DEC-004: The MCP facet may author the planning layer, but not drive development"
+    },
+    {
+      "id": "DEC-005",
+      "note": "No ruling is recorded, so agents are told its title.",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-005-the-orchestration-boundary.md",
+      "revision": 1,
+      "ruling": "",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "DEC-005: The boundary is bypassing the orchestrator, not spawning agents",
+      "told_as": "DEC-005: The boundary is bypassing the orchestrator, not spawning agents"
+    },
+    {
+      "amendments": [
+        "Amendment 1 — reviews and relay (2026-09-28)"
+      ],
+      "id": "DEC-006",
+      "note": "No ruling is recorded, so agents are told its title.",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-006-humans-start-development.md",
+      "revision": 1,
+      "ruling": "",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "DEC-006: A human decides when development starts",
+      "told_as": "DEC-006: A human decides when development starts"
+    },
+    {
+      "id": "DEC-007",
+      "note": "No ruling is recorded, so agents are told its title.",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-007-the-judgement-boundary.md",
+      "revision": 1,
+      "ruling": "",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "DEC-007: Who does the work is flexible; who judges it is not",
+      "told_as": "DEC-007: Who does the work is flexible; who judges it is not"
+    },
+    {
+      "id": "DEC-009",
+      "owner": "INIT-001 Authentication",
+      "path": "docs/work/INIT-001-auth/DEC-009-passwords-are-hashed-with-argon2id.md",
+      "reason": "It is the current recommendation.",
+      "revision": 1,
+      "ruling": "Hash passwords with argon2id, with the library defaults.",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [],
+      "title": "Passwords are hashed with argon2id",
+      "told_as": "DEC-009 (INIT-001 Authentication): Hash passwords with argon2id, with the library defaults. Why: It is the current recommendation."
+    },
+    {
+      "amendments": [
+        "Amendment 1 — cookies expire (2026-09-28)"
+      ],
+      "id": "DEC-010",
+      "owner": "the project",
+      "path": "docs/decisions/DEC-010-sessions-live-in-signed-cookies.md",
+      "reason": "Any server can answer any request.",
+      "revision": 2,
+      "ruling": "Sessions are signed cookies that expire after twelve idle hours; the server keeps no session state.",
+      "state": "accepted",
+      "superseded_by": [],
+      "supersedes": [
+        "DEC-008"
+      ],
+      "title": "Sessions live in signed cookies",
+      "told_as": "DEC-010: Sessions are signed cookies that expire after twelve idle hours; the server keeps no session state. Why: Any server can answer any request."
+    }
+  ],
+  "for": "INIT-001 Authentication",
+  "left_out": [],
+  "max_tokens": 1500,
+  "state": "accepted",
+  "told_tokens": 348
+}

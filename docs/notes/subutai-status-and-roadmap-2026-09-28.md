@@ -710,7 +710,7 @@ M0, M3 and M6 handoffs.
 
 ### Phase C: complete the model
 
-**M11 — Decisions** · S · needs M8
+**M11 — Decisions** · S · needs M8 · ✅ **done 2026-09-28**, see the [M11 handoff](handoff-M11-2026-09-28.md)
 *Goal: the project remembers why, and agents are told.*
 - `DEC-nnn` documents with a viewer.
 - Relevant decisions and conventions pushed into prompts, with a size cap.
