@@ -674,7 +674,7 @@ was told, did and concluded.
 
 *Done when:* `subutai serve` works and the suite is green.
 
-**M8 — Documents with identity** · M · needs M2 · lane 1
+**M8 — Documents with identity** · M · needs M2 · lane 1 · ✅ **done 2026-09-28**, see the [M8 handoff](handoff-M8-2026-09-28.md)
 *Goal: every document has an ID, and creating work creates its documents.*
 - Mint IDs from the database and store them in front matter.
 - Create a starter document with each new entity.
