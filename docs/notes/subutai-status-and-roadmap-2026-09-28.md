@@ -585,7 +585,7 @@ README is honest.
 [DEC-006](../decisions/DEC-006-humans-start-development.md) was accepted with
 the recommended defaults.
 
-**M2 — Design Draft 2, approved** · M · decision
+**M2 — Design Draft 2, approved** · M · decision · ✅ **done 2026-09-28**
 *Goal: an approved Subutai design with a clear v1 cut line.*
 - Rewrite DESIGN-010 §5 and §12 to match DEC-006.
 - Add a planning-and-tracking section.
@@ -595,15 +595,22 @@ the recommended defaults.
 
 *Done when:* DESIGN-010 is approved and DEC-007 is accepted.
 
-**In progress (2026-09-28):**
+**Done (2026-09-28):**
 - [DEC-007](../decisions/DEC-007-the-judgement-boundary.md) is written up from
   the accepted proposal.
-- [DESIGN-010 Draft 2](../design/DESIGN-010-subutai.md) is written and
-  consistency-reviewed. All twenty review findings are addressed (§19). It is
-  waiting for Sam's approval.
-  - Its §17a lists seven proposals that go beyond the accepted decisions.
-    Approving the draft approves them, unless Sam says otherwise.
-  - Its §18 lists what changed from Draft 1.
+- [DESIGN-010](../design/DESIGN-010-subutai.md) Draft 2 was consistency-reviewed
+  (all twenty findings addressed) and **approved by Sam**, with all seven of its
+  §17a proposals:
+  - the design reviewer is retired (in M3);
+  - there is no chat lock tool;
+  - bugs can be milestone deliverables;
+  - checklists belong to the project or an initiative, and chat can create
+    them;
+  - the prefixes for milestones, roadmaps, checklists and tasks, and the
+    document revision scheme;
+  - the bug path;
+  - spikes are started in the UI.
+- DESIGN-009 is confirmed approved.
 
 ### Phase B: the Subutai core
 
@@ -616,7 +623,7 @@ the recommended defaults.
 - Human issues on specs (must-address), and an optional hold for a human.
 - Chat relay tools for human verdicts, issues and review requests.
 - Add Submit, Revise and Detach on the document page.
-- Retire the design reviewer, if Sam confirms DESIGN-010 §17a item 1.
+- Retire the design reviewer (DESIGN-010 §17a item 1, accepted).
 - Decide whether a send can be withdrawn.
 
 *Done when:* a live run shows that approving a design starts nothing, and that
@@ -630,7 +637,7 @@ stops. The cascade smoke (§7) runs in the same session.
 - Reorder roadmap entries.
 - Lock a milestone, showing why when G4 refuses.
 - Add chat tools for the same actions, except locking. Locking stays in the UI
-  pending Sam's ruling on DESIGN-010 §17a item 2.
+  (DESIGN-010 §17a item 2, accepted).
 
 *Done when:* a person can build a two-milestone roadmap for an initiative
 entirely in the browser, and the chat agent can do the same.

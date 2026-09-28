@@ -1,8 +1,8 @@
 # DESIGN-010: Subutai
 
-**Status:** Draft 2, for Sam's approval. It has been consistency-reviewed
-(§19) and is not yet approved. **Approving it also means ruling on the
-proposals listed in §17a.**
+**Status:** **Approved — Sam, 2026-09-28.** This is Draft 2, consistency-
+reviewed (§19). The seven proposals in §17a were accepted with it. Drafted by
+Claude; the author isn't the approval gate, and wasn't.
 **Date:** 2026-09-28 (Draft 1: 2026-07-31)
 **Author:** Claude, from the R2 discussion with Sam and the decisions of
 2026-09-28.
@@ -23,7 +23,8 @@ proposals listed in §17a.**
   replace.
 
 **Reading notes.** Section numbers in this document are Draft 2's own. Anything
-that goes beyond an accepted decision is marked **(proposal, §17a)**.
+that went beyond an earlier decision is marked **(§17a)**. All of those were
+accepted with the design on 2026-09-28.
 
 ---
 
@@ -138,14 +139,13 @@ Every orchestrated role has its own configured model, its own instructions, and
 its own strictly limited set of tools. A reviewer has no tool that can edit a
 file. Which model backs which role is yours to tune, per project.
 
-**The design reviewer is retired (proposal, §17a).**
+**The design reviewer is retired (§17a).**
 - It is built today (SPEC-009 FR-2.2). It comments on designs and never rules.
-- Draft 1 retired it, on Sam's 31 July view that a design gets its review in
-  the conversation that writes it, with a human in the room.
-- DEC-006 deliberately left the question open.
-- If retired, the `review-design` skill survives as a chat-side skill, for
-  anyone who wants a cold read of a design on request, and the removal lands
-  in roadmap milestone M3.
+- A design gets its review in the conversation that writes it, with a human in
+  the room.
+- The `review-design` skill survives as a chat-side skill, for anyone who
+  wants a cold read of a design on request.
+- The removal lands in roadmap milestone M3.
 
 ## 4. The vocabulary
 
@@ -169,7 +169,7 @@ Subutai keeps a deliberately small set of concepts, in two groups: things that
 
 | Term | What it is |
 |---|---|
-| **Deliverable** | Anything a milestone can contain: an initiative (meaning everything under it), a feature, a bug (proposal, §17a), a checklist, or another milestone. |
+| **Deliverable** | Anything a milestone can contain: an initiative (meaning everything under it), a feature, a bug (§17a), a checklist, or another milestone. |
 | **Milestone** | An *unordered* collection of deliverables that ship together. It is live while open, and frozen when locked, so the record of what shipped is honest (§6). |
 | **Roadmap** | An *ordered* list of **milestones**, and only milestones (DESIGN-008 D-11). The order means whatever the planner wants it to mean, and the system just preserves it. |
 
@@ -414,7 +414,7 @@ by *what an act does*, not which channel it comes through.
 
 - **It may author planning structure,** under DEC-004: initiatives, features,
   milestones and roadmaps, descriptions and documents. Checklists and jobs are
-  included too (proposal, §17a).
+  included too (§17a).
 - **It may relay a human's decisions:**
   - a verdict on any document;
   - an issue raised on a document;
@@ -449,7 +449,7 @@ beta" or "Public launch". It contains any mix of:
 - initiatives (everything under them, live: a feature added later joins
   automatically);
 - features;
-- bugs (proposal);
+- bugs (§17a);
 - checklists;
 - other milestones.
 
@@ -496,7 +496,7 @@ API key, sign a contract, choose an icon.
 
 - **Ownership.** Milestones and roadmaps belong to the project or to an
   initiative, so planning sits at the level it's about (DESIGN-008 D-9).
-  Checklists belong to them the same way (proposal). What a milestone
+  Checklists belong to them the same way (§17a). What a milestone
   *contains* can come from anywhere in the tree (D-12).
 - **Editing in the web UI.** Each one is edited in a modal from its owner's
   page (roadmap decision 7). Members can be added from either end: from the
@@ -518,16 +518,16 @@ matter who creates what, from chat or the UI (roadmap decision 9).
 | Bug | `BUG-` | `BUG-007` | accepted |
 | Spike | `SPK-` | `SPK-003` | accepted |
 | Decision | `DEC-` | `DEC-008` | accepted |
-| Milestone | `MS-` | `MS-004` | proposal |
-| Roadmap | `RM-` | `RM-001` | proposal |
-| Checklist | `CL-` | `CL-002` | proposal |
-| Task | `<feature>-T<n>` | `FEAT-023-T03` | proposal |
+| Milestone | `MS-` | `MS-004` | accepted (§17a) |
+| Roadmap | `RM-` | `RM-001` | accepted (§17a) |
+| Checklist | `CL-` | `CL-002` | accepted (§17a) |
+| Task | `<feature>-T<n>` | `FEAT-023-T03` | accepted (§17a) |
 
 The number means nothing beyond "the next one". A **decision** is a document,
 not an entity, but it gets its own number sequence, because decisions are cited
 on their own.
 
-### Document IDs, and what happens when a document is revised (proposal)
+### Document IDs, and what happens when a document is revised (§17a)
 
 - **A document's ID** is its owner's ID plus its type, for example
   `FEAT-023-spec`.
@@ -652,10 +652,10 @@ initiative or feature it came from.
 - A human accepts or rejects each one. That is a commitment of scope, the same
   kind of act as creating a feature.
 - Triage happens in the queue. The chat agent may relay a triage decision with
-  the human's words (proposal, §17a).
+  the human's words (§17a).
 
 **From acceptance onward, a bug travels the normal pipeline, with two
-differences** (proposal, §17a):
+differences** (§17a):
 - **Its gate to Send is acceptance.** A bug has no design, so an accepted bug
   with a report can be sent to development in place of G0.
 - **Its report serves as its spec.** The spec-writing step is skipped. The spec
@@ -680,7 +680,7 @@ A spike is a question with a budget.
 - The code it writes along the way is scaffolding. It is real enough to answer
   the question, and never good enough to ship.
 
-**Starting a spike (proposal, §17a).** Anyone may *create* a spike, including
+**Starting a spike (§17a).** Anyone may *create* a spike, including
 the chat agent as planning structure. **Starting** one spends resources, so it
 works like Send to development: a human starts it in the web UI. Any executor
 may *run* it (DEC-007): a dispatched agent, the chat AI, or a human.
@@ -693,7 +693,7 @@ default that can be overridden per spike (roadmap decision 13).
 - The findings so far are written up, and a human decides whether the question
   deserves a second, separately budgeted spike.
 - A spike run in chat or by a human can't be metered in tokens. It carries a
-  time box instead, enforced through claim expiry (§5b) (proposal).
+  time box instead, enforced through claim expiry (§5b) (§17a).
 
 **A spike can't merge, and that is enforced, not promised.** It gets a worktree
 like any other work, and when it concludes the worktree is discarded. There is
@@ -821,7 +821,7 @@ For readers who know Cromwell, here are the deltas:
    orchestrated. "Start work" is renamed Start building.
 3. **Spec review is reshaped.** The agent reviewer is the normal approver, and
    there is always at least one reviewer. Humans raise issues, and can hold a
-   spec for themselves. The design reviewer is retired (proposal).
+   spec for themselves. The design reviewer is retired.
 4. **The chat agent grows up.** It relays human decisions, quoted and audited.
    It plans milestones, roadmaps and checklists, and it can claim work. It
    never judges, and never commits resources.
@@ -866,10 +866,10 @@ into milestones M0 to M15:
 
 ## 17. Open items
 
-### 17a. Proposals in this draft that need Sam's ruling
+### 17a. Proposals accepted with the design
 
-These go beyond the accepted decisions. Approving Draft 2 approves them, unless
-Sam says otherwise.
+These went beyond the decisions accepted earlier. **Sam accepted all seven with
+the design, on 2026-09-28.**
 
 1. **Retire the design reviewer** (§3), in M3.
 2. **The chat agent may not lock a milestone** (§5c), because locking can't be

@@ -44,7 +44,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DESIGN-007](docs/design/DESIGN-007-web-command-centre.md) | Phase 4: the web command centre |
 | [DESIGN-008](docs/design/DESIGN-008-the-workflow-surface.md) | The workflow surface: browsable, document-led pages, and the MCP facet |
 | [DESIGN-009](docs/design/DESIGN-009-the-authoring-half.md) | The authoring half: agents write specs and dev-plans from an approved design |
-| [DESIGN-010](docs/design/DESIGN-010-subutai.md) | Subutai: the revised workflow (Draft 2, awaiting approval) |
+| [DESIGN-010](docs/design/DESIGN-010-subutai.md) | Subutai: the revised workflow (**approved**, Draft 2) |
 | [SPEC-001](docs/specs/SPEC-001-phase-1-vertical-slice.md) | Phase 1: the vertical slice (**binding**) |
 | [SPEC-002](docs/specs/SPEC-002-phase-2-implementation-loop.md) | Phase 2: the implementation loop (**binding**) |
 | [SPEC-003](docs/specs/SPEC-003-phase-3-planning-and-tracking.md) | Phase 3 (first slice): sizing, calibration, milestones (**binding**) |
