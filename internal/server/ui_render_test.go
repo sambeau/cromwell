@@ -181,6 +181,9 @@ func TestGatedActionShowsPlainReason(t *testing.T) {
 		Kind: "feature", RefType: "feature", ID: uuid.New(), Title: "Login form",
 		Breadcrumbs: []crumb{{Label: "Project", URL: "/ui/project"}},
 		State:       "idea", CanStart: false, StartReason: featureStartReason("idea", true, false), CanAbandon: true,
+		// A sent feature: until then the blocked action is Send, not Start
+		// building (SPEC-011 FR-4.1).
+		Send: sendCard{Show: true, Sent: true, SentBy: "op"}, ShowStartCard: true,
 	}
 	var buf bytes.Buffer
 	if err := tmpl.t.ExecuteTemplate(&buf, "page-entity", pageData{Active: "browse", Actor: "op", Data: page}); err != nil {

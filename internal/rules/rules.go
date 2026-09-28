@@ -701,7 +701,14 @@ func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Actio
 			case "approve":
 				return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
 			case "request_changes":
-				return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
+				// The person's reason is what the author needs; with no
+				// structured comments it would otherwise be dropped. For a spec
+				// or plan it becomes a human issue (SPEC-011 SD-15).
+				comments := r.Comments
+				if len(comments) == 0 && strings.TrimSpace(r.Reason) != "" {
+					comments = []ReviewComment{{Body: strings.TrimSpace(r.Reason)}}
+				}
+				return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: comments}}
 			}
 		case "task":
 			if snap.Task == nil {

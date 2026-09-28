@@ -154,12 +154,19 @@ func (s *Server) estimateFeature(ctx context.Context, featureID uuid.UUID) error
 // request, or a re-review after an issue overtook a verdict — is keyed by the
 // count of reviews so far, so it is not mistaken for a replay of the last.
 func (s *Server) reviewKey(ctx context.Context, a rules.QueueReview) (string, error) {
-	if !a.Fresh && a.IdempotencyKey != "" {
-		return a.IdempotencyKey, nil
-	}
 	doc, err := store.GetDocument(ctx, s.Store.Pool, a.DocID)
 	if err != nil {
 		return "", err
+	}
+	if !a.Fresh && a.IdempotencyKey != "" {
+		// Each submission is its own review, even of unchanged content — an
+		// author that sends back the same text must still be reviewed, or
+		// the loop stalls (SPEC-011 FR-3). A replay of the same submission
+		// carries the same submitted_at, so it stays a no-op.
+		if doc.SubmittedAt != nil {
+			return fmt.Sprintf("%s:s%d", a.IdempotencyKey, doc.SubmittedAt.UnixNano()), nil
+		}
+		return a.IdempotencyKey, nil
 	}
 	n, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "document", a.DocID, "review-"+a.DocType)
 	if err != nil {

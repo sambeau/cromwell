@@ -353,6 +353,16 @@ func (s *Server) queueAuthoring(ctx context.Context, purpose string, featureID u
 		return s.configErrorCheckpoint(ctx, "feature", featureID, err)
 	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		// Serialise on the feature row, then refuse a second live dispatch
+		// of the purpose: an event and the heartbeat sweep can both find the
+		// same gap at once, and with the count-based key they would each
+		// enqueue one (SPEC-011, found by TestIssueOnASentFeaturesSpec...).
+		if _, err := tx.Exec(ctx, `SELECT id FROM features WHERE id = $1 FOR UPDATE`, featureID); err != nil {
+			return err
+		}
+		if live, err := store.LiveDispatchForRef(ctx, tx, "feature", featureID, purpose); err != nil || live {
+			return err
+		}
 		n, err := store.CountDispatchesForRef(ctx, tx, "feature", featureID, purpose)
 		if err != nil {
 			return err
