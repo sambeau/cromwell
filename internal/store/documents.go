@@ -31,16 +31,23 @@ type Document struct {
 	SubmittedAt *time.Time
 	ApprovedAt  *time.Time
 	CreatedAt   time.Time
+	// PublicID and Revision are the document's ID, "FEAT-023-spec", and which
+	// revision of it this row is (SPEC-015 FR-3). Both are empty for a
+	// document registered before migration 0010 or attached without adoption:
+	// it is known by its path alone (SD-7, SD-12).
+	PublicID string
+	Revision int
 }
 
 const docCols = `id, type, state, owner_type, owner_id, path, title, tags,
-	supersedes_id, content_hash, is_primary, indexed_at, submitted_at, approved_at, created_at`
+	supersedes_id, content_hash, is_primary, indexed_at, submitted_at, approved_at, created_at,
+	COALESCE(public_id, ''), COALESCE(revision, 0)`
 
 func scanDoc(row pgx.Row) (*Document, error) {
 	var d Document
 	err := row.Scan(&d.ID, &d.Type, &d.State, &d.OwnerType, &d.OwnerID, &d.Path,
 		&d.Title, &d.Tags, &d.SupersedesID, &d.ContentHash, &d.IsPrimary, &d.IndexedAt,
-		&d.SubmittedAt, &d.ApprovedAt, &d.CreatedAt)
+		&d.SubmittedAt, &d.ApprovedAt, &d.CreatedAt, &d.PublicID, &d.Revision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

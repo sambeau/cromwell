@@ -156,7 +156,7 @@ func MilestonesForMember(ctx context.Context, q Querier, memberType string, memb
 }
 
 // prefixedMilestoneCols is milestoneCols qualified to the m alias, for joins.
-const prefixedMilestoneCols = `m.id, m.name, m.description, m.target_date, m.state, m.locked_at, m.owner_type, m.owner_id, m.created_at`
+const prefixedMilestoneCols = `m.id, m.name, m.description, m.target_date, m.state, m.locked_at, m.owner_type, m.owner_id, m.created_at, m.public_id`
 
 // MemberCandidate is one thing that could be added to a milestone, as the
 // milestone-side picker shows it (SPEC-010 FR-3.3): its kind, id, name, and —

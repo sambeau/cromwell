@@ -119,10 +119,10 @@ func (s *Server) featureByPath(ctx context.Context, path string) (*store.Feature
 	}
 	var f store.Feature
 	err = s.Store.Pool.QueryRow(ctx, `
-		SELECT id, initiative_id, slug, name, description, state, created_at
+		SELECT id, initiative_id, slug, name, description, state, created_at, public_id, legacy_doc_paths
 		FROM features WHERE initiative_id = $1 AND slug = $2`,
 		in.ID, parts[len(parts)-1]).
-		Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description, &f.State, &f.CreatedAt)
+		Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description, &f.State, &f.CreatedAt, &f.PublicID, &f.LegacyDocPaths)
 	if err != nil {
 		return nil, store.ErrNotFound
 	}

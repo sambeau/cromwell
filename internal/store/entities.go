@@ -22,19 +22,21 @@ type Initiative struct {
 	Description string
 	Archived    bool
 	CreatedAt   time.Time
+	// PublicID is the minted ID, "INIT-014" (SPEC-015 FR-1.2).
+	PublicID string
 }
 
 func CreateInitiative(ctx context.Context, tx pgx.Tx, parentID *uuid.UUID, slug, name, description, actor string) (*Initiative, error) {
 	in := &Initiative{ID: NewID(), ParentID: parentID, Slug: slug, Name: name, Description: description}
-	_, err := tx.Exec(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO initiatives (id, parent_id, slug, name, description)
-		VALUES ($1, $2, $3, $4, $5)`,
-		in.ID, parentID, slug, name, description)
+		VALUES ($1, $2, $3, $4, $5) RETURNING public_id`,
+		in.ID, parentID, slug, name, description).Scan(&in.PublicID)
 	if err != nil {
 		return nil, err
 	}
 	if err := Audit(ctx, tx, actor, "initiative.created", "initiative", &in.ID,
-		map[string]any{"slug": slug, "name": name}); err != nil {
+		map[string]any{"slug": slug, "name": name, "public_id": in.PublicID}); err != nil {
 		return nil, err
 	}
 	return in, nil
@@ -43,9 +45,9 @@ func CreateInitiative(ctx context.Context, tx pgx.Tx, parentID *uuid.UUID, slug,
 func GetInitiative(ctx context.Context, q Querier, id uuid.UUID) (*Initiative, error) {
 	var in Initiative
 	err := q.QueryRow(ctx, `
-		SELECT id, parent_id, slug, name, description, archived, created_at
+		SELECT id, parent_id, slug, name, description, archived, created_at, public_id
 		FROM initiatives WHERE id = $1`, id).
-		Scan(&in.ID, &in.ParentID, &in.Slug, &in.Name, &in.Description, &in.Archived, &in.CreatedAt)
+		Scan(&in.ID, &in.ParentID, &in.Slug, &in.Name, &in.Description, &in.Archived, &in.CreatedAt, &in.PublicID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -59,10 +61,10 @@ func (s *Store) InitiativeBySlugPath(ctx context.Context, path []string) (*Initi
 	for _, slug := range path {
 		var row Initiative
 		err := s.Pool.QueryRow(ctx, `
-			SELECT id, parent_id, slug, name, description, archived, created_at
+			SELECT id, parent_id, slug, name, description, archived, created_at, public_id
 			FROM initiatives WHERE slug = $1 AND parent_id IS NOT DISTINCT FROM $2`,
 			slug, parent).
-			Scan(&row.ID, &row.ParentID, &row.Slug, &row.Name, &row.Description, &row.Archived, &row.CreatedAt)
+			Scan(&row.ID, &row.ParentID, &row.Slug, &row.Name, &row.Description, &row.Archived, &row.CreatedAt, &row.PublicID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -114,19 +116,24 @@ type Feature struct {
 	Description  string
 	State        lifecycle.FeatureState
 	CreatedAt    time.Time
+	// PublicID is the minted ID, "FEAT-023" (SPEC-015 FR-1.2).
+	PublicID string
+	// LegacyDocPaths marks a feature that existed before migration 0010: its
+	// authored documents keep SPEC-009's paths (SPEC-015 SD-16).
+	LegacyDocPaths bool
 }
 
 func CreateFeature(ctx context.Context, tx pgx.Tx, initiativeID uuid.UUID, slug, name, description, actor string) (*Feature, error) {
 	f := &Feature{ID: NewID(), InitiativeID: initiativeID, Slug: slug, Name: name, Description: description, State: lifecycle.FeatIdea}
-	_, err := tx.Exec(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO features (id, initiative_id, slug, name, description)
-		VALUES ($1, $2, $3, $4, $5)`,
-		f.ID, initiativeID, slug, name, description)
+		VALUES ($1, $2, $3, $4, $5) RETURNING public_id`,
+		f.ID, initiativeID, slug, name, description).Scan(&f.PublicID)
 	if err != nil {
 		return nil, err
 	}
 	if err := Audit(ctx, tx, actor, "feature.created", "feature", &f.ID,
-		map[string]any{"slug": slug, "name": name, "initiative_id": initiativeID.String()}); err != nil {
+		map[string]any{"slug": slug, "name": name, "initiative_id": initiativeID.String(), "public_id": f.PublicID}); err != nil {
 		return nil, err
 	}
 	return f, nil
@@ -174,9 +181,9 @@ func UpdateEntityFields(ctx context.Context, tx pgx.Tx, refType string, id uuid.
 func GetFeature(ctx context.Context, q Querier, id uuid.UUID) (*Feature, error) {
 	var f Feature
 	err := q.QueryRow(ctx, `
-		SELECT id, initiative_id, slug, name, description, state, created_at
+		SELECT id, initiative_id, slug, name, description, state, created_at, public_id, legacy_doc_paths
 		FROM features WHERE id = $1`, id).
-		Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description, &f.State, &f.CreatedAt)
+		Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description, &f.State, &f.CreatedAt, &f.PublicID, &f.LegacyDocPaths)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -222,7 +229,7 @@ func InitiativeAncestors(ctx context.Context, q Querier, id uuid.UUID) ([]Initia
 			UNION ALL
 			SELECT i.*, c.depth + 1 FROM initiatives i JOIN chain c ON i.id = c.parent_id
 		)
-		SELECT id, parent_id, slug, name, description, archived, created_at
+		SELECT id, parent_id, slug, name, description, archived, created_at, public_id
 		FROM chain ORDER BY depth`, id)
 	if err != nil {
 		return nil, err
@@ -231,7 +238,7 @@ func InitiativeAncestors(ctx context.Context, q Querier, id uuid.UUID) ([]Initia
 	var out []Initiative
 	for rows.Next() {
 		var in Initiative
-		if err := rows.Scan(&in.ID, &in.ParentID, &in.Slug, &in.Name, &in.Description, &in.Archived, &in.CreatedAt); err != nil {
+		if err := rows.Scan(&in.ID, &in.ParentID, &in.Slug, &in.Name, &in.Description, &in.Archived, &in.CreatedAt, &in.PublicID); err != nil {
 			return nil, err
 		}
 		out = append(out, in)
