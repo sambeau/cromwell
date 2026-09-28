@@ -171,7 +171,7 @@ func TestG4(t *testing.T) {
 		}
 		// A refusal is shown to a person as it stands (SPEC-010 FR-5.1): a
 		// full sentence that counts features, not a fragment.
-		if !got.Pass && (!strings.HasPrefix(got.Reason, "This milestone can't be locked yet, because") ||
+		if !got.Pass && (!strings.HasPrefix(got.Reason, "This milestone can't be marked as shipped yet, because") ||
 			!strings.HasSuffix(got.Reason, ".") || !strings.Contains(got.Reason, "feature")) {
 			t.Errorf("G4(%d,%d) refusal is not a plain sentence about features: %q", c.resolved, c.done, got.Reason)
 		}

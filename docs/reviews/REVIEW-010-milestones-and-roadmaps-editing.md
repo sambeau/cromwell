@@ -2,7 +2,7 @@
 
 **Status:** Complete. The author has dealt with every finding (§6, and
 [SPEC-010 §7](../specs/SPEC-010-milestones-and-roadmaps-editing.md#7-changes-after-review));
-awaiting Sam's decision
+**SPEC-010 approved by Sam, 2026-09-28**
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author. Approval is
 Sam's, recorded in §5.
@@ -480,7 +480,13 @@ Decisions for Sam once the findings are dealt with:
 **Recommended for approval once R10-1 to R10-6 are fixed.** The reviewer does
 not approve.
 
-_Decision (Sam): pending._
+_Decision (Sam), 2026-09-28: the four decisions above are settled.
+(1) Locking became a reversible "Mark as shipped" (SPEC-010 SD-11), and the
+chat agent may mark as shipped and reopen, under DEC-004 Amendment 1, with
+two tools added for it (SPEC-010 FR-7.10). (2) Both deviations from DESIGN-008 §5.1a are
+accepted, with a dated note in the design. (3) Milestones and roadmaps are
+planning layer, recorded in DEC-004 Amendment 1. (4) Roadmap entries may cross
+owners. **SPEC-010 and the build approved, 2026-09-28.**_
 
 ## 6. Author's response (2026-09-28)
 

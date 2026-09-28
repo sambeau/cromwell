@@ -13,9 +13,10 @@ import (
 )
 
 // TestPlanEditorsRender renders every SPEC-010 template in each of its shapes
-// and checks the parts of the contract that live in markup: the lock is
-// disabled with a plain reason when G4 would refuse (FR-5.1), the confirm step
-// says the lock is permanent (FR-5.2), a milestone is edited as a checklist and
+// and checks the parts of the contract that live in markup: "Mark as shipped"
+// is disabled with a plain reason when G4 would refuse (FR-5.1), it says what
+// it does and that it can be undone (FR-5.2), a shipped milestone offers only
+// a way to reopen it (FR-5.4), a milestone is edited as a checklist and
 // a roadmap as a numbered list with no table anywhere (D-10, NFR-5), and no
 // field invites a typed entity path (NFR-4).
 func TestPlanEditorsRender(t *testing.T) {
@@ -46,7 +47,7 @@ func TestPlanEditorsRender(t *testing.T) {
 		Card:      sampleMilestoneCard(), Owner: crumb{Label: "Project", URL: "/ui/project"},
 		Members: members, LockReason: lifecycle.G4(3, 0).Reason, LeafCount: 3,
 		Picker: memberPicker{MilestoneID: mID, Query: "zzz", ScopeLabel: "the whole project"},
-		Error:  "This milestone is locked, so what it contains is fixed.",
+		Error:  "This milestone is marked as shipped, so what it contains is fixed. Reopen it first to change it.",
 	}
 	locked := &milestoneEditor{
 		Milestone: store.Milestone{ID: mID, Name: "Auth beta", State: "locked"},
@@ -103,22 +104,25 @@ func TestPlanEditorsRender(t *testing.T) {
 	// FR-6: the loaded editor opens itself and reloads the page if it changed.
 	mustContain(t, "autoshow", pages["editor, lockable"], `data-autoshow`)
 	mustContain(t, "changed marker", pages["editor, lockable"], `data-changed="true"`)
-	// FR-5.2: the confirm step is in the page and says what locking means.
-	mustContain(t, "permanent", pages["editor, lockable"], "Locking is permanent")
-	mustContain(t, "no unlock", pages["editor, lockable"], "can't be unlocked")
-	mustContain(t, "confirm value", pages["editor, lockable"], `name="confirm" value="permanent"`)
-	// FR-5.1: the disabled lock with G4's reason in plain words.
-	mustContain(t, "disabled lock", pages["editor, G4 would fail"], "disabled")
+	// FR-5.2: marking as shipped says what it does, and that it can be undone.
+	mustContain(t, "ship button", pages["editor, lockable"], "Mark as shipped</button>")
+	mustContain(t, "explained", pages["editor, lockable"], "the 4 features it covers (1 of them done so far)")
+	mustContain(t, "reversible", pages["editor, lockable"], "You can reopen it if it was a mistake.")
+	// FR-5.1: the disabled button with G4's reason in plain words.
+	mustContain(t, "disabled", pages["editor, G4 would fail"], "disabled")
 	mustContain(t, "plain reason", pages["editor, G4 would fail"], "none of its 3 features is done")
-	if strings.Contains(pages["editor, G4 would fail"], `value="permanent"`) {
-		t.Error("an unlockable milestone still offers the lock form")
+	if strings.Contains(pages["editor, G4 would fail"], `action="/ui/milestone/lock"`) {
+		t.Error("a milestone G4 would refuse still offers the form")
 	}
-	// FR-3.5: a locked milestone offers no add, remove or lock.
+	// FR-3.5, FR-5.4: a shipped milestone offers no add, remove or ship — only
+	// a way to reopen it.
 	for _, banned := range []string{"/ui/milestone/member/add", "/ui/milestone/member/remove", "/ui/milestone/lock"} {
 		if strings.Contains(pages["editor, locked"], banned) {
-			t.Errorf("the locked editor still posts to %s", banned)
+			t.Errorf("the shipped editor still posts to %s", banned)
 		}
 	}
+	mustContain(t, "reopen", pages["editor, locked"], `action="/ui/milestone/unlock"`)
+	mustContain(t, "shipped banner", pages["editor, locked"], "This milestone is marked as shipped.")
 	// FR-3.2 / FR-3.3: the picker says what it shows, and that there is more.
 	mustContain(t, "scope label", pages["editor, lockable"], "Authentication and everything inside it")
 	mustContain(t, "more", pages["candidates"], "Showing the first 50")
