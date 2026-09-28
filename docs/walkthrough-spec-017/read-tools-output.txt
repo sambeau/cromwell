@@ -1,0 +1,19 @@
+get_timeline FEAT-001:
+  Created — the chat agent
+  Spec written — the chat agent
+  Spec approved — a person, relayed by the chat agent
+  Sent to development — sam
+
+get_agent_run 01a0e94f-555a-7deb-8a9c-833e56f2d79f:
+{
+  "what": "Writing the development plan",
+  "state": "failed",
+  "conclusion": {
+    "error": "POST \"https://api.anthropic.com/v1/messages\": 401 Unauthorized (Request-ID: req_011CfWKiZTMJbVzRrEvLyjsS) {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CfWKiZTMJbVzRrEvLyjsS\"}",
+    "in_words": "The run failed.",
+    "kind": "error"
+  },
+  "url": "/ui/run/01a0e94f-555a-7deb-8a9c-833e56f2d79f",
+  "transcript_turns": 1,
+  "tool_results": "left out; ask with include_tool_results to see them, cut to 500 characters each"
+}

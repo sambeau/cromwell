@@ -690,7 +690,7 @@ was told, did and concluded.
 
 *Done when:* browser edits and vim edits can't silently overwrite each other.
 
-**M10 — Chat as a proper seat** · S · needs M3 · lane 1
+**M10 — Chat as a proper seat** · S · needs M3 · lane 1 · ✅ **done 2026-09-28**, see the [M10 handoff](handoff-M10-2026-09-28.md)
 *Goal: the chat AI prepares work, and humans can rule on any document.*
 - Add chat tools to submit a document and to ask for an early review.
 - Allow a human verdict on any document type.

@@ -1,0 +1,36 @@
+== Write the spec in chat, and add it
+» adopt_document {"path":"docs/specs/time-greeting.md","doc_type":"spec","owner_type":"feature","owner_path":"FEAT-001"}
+  {"id": "FEAT-001-spec", "state": "draft", "written_by": "Written by the chat agent."}
+== Submit it, with no quote
+» submit_for_review {"document":"FEAT-001-spec"}
+  Agent review is switched off for this project, so the specification waits for a person to approve it.
+== Submitting it again is refused: a fresh review is the person's call
+» submit_for_review {"document":"FEAT-001-spec"}
+  refused: This document is already in review. A fresh review is a person's call: relay it with relay_review_request and their words.
+== A relay still needs the person's words
+» relay_verdict {"path":"FEAT-001-spec","verdict":"approve"}
+  refused: the person's words are required in quote: a relay carries what they said, and without it there is nothing to relay. If they haven't told you to do this, don't
+» relay_verdict {"path":"FEAT-001-spec","verdict":"approve","quote":"Yes, that spec is exactly right. Approve it."}
+  {"done": "recorded the person's verdict: approve", "last_verdict": "Approved by a person, relayed by the chat agent: “Yes, that spec is exactly right. Approve it.”"}
+== Read the feature back
+» get_feature {"path":"FEAT-001"}
+  [{"id": "FEAT-001-spec", "written_by": "Written by the chat agent.", "last_verdict": "Approved by a person, relayed by the chat agent: “Yes, that spec is exactly right. Approve it.”"}]
+» get_timeline {"feature":"FEAT-001"}
+  ["Created — the chat agent", "Spec written — the chat agent", "Spec approved — a person, relayed by the chat agent"]
+== Plan a milestone, a roadmap and a checklist: IDs come back
+» create_milestone {"name":"Greetings beta"}
+  {"id": "MS-001", "row_id": "01a0e94f-4dab-7990-8931-1d4ecd0ce6f8"}
+» add_milestone_member {"milestone":"MS-001","member_type":"feature","member":"greet/time"}
+  {"change": "feature Time-aware greeting was added.", "description": "", "id": "MS-001", "items_done": 0, "items_total": 1, "name": "Greetings beta", "owner": {"type": "project"}, "row_id": "01a0e94f-4dab-7990-8931-1d4ecd0ce6f8", "state": "open", "url": "/ui/m/01a0e94f-4dab-7990-8931-1d4ecd0ce6f8"}
+» create_roadmap {"name":"The road to hello"}
+  {"id": "RM-001"}
+» place_roadmap_entry {"roadmap":"RM-001","milestone":"MS-001"}
+  {"id": "RM-001", "milestones": [{"description": "", "id": "MS-001", "items_done": 0, "items_total": 1, "name": "Greetings beta", "owner": {"type": "project"}, "position": 1, "row_id": "01a0e94f-4dab-7990-8931-1d4ecd0ce6f8", "state": "open", "url": "/ui/m/01a0e94f-4dab-7990-8931-1d4ecd0ce6f8"}], "name": "The road to hello", "owner": {"type": "project"}, "row_id": "01a0e94f-4dda-76cc-887d-ec8e90166015", "url": "/ui/r/01a0e94f-4dda-76cc-887d-ec8e90166015"}
+» create_checklist {"name":"Launch jobs","jobs":["Choose the typeface","Ask legal about the word evening"]}
+  {"id": "CL-001", "jobs": 2}
+» add_milestone_member {"milestone":"MS-001","member_type":"checklist","member":"CL-001"}
+  {"change": "checklist Launch jobs was added.", "description": "", "id": "MS-001", "items_done": 0, "items_total": 2, "name": "Greetings beta", "owner": {"type": "project"}, "row_id": "01a0e94f-4dab-7990-8931-1d4ecd0ce6f8", "state": "open", "url": "/ui/m/01a0e94f-4dab-7990-8931-1d4ecd0ce6f8"}
+» relay_tick_job {"checklist":"CL-001","job":"Choose the typeface","ticked":true,"quote":"We went with the humanist sans."}
+  recorded the person's word: Choose the typeface is ticked
+» get_milestone {"milestone":"MS-001"}
+  [["FEAT-001", "feature", "Time-aware greeting"], ["CL-001", "checklist", "Launch jobs"]]
