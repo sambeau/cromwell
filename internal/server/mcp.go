@@ -268,9 +268,9 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			"serverInfo":      map[string]any{"name": "cromwell", "version": "1"},
 			"instructions": "Cromwell's planning surface. You can create and shape initiatives, " +
 				"features, titles, descriptions and document attachments, and plan with milestones " +
-				"and roadmaps: create them, fill them, and order them. You cannot start work, " +
-				"change a gate, mark a milestone as shipped, or run an agent — a person does that from the " +
-				"command centre.",
+				"and roadmaps: create them, fill them, order them, and mark a milestone as shipped " +
+				"when the person says it has gone out. You cannot start work, change a gate, or " +
+				"run an agent — a person does that from the command centre.",
 		})
 	case "ping":
 		writeRPCResult(w, req.ID, map[string]any{})

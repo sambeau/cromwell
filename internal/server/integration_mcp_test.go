@@ -110,9 +110,7 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"update_feature",
 		"update_initiative",
 		// SPEC-010: milestones and roadmaps, as planning authoring under
-		// DEC-004 Amendment 1 (SD-5). Each is named here on purpose. The ship
-		// and reopen tools aren't built yet (SD-4), so they are in the
-		// must-not-exist list below.
+		// DEC-004 Amendment 1 (SD-5). Each is named here on purpose.
 		"add_milestone_member",
 		"create_milestone",
 		"create_roadmap",
@@ -123,6 +121,11 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"place_roadmap_entry",
 		"remove_milestone_member",
 		"remove_roadmap_entry",
+		// Marking a milestone as shipped and reopening it: permitted by DEC-004
+		// Amendment 1 because G4 is a record-keeping check, and both can be
+		// undone (SD-4, SD-11). Added deliberately, as DEC-005 asks.
+		"mark_milestone_shipped",
+		"reopen_milestone",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -134,10 +137,6 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 	for _, forbidden := range []string{
 		"start_feature", "transition_feature", "override_gate", "spawn_agent",
 		"dispatch_review", "respond_checkpoint", "archive_initiative", "set_estimate",
-		// SPEC-010 SD-4: marking a milestone as shipped (locking) and reopening
-		// it are permitted by DEC-004 Amendment 1 but not built yet. When they
-		// are, move them from here to the list above, on purpose.
-		"lock_milestone", "unlock_milestone",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

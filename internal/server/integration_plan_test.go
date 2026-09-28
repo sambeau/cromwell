@@ -442,28 +442,51 @@ func TestMCPPlanTools(t *testing.T) {
 		}
 	}
 
-	// A refusal on a shipped milestone is explained, not leaked (FR-7).
-	// Marking it as shipped is a person's act in the web UI.
+	// FR-7.10: marking as shipped over MCP. G4 applies to the agent exactly as
+	// to a person — refused, in its own sentence, while nothing is done.
+	callErr("mark_milestone_shipped", map[string]any{"milestone": betaID},
+		"This milestone can't be marked as shipped yet, because its one feature isn't done.")
+	if h.milestoneNamed("Auth beta").LockedAt != nil {
+		t.Fatal("G4 refused, but the milestone was marked as shipped")
+	}
 	if _, err := h.srv.Store.Pool.Exec(context.Background(),
 		`UPDATE features SET state = 'done' WHERE id = (SELECT id FROM features WHERE slug = 'login')`); err != nil {
 		t.Fatal(err)
 	}
-	_, frag := h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": gaID}, true)
-	mustContain(t, "UI ship", frag, "This milestone is marked as shipped.")
+	shipped := call("mark_milestone_shipped", map[string]any{"milestone": "Auth GA"})
+	if shipped["state"] != "shipped" || shipped["shipped_at"] == nil {
+		t.Errorf("after mark_milestone_shipped: state %v, shipped_at %v", shipped["state"], shipped["shipped_at"])
+	}
+	callErr("mark_milestone_shipped", map[string]any{"milestone": gaID}, "already marked as shipped")
+	// A shipped milestone's contents can't change, and the refusal says how
+	// to proceed.
 	callErr("add_milestone_member", map[string]any{"milestone": gaID, "member_type": "feature", "member": "billing/invoices"},
-		"that milestone is marked as shipped, so what it contains can't change")
+		"that milestone is marked as shipped, so what it contains can't change; if the person wants to change it, reopen it first with reopen_milestone")
 	if got := call("get_milestone", map[string]any{"milestone": gaID}); got["state"] != "shipped" || got["shipped_at"] == nil {
 		t.Errorf("a shipped milestone reads as state %v, shipped_at %v", got["state"], got["shipped_at"])
 	}
 
-	// SD-4: neither marking as shipped nor reopening exists over MCP.
-	for _, name := range []string{"lock_milestone", "unlock_milestone"} {
-		resp := h.rpc("tools/call", map[string]any{"name": name, "arguments": map[string]any{"milestone": betaID}})
-		if resp.Error == nil || resp.Error.Code != rpcMethodNotFound {
-			t.Errorf("%s should be unknown; got %+v", name, resp)
-		}
+	// Reopening over MCP undoes it, keeps the old record and the reason in the
+	// audit row, and lets the milestone change again.
+	reopened := call("reopen_milestone", map[string]any{"milestone": gaID, "reason": "Invoices joins GA after all."})
+	if reopened["state"] != "open" {
+		t.Errorf("after reopen_milestone: state %v", reopened["state"])
 	}
-	if h.milestoneNamed("Auth beta").LockedAt != nil {
-		t.Error("the milestone was marked as shipped over MCP")
+	callErr("reopen_milestone", map[string]any{"milestone": gaID}, "isn't marked as shipped, so there is nothing to reopen")
+	call("add_milestone_member", map[string]any{"milestone": gaID, "member_type": "feature", "member": "billing/invoices"})
+	var reason string
+	var kept int
+	if err := h.srv.Store.Pool.QueryRow(context.Background(), `
+		SELECT payload->>'reason', jsonb_array_length(payload->'snapshot') FROM audit_events
+		WHERE kind = 'milestone.unlocked' AND actor = $1`, actor).Scan(&reason, &kept); err != nil {
+		t.Fatalf("milestone.unlocked by the chat agent: %v", err)
+	}
+	if reason != "Invoices joins GA after all." || kept == 0 {
+		t.Errorf("reopen audit = reason %q, %d features kept", reason, kept)
+	}
+	for kind, want := range map[string]int{"milestone.locked": 1, "milestone.unlocked": 1} {
+		if n := h.auditCount(kind, actor); n != want {
+			t.Errorf("%s by %s = %d, want %d", kind, actor, n, want)
+		}
 	}
 }

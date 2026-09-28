@@ -19,10 +19,11 @@ import (
 // The chat agent's milestone and roadmap tools (SPEC-010 FR-7). They are
 // planning authoring under DEC-004: each calls the same audited store method
 // the web UI calls, in one transaction, as the MCP actor, and signals the SSE
-// hub like the SPEC-008 tools. There is not yet a tool that marks a milestone
-// as shipped (locks it) or reopens it. DEC-004 Amendment 1 permits both, since
-// G4 is a record-keeping check rather than a development gate, but this build
-// doesn't add them (SPEC-010 SD-4, §6); for now a person does it in the web UI.
+// hub like the SPEC-008 tools. That includes marking a milestone as shipped
+// (locking it) and reopening it: DEC-004 Amendment 1 permits both, because G4
+// is a record-keeping check rather than a development gate, and both can be
+// undone (SPEC-010 SD-4, SD-11). G4 still applies to the agent exactly as it
+// does to a person.
 //
 // Milestones and roadmaps are named by id, or by exact name where that name is
 // unique; initiatives and features by path, as the other tools do. Errors are
@@ -134,7 +135,11 @@ func mcpPlanError(err error) error {
 		return errors.New("a milestone can't contain itself, directly or through another milestone inside it")
 	case strings.Contains(err.Error(), "membership is frozen"):
 		return errors.New("that milestone is marked as shipped, so what it contains can't change; " +
-			"a person can reopen it in the web UI if it needs to")
+			"if the person wants to change it, reopen it first with reopen_milestone")
+	case strings.Contains(err.Error(), "already locked"):
+		return errors.New("that milestone is already marked as shipped")
+	case errors.Is(err, store.ErrMilestoneNotLocked):
+		return errors.New("that milestone isn't marked as shipped, so there is nothing to reopen")
 	}
 	return err
 }
@@ -457,7 +462,7 @@ func (s *Server) mcpGetMilestone(r *http.Request, args map[string]any) (any, err
 		}
 		g := lifecycle.G4(prog.Total, prog.Done)
 		shipping := map[string]any{"could_mark_shipped_now": g.Pass,
-			"how": "A person marks a milestone as shipped from its editor in the web UI. There is no tool for it here."}
+			"how": "Mark it as shipped with mark_milestone_shipped when the person says the release has gone out. It can be undone with reopen_milestone."}
 		if !g.Pass {
 			shipping["why_not"] = g.Reason
 		}
@@ -477,8 +482,76 @@ func (s *Server) mcpGetRoadmap(r *http.Request, args map[string]any) (any, error
 	return s.mcpRoadmapSummary(ctx, rm)
 }
 
+// --- Shipping (DEC-004 Amendment 1, SPEC-010 FR-7.10) ---
+
+// mcpMarkMilestoneShipped calls the same LockMilestone the web UI's "Mark as
+// shipped" calls. G4 applies exactly as it does to a person: when it refuses,
+// its own sentence goes back to the agent and nothing changes.
+func (s *Server) mcpMarkMilestoneShipped(r *http.Request, args map[string]any) (any, error) {
+	ctx := r.Context()
+	m, err := s.mcpMilestoneArg(ctx, args, "milestone")
+	if err != nil {
+		return nil, err
+	}
+	var g lifecycle.GateResult
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		var e error
+		g, e = store.LockMilestone(ctx, tx, m.ID, s.mcpActor())
+		return e
+	})
+	if err != nil {
+		if g.Gate == lifecycle.GateG4 && !g.Pass {
+			return nil, errors.New(g.Reason)
+		}
+		return nil, mcpPlanError(err)
+	}
+	s.notifyEntityChanged("milestone", m.ID)
+	shipped, err := store.GetMilestone(ctx, s.Store.Pool, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.mcpMilestoneSummary(ctx, shipped)
+	if err != nil {
+		return nil, err
+	}
+	if shipped.LockedAt != nil {
+		out["shipped_at"] = shipped.LockedAt.Format(time.RFC3339)
+	}
+	out["change"] = "The milestone is marked as shipped. What it contains is now fixed; " +
+		"reopen_milestone undoes this if it was a mistake."
+	return out, nil
+}
+
+// mcpReopenMilestone calls UnlockMilestone, as the web UI's "Reopen" does. The
+// audit row keeps the record it replaces and the reason.
+func (s *Server) mcpReopenMilestone(r *http.Request, args map[string]any) (any, error) {
+	ctx := r.Context()
+	m, err := s.mcpMilestoneArg(ctx, args, "milestone")
+	if err != nil {
+		return nil, err
+	}
+	reason, _ := argString(args, "reason")
+	if err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		return store.UnlockMilestone(ctx, tx, m.ID, reason, s.mcpActor())
+	}); err != nil {
+		return nil, mcpPlanError(err)
+	}
+	s.notifyEntityChanged("milestone", m.ID)
+	reopened, err := store.GetMilestone(ctx, s.Store.Pool, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.mcpMilestoneSummary(ctx, reopened)
+	if err != nil {
+		return nil, err
+	}
+	out["change"] = "The milestone is open again, and what it contains is live. " +
+		"The history still shows when it was marked as shipped."
+	return out, nil
+}
+
 // mcpPlanTools is the SPEC-010 part of the registry, kept beside its handlers.
-// It holds no tool to mark a milestone as shipped or reopen it yet (SD-4).
+// The last two, shipping and reopening, came with DEC-004 Amendment 1 (SD-4).
 func (s *Server) mcpPlanTools() []mcpTool {
 	milestoneRef := stringProp("The milestone's id, or its exact name if no other milestone shares it.")
 	roadmapRef := stringProp("The roadmap's id, or its exact name if no other roadmap shares it.")
@@ -583,8 +656,7 @@ func (s *Server) mcpPlanTools() []mcpTool {
 			Description: "Return one milestone in detail: its owner, state and target date, what it " +
 				"contains and which of those are done, its progress both as items and as estimated " +
 				"tokens, and whether it could be marked as shipped now — with the reason if not, so " +
-				"you can tell the person. Marking it as shipped, or reopening it, is done by a person " +
-				"in the web UI.",
+				"you can tell the person.",
 			Schema: objectSchema(map[string]any{
 				"milestone": milestoneRef,
 			}, "milestone"),
@@ -597,6 +669,30 @@ func (s *Server) mcpPlanTools() []mcpTool {
 				"roadmap": roadmapRef,
 			}, "roadmap"),
 			Handler: s.mcpGetRoadmap,
+		},
+		{
+			Name: "mark_milestone_shipped",
+			Description: "Mark a milestone as shipped, when the person tells you the release has gone " +
+				"out. This records exactly which features the milestone covers now, and stops what " +
+				"it contains from changing, so work added later under its initiatives doesn't " +
+				"rewrite the record. It is refused, with the reason, until at least one of its " +
+				"features is done. It can be undone with reopen_milestone.",
+			Schema: objectSchema(map[string]any{
+				"milestone": milestoneRef,
+			}, "milestone"),
+			Handler: s.mcpMarkMilestoneShipped,
+		},
+		{
+			Name: "reopen_milestone",
+			Description: "Reopen a milestone that was marked as shipped, for example because it was " +
+				"marked by mistake or something needs to be added to the release after all. This " +
+				"throws away the shipped record and makes what it contains live again. The history " +
+				"keeps the record it replaced and the reason you give.",
+			Schema: objectSchema(map[string]any{
+				"milestone": milestoneRef,
+				"reason":    stringProp("Optional. Why it is being reopened, in a sentence."),
+			}, "milestone"),
+			Handler: s.mcpReopenMilestone,
 		},
 	}
 }
