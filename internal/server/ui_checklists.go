@@ -232,6 +232,7 @@ func (s *Server) renderChecklistPage(w http.ResponseWriter, r *http.Request, id 
 		s.notFoundOrErr(w, r, "checklist", id.String(), err)
 		return
 	}
+	pushPageURL(w, r, checklistURL(id))
 	s.render(w, "page-checklist", s.page(r.Context(), "browse", *page))
 }
 

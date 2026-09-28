@@ -84,6 +84,7 @@ func (s *Server) renderMilestonePage(w http.ResponseWriter, r *http.Request, id 
 		Members: rows, Locked: m.LockedAt != nil,
 		MemberOf: memberOf, MilestoneChoices: choices, Notice: notice, Error: errMsg,
 	}
+	pushPageURL(w, r, milestoneURL(m.ID))
 	s.render(w, "page-milestone", s.page(r.Context(), "browse", page))
 }
 

@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -40,6 +42,26 @@ func (h *harness) milestoneItems(id uuid.UUID) (done, total int) {
 		h.t.Fatal(err)
 	}
 	return p.Done, p.Total
+}
+
+// boostedPostURL posts a form as a boosted page would and returns the address
+// HTMX is told to show for the page it gets back.
+func (h *harness) boostedPostURL(path string, form map[string]string) string {
+	h.t.Helper()
+	vals := url.Values{}
+	for k, v := range form {
+		vals.Set(k, v)
+	}
+	req, _ := http.NewRequest("POST", h.api.URL+path, strings.NewReader(vals.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Boosted", "true")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp.Header.Get("HX-Push-Url")
 }
 
 // TestUIChecklists is SPEC-014's web half: a checklist created on an
@@ -207,6 +229,16 @@ func TestUIChecklists(t *testing.T) {
 		SELECT payload->'not_shipped'->0->>'name' FROM audit_events WHERE kind = 'milestone.locked' AND ref_id = $1`,
 		beta.ID).Scan(&notShipped); err != nil || notShipped != "Launch paperwork" {
 		t.Errorf("not_shipped = %q (%v), want the checklist", notShipped, err)
+	}
+
+	// A page rendered in answer to a boosted post tells HTMX its own address,
+	// so an editor that reloads after a change reloads that page and not the
+	// post's route.
+	if got := h.boostedPostURL("/ui/checklist/new", map[string]string{"owner_type": "initiative", "id": authID, "name": "Second"}); got != "/ui/i/auth" {
+		t.Errorf("after creating: HX-Push-Url = %q, want /ui/i/auth", got)
+	}
+	if got := h.boostedPostURL("/ui/job/tick", map[string]string{"checklist_id": cid, "job_id": icon.ID.String(), "tick": "true"}); got != "/ui/c/"+cid {
+		t.Errorf("after ticking: HX-Push-Url = %q, want the checklist page", got)
 	}
 
 	// An unknown checklist is a 404.

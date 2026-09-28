@@ -78,7 +78,7 @@
           <span class="check-title"><span class="job-title">{{.Title}}</span></span>
           {{if .Note}}<span class="job-note">{{.Note}}</span>{{end}}
           {{if .Ticked}}
-          <span class="job-who">Ticked by {{.TickedBy}} {{ago .TickedAt}}{{if .Relayed}}, relaying the words “<span class="job-quote">{{.Quote}}</span>”{{end}}.</span>
+          <span class="job-who">Ticked by {{.TickedBy}} <time datetime="{{.TickedAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.TickedAt.Format "2 January 2006 at 15:04"}}">{{ago .TickedAt}} ago</time>{{if .Relayed}}, relaying the words “<span class="job-quote">{{.Quote}}</span>”{{end}}.</span>
           {{end}}
         </div>
         <div class="check-end">
