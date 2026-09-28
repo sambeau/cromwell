@@ -178,7 +178,7 @@ high enough that ordinary prompts are never cut.
   have no timeline.
 
 - **SD-8 — Review health counts agent verdicts only, for now. This narrows
-  DESIGN-010 §8, and needs Sam's yes as such.** §8 asks for review health "per
+  DESIGN-010 §8, and Sam accepted it as such.** §8 asks for review health "per
   reviewer" and attribution of every verdict to an agent, the chat AI, or a
   human. A review here is a succeeded run whose purpose is a review
   (`review-*`) or verification (`verify-feature`), and whose outcome carries a
@@ -246,7 +246,7 @@ high enough that ordinary prompts are never cut.
   surprise.
 
 - **SD-14 — The line of moments sits above the page body. This adds to
-  DESIGN-008 §5.2, and needs Sam's yes as such.** §5.2 draws the page as
+  DESIGN-008 §5.2, and Sam accepted it as such.** §5.2 draws the page as
   breadcrumbs, the design document as the body, and the relations across the
   bottom, with activity among them. DESIGN-010 §8's "how is it going, at a
   glance" asks for the journey before the reading, so the timeline is placed
