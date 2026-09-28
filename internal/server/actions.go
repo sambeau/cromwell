@@ -98,7 +98,17 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 	case bus.DispatchSucceeded:
 		switch e.RefType {
 		case "document":
-			return snap, ignoreNotFound(loadDoc(e.RefID))
+			if err := ignoreNotFound(loadDoc(e.RefID)); err != nil || snap.Doc == nil {
+				return snap, err
+			}
+			// A verdict applies only to the content it reviewed (SPEC-011
+			// FR-3.5): review keys carry the content hash they were queued at.
+			if d, err := store.GetDispatch(ctx, s.Store.Pool, e.DispatchID); err == nil &&
+				strings.HasPrefix(d.IdempotencyKey, "review:") &&
+				!strings.Contains(d.IdempotencyKey, ":"+snap.Doc.ContentHash) {
+				snap.Doc.StaleVerdict = true
+			}
+			return snap, nil
 		case "task":
 			return snap, ignoreNotFound(loadTask(e.RefID))
 		case "feature":
@@ -327,6 +337,21 @@ func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) e
 		if err := store.ClearDocumentHold(ctx, tx, doc.ID); err != nil {
 			return err
 		}
+		// An approval with no agent review behind it is a person's — directly,
+		// or on an escalation — and settles the open human issues by that
+		// decision (SPEC-011 SD-6).
+		if a.DispatchID == nil {
+			n, err := store.SettleIssuesByApproval(ctx, tx, doc.ID, actor)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				if err := store.Audit(ctx, tx, actor, "document.issues_settled", "document", &doc.ID,
+					map[string]any{"issues": n}); err != nil {
+					return err
+				}
+			}
+		}
 		for _, c := range a.Comments {
 			if err := store.InsertComment(ctx, tx, doc.ID, a.DispatchID, actor, c.SectionRef, c.Body, c.Severity); err != nil {
 				return err
@@ -446,6 +471,14 @@ func (s *Server) returnForChanges(ctx context.Context, a rules.ReturnForChanges)
 			return err
 		}
 		for _, c := range a.Comments {
+			// A person sending a spec or plan back — on an escalation — raises
+			// an issue: their objection must be addressed (SPEC-011 SD-15).
+			if a.DispatchID == nil && (doc.Type == "spec" || doc.Type == "dev_plan") {
+				if _, err := store.InsertIssue(ctx, tx, doc.ID, a.Actor, c.SectionRef, c.Body, "ui", ""); err != nil {
+					return err
+				}
+				continue
+			}
 			// An agent finding is stored at its effective severity — empty
 			// reads as major, the fail-closed rule — while a human's comment
 			// (no dispatch) is not a classified finding and stays unmarked.

@@ -351,6 +351,9 @@ type DocSnap struct {
 	Held bool
 	// OpenIssues are the document's unanswered human issues (FR-6.3).
 	OpenIssues []uuid.UUID
+	// StaleVerdict is set on a review outcome for content the document no
+	// longer has: it was revised while the reviewer worked (FR-3.5).
+	StaleVerdict bool
 }
 
 // FeatureSnap is the rule engine's view of a feature row.
@@ -499,6 +502,15 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 			(f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview) {
 			return []Action{ReDecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID}}
 		}
+		// A revised plan on a ready feature — an issue raised on the approved
+		// plan (SPEC-011 FR-6.6) — re-decomposes before anyone starts
+		// building, and the estimate is re-checked against the new tasks.
+		if snap.Doc.IsSuccessor && snap.Doc.Type == "dev_plan" && f.State == lifecycle.FeatReady {
+			return []Action{
+				ReDecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID},
+				EstimateFeature{FeatureID: f.ID},
+			}
+		}
 	}
 	return nil
 }
@@ -542,7 +554,7 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 	}
 	// A verdict for a document that has moved on while the reviewer worked —
 	// sent back by a person, say — is stale, and is dropped (SPEC-011 FR-3.5).
-	if snap.Doc.State != lifecycle.DocReviewing {
+	if snap.Doc.State != lifecycle.DocReviewing || snap.Doc.StaleVerdict {
 		return nil
 	}
 	outcome, err := ParseReviewOutcome(e.Outcome)

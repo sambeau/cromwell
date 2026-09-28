@@ -80,59 +80,11 @@ func (s *Server) openIssueIDs(ctx context.Context, docID uuid.UUID) ([]uuid.UUID
 
 // ---- Rule-engine actions ----
 
-// reviseAuthoredDocument sends a spec or plan that came back to draft to its
-// author again (FR-3.1), for a sent feature, bounded by the round cap
-// (FR-3.3).
+// reviseAuthoredDocument answers a spec or plan's return to draft, and a
+// person's "allow another round" (Force): the invariants decide whether the
+// author is owed a revision (SPEC-011 FR-3.1), and apply the round cap.
 func (s *Server) reviseAuthoredDocument(ctx context.Context, a rules.ReviseAuthoredDocument) error {
-	doc, err := store.GetDocument(ctx, s.Store.Pool, a.DocID)
-	if err != nil {
-		return ignoreNotFound(err)
-	}
-	if doc.State != lifecycle.DocDraft || doc.OwnerType != "feature" || doc.OwnerID == nil {
-		return nil
-	}
-	f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID)
-	if err != nil {
-		return ignoreNotFound(err)
-	}
-	if sent, err := s.featureSent(ctx, f); err != nil || !sent {
-		return err
-	}
-	// Only the feature's current document of the type is the author's to
-	// revise; a stray older draft is a person's.
-	if cur, err := store.CurrentDocForOwner(ctx, s.Store.Pool, doc.Type, "feature", f.ID); err != nil || cur.ID != doc.ID {
-		return nil
-	}
-	purpose := authorPurpose(doc.Type)
-	if live, err := store.LiveDispatchForRef(ctx, s.Store.Pool, "feature", f.ID, purpose); err != nil || live {
-		return err
-	}
-	if !a.Force {
-		cfg, err := s.freshConfig()
-		if err != nil {
-			return s.configErrorCheckpoint(ctx, "document", doc.ID, err)
-		}
-		rounds, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "document", doc.ID, "review-"+doc.Type)
-		if err != nil {
-			return err
-		}
-		if rounds >= cfg.Dispatch.MaxReviewRounds {
-			var cp *store.Checkpoint
-			err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-				var e error
-				cp, e = store.CreateCheckpoint(ctx, tx, "authoring-deadlock", "document", doc.ID,
-					fmt.Sprintf("The %s for %s has been sent back %d times. Allow its author another round, or stop and edit it yourself?",
-						docTypeWords(doc.Type), f.Name, rounds),
-					map[string]any{"document": doc.Path, "rounds": rounds})
-				return e
-			})
-			if err == nil && cp != nil {
-				s.notifyCheckpointRaised(cp)
-			}
-			return err
-		}
-	}
-	return s.queueAuthoring(ctx, purpose, f.ID)
+	return s.restoreAuthoring(ctx, a.FeatureID, a.Force)
 }
 
 func authorPurpose(docType string) string {
@@ -192,33 +144,10 @@ func (s *Server) answerIssues(ctx context.Context, a rules.AnswerIssues) error {
 	})
 }
 
-// estimateFeature queues the chain's closing estimate (FR-7.1) for a sent
-// feature that has had none since its send. An unassigned estimate role is
-// silence, as for the authoring purposes.
+// estimateFeature re-checks the invariants after a plan is approved: the
+// closing estimate is one of them (FR-2.2a, FR-7.1).
 func (s *Server) estimateFeature(ctx context.Context, featureID uuid.UUID) error {
-	f, err := store.GetFeature(ctx, s.Store.Pool, featureID)
-	if err != nil {
-		return ignoreNotFound(err)
-	}
-	send, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID)
-	if err == store.ErrNotFound {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	cfg, err := s.freshConfig()
-	if err != nil {
-		return s.configErrorCheckpoint(ctx, "feature", f.ID, err)
-	}
-	if cfg.Assignments["estimate"] == "" {
-		return nil
-	}
-	prior, err := store.DispatchesForRefSince(ctx, s.Store.Pool, "feature", f.ID, []string{"estimate"}, send.SentAt)
-	if err != nil || len(prior) > 0 {
-		return err
-	}
-	return s.enqueueEstimate(ctx, "feature", f.ID)
+	return s.reconcileFeatureAuthoring(ctx, featureID)
 }
 
 // reviewKey is the idempotency key for a review. A fresh review — a person's
@@ -287,8 +216,8 @@ func (s *Server) sendReadiness(ctx context.Context, f *store.Feature) (bool, str
 	if _, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID); err == nil {
 		return false, "This feature has already been sent to development."
 	}
-	if f.State != lifecycle.FeatIdea {
-		return false, "Only a feature that is still an idea can be sent to development; this one is " + string(f.State) + "."
+	if f.State != lifecycle.FeatIdea && f.State != lifecycle.FeatReady {
+		return false, "Only a feature that hasn't started building can be sent to development; this one is " + string(f.State) + "."
 	}
 	if g := s.specReady(ctx, f); !g.Pass {
 		return false, g.Reason
@@ -344,7 +273,7 @@ func (s *Server) withdrawable(ctx context.Context, f *store.Feature) (bool, []st
 	if err != nil {
 		return false, nil, ignoreNotFound(err)
 	}
-	if f.State != lifecycle.FeatIdea {
+	if f.State != lifecycle.FeatIdea && f.State != lifecycle.FeatReady {
 		return false, nil, nil
 	}
 	ds, err := store.DispatchesForRefSince(ctx, s.Store.Pool, "feature", f.ID, authoringPurposes, send.SentAt)
@@ -398,17 +327,27 @@ func (s *Server) WithdrawSend(ctx context.Context, featureID uuid.UUID, actor st
 
 // ---- A person's review acts (FR-5.5, FR-6, FR-8) ----
 
-// errEscalated refuses an act on a document whose review has escalated: that
-// is a checkpoint, answered in the Inbox (SD-11).
-var errEscalated = errors.New("The reviewer has escalated this document to the Inbox, so the decision is made there, in the web UI.")
-
-func (s *Server) refuseIfEscalated(ctx context.Context, docID uuid.UUID) error {
-	cp, err := s.openReviewCheckpoint(ctx, docID)
+// refuseIfPending refuses a person's act on a document while a question about
+// it waits in the Inbox (SD-11): an escalated review or an authoring deadlock
+// that refs the document, or a design-revision question that lists its
+// feature. Acting here would answer that question by the back door.
+func (s *Server) refuseIfPending(ctx context.Context, doc *store.Document) error {
+	pending, err := s.Store.PendingCheckpoints(ctx)
 	if err != nil {
 		return err
 	}
-	if cp != nil {
-		return errEscalated
+	for _, cp := range pending {
+		if cp.RefType == "document" && cp.RefID == doc.ID &&
+			(cp.Kind == "review-escalation" || cp.Kind == "authoring-deadlock") {
+			return errors.New("A question about this document is waiting in the Inbox, so the decision is made there, in the web UI. Answer it first.")
+		}
+	}
+	if doc.OwnerType == "feature" && doc.OwnerID != nil {
+		if blocked, err := s.pendingDesignRevisionFor(ctx, *doc.OwnerID); err != nil {
+			return err
+		} else if blocked {
+			return errors.New("This feature's design was revised, and a question in the Inbox asks whether its specification still stands. Answer it there first.")
+		}
 	}
 	return nil
 }
@@ -431,20 +370,10 @@ func (s *Server) DirectApprove(ctx context.Context, docID uuid.UUID, act relayAc
 	if doc.State != lifecycle.DocReviewing {
 		return fmt.Errorf("Only a document in review can be approved; this one is %s.%s", doc.State, submitHint(doc.State))
 	}
-	if err := s.refuseIfEscalated(ctx, doc.ID); err != nil {
+	if err := s.refuseIfPending(ctx, doc); err != nil {
 		return err
 	}
-	if err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		settled := 0
-		if !s.humanApprovalType(doc.Type) {
-			var e error
-			if settled, e = store.SettleIssuesByApproval(ctx, tx, doc.ID, act.Actor); e != nil {
-				return e
-			}
-		}
-		return store.Audit(ctx, tx, act.Actor, "document.human_verdict", "document", &doc.ID,
-			act.payload(map[string]any{"verdict": "approve", "issues_settled": settled}))
-	}); err != nil {
+	if err := s.auditAct(ctx, doc.ID, act, "document.human_verdict", map[string]any{"verdict": "approve"}); err != nil {
 		return err
 	}
 	return s.approveDocument(ctx, rules.ApproveDocument{DocID: doc.ID, Actor: act.Actor})
@@ -473,7 +402,7 @@ func (s *Server) SendBack(ctx context.Context, docID uuid.UUID, reason string, a
 	if doc.State != lifecycle.DocReviewing {
 		return fmt.Errorf("Only a document in review can be sent back; this one is %s.", doc.State)
 	}
-	if err := s.refuseIfEscalated(ctx, doc.ID); err != nil {
+	if err := s.refuseIfPending(ctx, doc); err != nil {
 		return err
 	}
 	if s.humanApprovalType(doc.Type) {
@@ -591,7 +520,7 @@ func (s *Server) RaiseIssue(ctx context.Context, docID uuid.UUID, body, section 
 	if err := s.checkIssueAllowed(ctx, doc); err != nil {
 		return nil, err
 	}
-	if err := s.refuseIfEscalated(ctx, doc.ID); err != nil {
+	if err := s.refuseIfPending(ctx, doc); err != nil {
 		return nil, err
 	}
 	sent := false
@@ -626,10 +555,9 @@ func (s *Server) RaiseIssue(ctx context.Context, docID uuid.UUID, body, section 
 		}
 		s.notifyEntityChanged("document", doc.ID)
 		if sent {
-			// The author revises the draft now (FR-6.2), unless it is at work.
-			return doc, s.reviseAuthoredDocument(ctx, rules.ReviseAuthoredDocument{
-				DocID: doc.ID, FeatureID: deref(doc.OwnerID), DocType: doc.Type, Force: true,
-			})
+			// The draft now waits for its author, who revises it (FR-6.2)
+			// unless already at work — the invariant decides.
+			return doc, s.reconcileFeatureAuthoring(ctx, *doc.OwnerID)
 		}
 		return doc, nil
 
@@ -655,7 +583,8 @@ func (s *Server) RaiseIssue(ctx context.Context, docID uuid.UUID, body, section 
 		}
 		s.notifyEntityChanged("document", doc.ID)
 		if sent {
-			return succ, s.queueAuthoring(ctx, authorPurpose(doc.Type), *doc.OwnerID)
+			// The successor carries the issue, so it waits for its author.
+			return succ, s.reconcileFeatureAuthoring(ctx, *doc.OwnerID)
 		}
 		return succ, nil
 	}
@@ -692,11 +621,14 @@ func (s *Server) RequestReview(ctx context.Context, docID uuid.UUID, act relayAc
 	if m.ReviewerRole == "" {
 		return "", errors.New("Designs have no agent reviewer: a design is reviewed in the conversation that writes it. For a cold read, use the review-design chat skill.")
 	}
-	if err := s.refuseIfEscalated(ctx, doc.ID); err != nil {
+	if err := s.refuseIfPending(ctx, doc); err != nil {
 		return "", err
 	}
 	switch doc.State {
 	case lifecycle.DocDraft:
+		if err := s.refuseIfAuthorAtWork(ctx, doc); err != nil {
+			return "", err
+		}
 		if err := s.auditAct(ctx, doc.ID, act, "document.review_requested", nil); err != nil {
 			return "", err
 		}
@@ -790,6 +722,22 @@ func (s *Server) ReleaseHold(ctx context.Context, docID uuid.UUID, act relayAct)
 		return err
 	}
 	return s.approveDocument(ctx, rules.ApproveDocument{DocID: doc.ID, Actor: d.Role, DispatchID: &d.ID})
+}
+
+// refuseIfAuthorAtWork refuses a person's submission of a draft while its
+// author agent is revising it, so the two can't race (FR-3.6).
+func (s *Server) refuseIfAuthorAtWork(ctx context.Context, doc *store.Document) error {
+	if doc.OwnerType != "feature" || doc.OwnerID == nil || (doc.Type != "spec" && doc.Type != "dev_plan") {
+		return nil
+	}
+	live, err := store.LiveDispatchForRef(ctx, s.Store.Pool, "feature", *doc.OwnerID, authorPurpose(doc.Type))
+	if err != nil {
+		return err
+	}
+	if live {
+		return errors.New("Its author is revising this document now. It will be submitted for review when the revision is done.")
+	}
+	return nil
 }
 
 // DetachDocument removes a draft's registration, leaving the file (FR-9.3).

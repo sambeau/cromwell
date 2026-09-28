@@ -66,12 +66,12 @@ func DeleteFeatureSend(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, acto
 		map[string]any{"cancelled_dispatches": cancelled})
 }
 
-// SentIdeaFeatureIDs lists the forming features that carry the mark — the
+// SentFormingFeatureIDs lists the forming (idea or ready) features that carry the mark — the
 // heartbeat sweep's scope (FR-2.4).
-func SentIdeaFeatureIDs(ctx context.Context, q Querier) ([]uuid.UUID, error) {
+func SentFormingFeatureIDs(ctx context.Context, q Querier) ([]uuid.UUID, error) {
 	rows, err := q.Query(ctx, `
 		SELECT f.id FROM features f JOIN feature_sends s ON s.feature_id = f.id
-		WHERE f.state = 'idea' ORDER BY s.sent_at`)
+		WHERE f.state IN ('idea', 'ready') ORDER BY s.sent_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +298,16 @@ func DetachDocument(ctx context.Context, tx pgx.Tx, d *Document, actor string) e
 	if state != "draft" {
 		return errors.New("only a draft can be detached")
 	}
+	// Open issues go with the registration, so their words go on the audit
+	// row: an issue is never dropped silently (SPEC-011 FR-6.8).
+	open, err := OpenIssues(ctx, tx, d.ID)
+	if err != nil {
+		return err
+	}
+	var dropped []map[string]any
+	for _, c := range open {
+		dropped = append(dropped, map[string]any{"author": c.Author, "body": c.Body, "via": c.Via, "quote": c.Quote})
+	}
 	for _, q := range []string{
 		`DELETE FROM document_holds WHERE document_id = $1`,
 		`DELETE FROM document_comments WHERE document_id = $1`,
@@ -309,6 +319,9 @@ func DetachDocument(ctx context.Context, tx pgx.Tx, d *Document, actor string) e
 		}
 	}
 	payload := map[string]any{"path": d.Path, "type": d.Type, "owner_type": d.OwnerType}
+	if len(dropped) > 0 {
+		payload["open_issues"] = dropped
+	}
 	if d.OwnerID != nil {
 		payload["owner_id"] = d.OwnerID.String()
 	}

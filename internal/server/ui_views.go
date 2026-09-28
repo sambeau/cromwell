@@ -37,7 +37,7 @@ func answerOptions(kind string) []string {
 		return []string{"approve", "request_changes"}
 	case "gate-override":
 		return []string{"override", "deny"}
-	case "dispatch-failure":
+	case "dispatch-failure", "authoring-deadlock":
 		return []string{"retry", "cancel"}
 	case "review-deadlock":
 		return []string{"approve", "abandon"}
@@ -73,7 +73,7 @@ func responseFor(kind, verb, reason string) map[string]any {
 		r["decision"] = verb // approve | request_changes
 	case "gate-override":
 		r["override"] = verb == "override"
-	case "dispatch-failure":
+	case "dispatch-failure", "authoring-deadlock":
 		r["retry"] = verb == "retry"
 	case "review-deadlock":
 		r["decision"] = verb // approve | abandon
