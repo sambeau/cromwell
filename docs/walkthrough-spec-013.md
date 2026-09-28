@@ -26,7 +26,9 @@ can't be longer than 108 bytes. The scripts are in
   - with only `SUBUTAI_TEST_DATABASE_URL` set: **215 tests passed**;
   - with only `CROMWELL_TEST_DATABASE_URL` set: **215 passed**, and the test
     helper printed the fallback warning.
-- In both runs the only skip was `TestDemoM6`, the M6 demo harness, which runs
+- After the review's second-pass fixes (commit `38eed4f`), a third run with
+  `SUBUTAI_TEST_DATABASE_URL`: **216 passed**.
+- In every run the only skip was `TestDemoM6`, the M6 demo harness, which runs
   only when `SUBUTAI_M6_DEMO` names a directory. No integration test skipped.
 
 One test, `TestAgentReviewOffHoldsEverySpec`, failed once during the work. It
@@ -167,7 +169,8 @@ The rename with a feature building isn't shown here, because starting one
 needs an approved spec and plan. `TestWorktreeFoundAfterFolderRename` covers
 it: a worktree made and registered with git under `.cromwell/` is moved with
 the folder, found under `.subutai/`, repaired with `git worktree repair`, and
-works; nothing re-creates `.cromwell/`.
+works; nothing re-creates `.cromwell/`. It also checks that an agent working
+on that feature is given the moved path as its worktree root.
 
 ## The scripts
 

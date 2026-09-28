@@ -4,7 +4,8 @@
 check of this spec and of the finished diff, looking for surfaces it missed, is
 recorded in [REVIEW-013](../reviews/REVIEW-013-rename-to-subutai.md). It found
 three material and nine smaller problems in the first draft; all are dealt with
-in this revision, and §6 says how. The author can't be the approval gate, so
+in this revision, and §6 says how. A second pass over the finished diff found one more material problem, fixed
+in the code and recorded in §6. The author can't be the approval gate, so
 the decision is Sam's. Four choices in it need his explicit yes (DoD 7).
 **Date:** 2026-09-28
 **Roadmap milestone:** M7 in the
@@ -106,7 +107,9 @@ in §4.
   directory is gone, in a project now using `.subutai/`, is looked for under
   `.subutai/` instead: `git mv` moves the whole folder, worktrees included.
   git records a worktree's absolute path, so on start the server runs
-  `git worktree repair` on each worktree it finds moved. Nothing re-creates
+  `git worktree repair` (git 2.29 or later) on each worktree it finds moved
+  that git doesn't already list at its new path. The agents' tools, commands,
+  and review diffs resolve the worktree the same way. Nothing re-creates
   `.cromwell/`. So the folder can be renamed while features are building, as
   long as the server is stopped.
 - The folder's own `.gitignore` (`run/`, `worktrees/`) is relative, so it
@@ -135,7 +138,7 @@ as above: `SUBUTAI_DATABASE_URL` first, then `CROMWELL_DATABASE_URL`. So an
 old project works whichever of the two its owner has set, and a new project
 works with an old shell. A `url_env` that names the old variable also gets a
 line asking for `config.yaml` to be updated. A `url_env` naming anything else
-is read as written.
+is read as written, and so is every `api_key_env`.
 
 **`init`** reads `SUBUTAI_DATABASE_URL`, with the same fallback.
 
@@ -245,15 +248,17 @@ read on its own. Nothing else was open while it ran.
    - the tests of the compatibility rules;
    - `internal/store/migrations/0001_init.sql` (§3.5);
    - the living documents where they explain the old name: the README's
-     "formerly" line and its "Coming from Cromwell" section, and the manual
-     testing guide's container name and history line.
+     "formerly" lines (the opening, and the project folder's row in the
+     document map) and its "Coming from Cromwell" section; and the manual
+     testing guide's dev container (name and password), the sentence saying
+     `test-db.sh` exports the old variable too, and its history line.
 3. Unit tests cover: folder discovery (new, old, both, neither), `init`
    refusing either folder, the default socket under each folder, the variable
    fallback (new, old, both, neither, and `url_env` naming either twin), the
-   header fallback, a worktree recorded under `.cromwell/` found and repaired
-   after the rename, and the hook refresh (Cromwell's, a missing binary,
+   header fallback, a worktree recorded under `.cromwell/` found, repaired
+   once, and handed to agents after the rename, and the hook refresh (Cromwell's, a missing binary,
    another repository, current, another installed binary, edited, unrelated,
-   absent, and a `go run` binary).
+   absent, `.git` as a file, and a `go run` binary).
 4. **A fresh project:** `subutai init` a throwaway repository, `subutai serve`
    it, and a screenshot of the web UI shows Subutai.
 5. **An old project:** made with the Cromwell binary built before the rename,
@@ -290,3 +295,14 @@ draft (commit `be36668`). Finding by finding:
 | R13-10 (note): DoD 2 deferred its allowlist | DoD 2 lists it. |
 | R13-11 (note): DoD 3 missed cases | DoD 3 and DoD 5 name them. |
 | R13-12 (note): the manual testing guide shows `serve --repo`, a flag that doesn't exist | Fixed in the guide, which this milestone rewrites anyway. |
+
+### Second pass, over the finished diff
+
+| Finding | What changed |
+|---|---|
+| R13-13 (material): the agents' tool context built the worktree root itself, so after the rename a feature started under Cromwell sent its tools, commands and review diff to the old path | `toolContextForFeature` resolves through `worktreeAbs`. `TestWorktreeFoundAfterFolderRename` checks the root, and fails without the fix. |
+| R13-14 (minor): DoD 2's allowlist missed some living-document hits, and REVIEW-013 wasn't written yet | DoD 2 widened; REVIEW-013 written. |
+| R13-15 (minor): the repair ran on every start; the git version it needs was unstated | It runs only when git doesn't list the new path; §3.2 names git 2.29. |
+| R13-16 (minor): no test of `url_env`'s "neither set" error or of its `config.yaml` warning | Both tested. |
+| R13-17 (note): `api_key_env` went through the variable fallback, which no rule covered | It is read as written again (§3.3). |
+| R13-18 (note): a `.git` file made `serve` print "cannot update" on every start; a symlinked path counts as another repository | A `.git` file is treated as no hook, and tested. The symlink case rewrites a hook that stays valid; left as it is. |
