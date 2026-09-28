@@ -226,7 +226,13 @@ func TestUIAgentRunPage(t *testing.T) {
 		t.Errorf("money on the run page: %q", m)
 	}
 
+	if strings.Contains(body, "no result recorded") {
+		t.Error("the outcome call is shown once, as the answer, not again as a tool")
+	}
 	_, first := h.getUI(url + "?attempt=1")
+	if !strings.Contains(first, `data-state="failed"`) || strings.Contains(first, `badge" data-state="succeeded"`) {
+		t.Error("an earlier attempt is shown as failed, not with the run's current state")
+	}
 	for _, want := range []string{"This attempt failed", "The run failed.", "read_file", "docs/specs/login.md",
 		"I will read the spec.", "1,200 tokens in", "What the engine recorded", "model refused"} {
 		mustContain(t, "attempt 1", first, want)

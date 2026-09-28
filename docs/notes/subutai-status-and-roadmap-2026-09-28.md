@@ -653,7 +653,7 @@ entirely in the browser, and the chat agent can do the same. **Done:** see the
 *Done when:* a milestone won't show as done, and won't lock as complete, while
 one of its jobs is unticked.
 
-**M6 — See the work** · M · no dependencies · lane 2
+**M6 — See the work** · M · no dependencies · lane 2 · ✅ **done 2026-09-28**, see the [M6 handoff](handoff-M6-2026-09-28.md)
 *Goal: answer "how is it going?" and "what exactly happened?".*
 - Store and show a full transcript for every agent dispatch.
 - Add a per-feature timeline of major moments.

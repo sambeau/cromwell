@@ -121,8 +121,8 @@ func verdictState(v string) string {
 // humanDuration says how long something took, in words.
 func humanDuration(d time.Duration) string {
 	switch {
-	case d <= 0:
-		return "no time"
+	case d < time.Millisecond:
+		return "under a millisecond"
 	case d < time.Second:
 		return fmt.Sprintf("%d ms", d.Milliseconds())
 	case d < time.Minute:
@@ -503,6 +503,12 @@ func (s *Server) buildRunPage(ctx context.Context, d *store.Dispatch, attemptPar
 		p.Attempt = n
 	}
 	p.IsLatest = p.Attempt == d.Attempt
+	if !p.IsLatest {
+		// Only the latest attempt can still be running or have succeeded;
+		// an earlier one ended in failure, which is why there was another.
+		p.Run.State = "failed"
+		p.Running = false
+	}
 
 	entries, err := store.Transcript(ctx, s.Store.Pool, d.ID, p.Attempt)
 	if err != nil {
@@ -594,9 +600,13 @@ func (s *Server) runContext(ctx context.Context, d *store.Dispatch) (about, feat
 // call with its result (FR-3.3, FR-3.4).
 func (p *runPage) buildTurns(entries []store.TranscriptEntry) {
 	results := map[string]*store.TranscriptEntry{}
+	answered := map[string]bool{} // calls shown as the outcome, not as a tool
 	for i := range entries {
 		if entries[i].Kind == store.EntryToolResult && entries[i].ToolUseID != "" {
 			results[entries[i].ToolUseID] = &entries[i]
+		}
+		if entries[i].Kind == store.EntryOutcome && entries[i].ToolUseID != "" {
+			answered[entries[i].ToolUseID] = true
 		}
 	}
 	var cur *turnView
@@ -634,6 +644,9 @@ func (p *runPage) buildTurns(entries []store.TranscriptEntry) {
 			t := ensure(e.Turn)
 			t.Items = append(t.Items, turnItem{Kind: "text", Entry: e})
 		case store.EntryToolCall:
+			if answered[e.ToolUseID] {
+				continue
+			}
 			item := turnItem{Kind: "tool", Entry: e, Arg: mainArg(e.Content), Result: results[e.ToolUseID]}
 			if item.Result != nil && item.Result.LatencyMs != nil {
 				item.Latency = humanDuration(time.Duration(*item.Result.LatencyMs) * time.Millisecond)

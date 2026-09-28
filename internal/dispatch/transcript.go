@@ -110,8 +110,9 @@ func (r *recorder) nudge(ctx context.Context, n int, text string) {
 
 // outcome records what the run concluded, along with any results from its
 // final turn that had not been written yet (FR-1.5).
-func (r *recorder) outcome(ctx context.Context, n int, tool string, input []byte, pending []store.TranscriptEntry) {
+func (r *recorder) outcome(ctx context.Context, n int, tu *provider.Block, pending []store.TranscriptEntry) {
 	pending = append(pending, r.entry(store.TranscriptEntry{
-		Kind: store.EntryOutcome, Turn: n, ToolName: tool, Content: string(input)}, r.limits.MaxEntryBytes))
+		Kind: store.EntryOutcome, Turn: n, ToolName: tu.ToolName, ToolUseID: tu.ToolUseID,
+		Content: string(tu.ToolInput)}, r.limits.MaxEntryBytes))
 	r.write(ctx, pending...)
 }

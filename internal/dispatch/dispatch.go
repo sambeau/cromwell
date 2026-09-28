@@ -457,7 +457,7 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 						continue
 					}
 				}
-				rec.outcome(ctx, n, tu.ToolName, tu.ToolInput, recorded)
+				rec.outcome(ctx, n, tu, recorded)
 				return tu.ToolInput, total, nil // dispatch complete
 			}
 			began := time.Now()
