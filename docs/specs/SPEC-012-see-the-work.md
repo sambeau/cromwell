@@ -1,12 +1,10 @@
 # SPEC-012: See the work
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. An independent
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with all nine
+choices in §5 (DoD 6) as recommended. Authored by Claude. An independent
 consistency review, [REVIEW-012](../reviews/REVIEW-012-see-the-work.md), found
 four material and thirteen smaller problems in the first draft. All of them
-are dealt with in this revision, and §7 says how, finding by finding. The
-author can't be the approval gate, so the decision is Sam's. Sam has said he
-will approve the spec and the build together. Nine choices in it need his
-explicit yes (§5, DoD 6).
+are dealt with in this revision, and §7 says how, finding by finding.
 **Date:** 2026-09-28
 **Roadmap milestone:** M6 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §11

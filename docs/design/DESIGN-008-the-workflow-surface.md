@@ -384,6 +384,14 @@ hidden panels, which fits the document-led idea. If a page later grows so heavy
 that stacking becomes unwieldy, individual sections can become HTMX-loaded tabs
 without changing anything else. Starting stacked is the more honest default.
 
+> **Note, 2026-09-28 ([SPEC-012](../specs/SPEC-012-see-the-work.md) SD-14,
+> approved by Sam).** A feature's page now carries its **timeline** between
+> the page head and the body: one line of major moments, with a closed
+> disclosure holding the detail, per DESIGN-010 §8. On feature pages it
+> replaces the Activity section, whose events it carries as its detail level
+> (SD-7). The design document is still the body. Project and initiative pages
+> are unchanged.
+
 ### 5.3 Editing: what a person can change, and how
 
 DESIGN-007's rule that the interface never edits document *bodies* is not a wall
