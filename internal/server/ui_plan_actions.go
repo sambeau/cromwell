@@ -150,7 +150,7 @@ func (s *Server) milestoneEditorFor(ctx context.Context, id uuid.UUID, query, no
 	g := lifecycle.G4(prog.Total, prog.Done)
 	ed.CanLock, ed.LeafCount, ed.LeafDone = g.Pass, prog.Total, prog.Done
 	if !g.Pass {
-		ed.LockReason = g4Plain(prog.Total, prog.Done)
+		ed.LockReason = g.Reason // written for a person (lifecycle.G4)
 	}
 	if ed.Picker, err = s.memberPickerFor(ctx, m, query); err != nil {
 		return nil, err
@@ -288,24 +288,6 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 		return a == nil && b == nil
 	}
 	return *a == *b
-}
-
-// g4Plain says in plain words why G4 would refuse a lock (FR-5.1). The gate's
-// own reason is written for the audit trail; this is written for the person
-// looking at the disabled button.
-func g4Plain(total, done int) string {
-	switch {
-	case total == 0:
-		return "This milestone can't be locked yet, because nothing in it comes down to a feature. " +
-			"Add the work it is meant to deliver first."
-	case done == 0 && total == 1:
-		return "This milestone can't be locked yet, because its one feature isn't done. " +
-			"Locking records what actually shipped, so at least one feature has to be finished first."
-	case done == 0:
-		return fmt.Sprintf("This milestone can't be locked yet, because none of its %d features is done. "+
-			"Locking records what actually shipped, so at least one has to be finished first.", total)
-	}
-	return ""
 }
 
 // planError turns a store error into the sentence a person reads (D-6).
@@ -627,9 +609,10 @@ func (s *Server) handleMilestoneLock(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		// G4 refused: its reason inline, nothing locked, no checkpoint and no
-		// force path (L-6, SPEC-006 R6-1).
+		// force path (L-6, SPEC-006 R6-1). Any other failure — already locked,
+		// say — is reported as itself, never dressed up as G4.
 		if g.Gate == lifecycle.GateG4 && !g.Pass {
-			s.respondMilestone(w, r, milestoneID, "", g4Plain(prog.Total, prog.Done))
+			s.respondMilestone(w, r, milestoneID, "", g.Reason)
 			return
 		}
 		s.respondMilestone(w, r, milestoneID, "", planError(err))

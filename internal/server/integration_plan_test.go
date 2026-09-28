@@ -408,6 +408,17 @@ func TestMCPPlanTools(t *testing.T) {
 		}
 	}
 
+	// A refusal on a locked milestone is explained, not leaked (FR-7). The lock
+	// itself is a person's act in the web UI.
+	if _, err := h.srv.Store.Pool.Exec(context.Background(),
+		`UPDATE features SET state = 'done' WHERE id = (SELECT id FROM features WHERE slug = 'login')`); err != nil {
+		t.Fatal(err)
+	}
+	_, frag := h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": gaID, "confirm": "permanent"}, true)
+	mustContain(t, "UI lock", frag, "This milestone is now locked.")
+	callErr("add_milestone_member", map[string]any{"milestone": gaID, "member_type": "feature", "member": "billing/invoices"},
+		"that milestone is locked, so what it contains can't change")
+
 	// SD-4: there is no lock over MCP; the milestone is still open.
 	resp := h.rpc("tools/call", map[string]any{"name": "lock_milestone", "arguments": map[string]any{"milestone": betaID}})
 	if resp.Error == nil || resp.Error.Code != rpcMethodNotFound {

@@ -452,7 +452,7 @@ func (s *Server) mcpGetMilestone(r *http.Request, args map[string]any) (any, err
 		lock := map[string]any{"could_lock_now": g.Pass,
 			"how": "A person locks a milestone from its editor in the web UI. Locking is permanent, so this facet has no tool for it."}
 		if !g.Pass {
-			lock["why_not"] = g4Plain(prog.Total, prog.Done)
+			lock["why_not"] = g.Reason
 		}
 		out["lock"] = lock
 	} else if m.LockedAt != nil {

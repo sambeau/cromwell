@@ -103,12 +103,23 @@ func G3(verificationApproved, branchMerged bool) GateResult {
 // resolvedMembers count feeds the reason so an empty milestone reads
 // differently from a live-but-unfinished one.
 func G4(resolvedMembers, doneMembers int) GateResult {
+	// A refusal is shown to a person as it stands — beside the disabled lock in
+	// the web UI, and relayed by the chat agent — so it is a full sentence that
+	// counts what the gate counts: resolved features (DESIGN-008 D-6, SPEC-010
+	// FR-5.1).
 	switch {
 	case resolvedMembers == 0:
-		return GateResult{Gate: GateG4, Pass: false, Reason: "milestone has no resolved members"}
+		return GateResult{Gate: GateG4, Pass: false,
+			Reason: "This milestone can't be locked yet, because nothing in it comes down to a feature. " +
+				"Add the work it is meant to deliver first."}
+	case doneMembers == 0 && resolvedMembers == 1:
+		return GateResult{Gate: GateG4, Pass: false,
+			Reason: "This milestone can't be locked yet, because its one feature isn't done. " +
+				"Locking records what actually shipped, so at least one feature has to be finished first."}
 	case doneMembers == 0:
 		return GateResult{Gate: GateG4, Pass: false,
-			Reason: fmt.Sprintf("no member done yet (%d resolved, none complete)", resolvedMembers)}
+			Reason: fmt.Sprintf("This milestone can't be locked yet, because none of its %d features is done. "+
+				"Locking records what actually shipped, so at least one has to be finished first.", resolvedMembers)}
 	}
 	return GateResult{Gate: GateG4, Pass: true,
 		Reason: fmt.Sprintf("%d of %d resolved member(s) done", doneMembers, resolvedMembers)}

@@ -171,14 +171,17 @@
             </span>
             <span class="row-end">
               {{if not .Locked}}
-              <form method="post" action="/ui/milestone/member/remove">
-                <input type="hidden" name="milestone_id" value="{{.ID}}">
-                <input type="hidden" name="member_type" value="{{$.Kind}}">
-                <input type="hidden" name="member_id" value="{{$.ID}}">
-                <input type="hidden" name="from" value="member">
-                <button class="btn btn--sm" type="submit" aria-label="Take this out of {{.Name}}">
-                  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-minus"/></svg>Take it out</button>
-              </form>
+              <details class="inline-confirm">
+                <summary class="btn btn--ghost btn--sm" aria-label="Take this out of {{.Name}}">Take it out…</summary>
+                <form class="inline-confirm-form" method="post" action="/ui/milestone/member/remove">
+                  <input type="hidden" name="milestone_id" value="{{.ID}}">
+                  <input type="hidden" name="member_type" value="{{$.Kind}}">
+                  <input type="hidden" name="member_id" value="{{$.ID}}">
+                  <input type="hidden" name="from" value="member">
+                  <input class="input input--sm" name="reason" placeholder="Why? (optional)" aria-label="Why is it coming out? This is optional.">
+                  <button class="btn btn--sm btn--danger" type="submit">Take it out</button>
+                </form>
+              </details>
               {{end}}
             </span>
           </div>

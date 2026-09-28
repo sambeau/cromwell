@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"cromwell/internal/lifecycle"
 	"cromwell/internal/store"
 )
 
@@ -43,7 +44,7 @@ func TestPlanEditorsRender(t *testing.T) {
 	blocked := &milestoneEditor{
 		Milestone: store.Milestone{ID: mID, Name: "Auth beta", State: "open"},
 		Card:      sampleMilestoneCard(), Owner: crumb{Label: "Project", URL: "/ui/project"},
-		Members: members, LockReason: g4Plain(3, 0), LeafCount: 3,
+		Members: members, LockReason: lifecycle.G4(3, 0).Reason, LeafCount: 3,
 		Picker: memberPicker{MilestoneID: mID, Query: "zzz", ScopeLabel: "the whole project"},
 		Error:  "This milestone is locked, so what it contains is fixed.",
 	}

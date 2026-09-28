@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -155,6 +156,7 @@ func TestG4(t *testing.T) {
 	}{
 		{0, 0, false}, // empty milestone: nothing to lock
 		{3, 0, false}, // live but nothing finished
+		{1, 0, false}, // its one feature not finished
 		{3, 1, true},  // one member done: lockable (FR-5.2)
 		{1, 1, true},
 	}
@@ -166,6 +168,12 @@ func TestG4(t *testing.T) {
 		}
 		if got.Gate != GateG4 || got.Reason == "" {
 			t.Errorf("G4 result malformed: %+v", got)
+		}
+		// A refusal is shown to a person as it stands (SPEC-010 FR-5.1): a
+		// full sentence that counts features, not a fragment.
+		if !got.Pass && (!strings.HasPrefix(got.Reason, "This milestone can't be locked yet, because") ||
+			!strings.HasSuffix(got.Reason, ".") || !strings.Contains(got.Reason, "feature")) {
+			t.Errorf("G4(%d,%d) refusal is not a plain sentence about features: %q", c.resolved, c.done, got.Reason)
 		}
 	}
 }
