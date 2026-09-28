@@ -124,11 +124,11 @@ const log = (...a) => console.log(...a);
   await page.click('#roadmap-editor button:has-text("Done")');
   await settle();
 
-  // --- 6. Lock: refused by G4, then confirmed ---
+  // --- 6. Mark as shipped: refused by G4, then done, reopened, and done again ---
   await page.click('button[aria-label="Edit the milestone Auth beta"]');
   await page.waitForSelector('#dlg-milestone[open]');
   await page.locator('#milestone-editor .action-reason').scrollIntoViewIfNeeded();
-  await shot('lock-refused');
+  await shot('ship-refused');
   await page.click('#milestone-editor button:has-text("Done")');
   // No AI provider can build the feature, so it is marked done directly.
   execSync(`psql "${DB}" -qc "UPDATE features SET state = 'done' WHERE slug = 'login'"`);
@@ -136,12 +136,21 @@ const log = (...a) => console.log(...a);
   await page.goto(BASE + '/ui/i/auth'); await settle();
   await page.click('button[aria-label="Edit the milestone Auth beta"]');
   await page.waitForSelector('#dlg-milestone[open]');
-  await page.click('#milestone-editor summary:has-text("Lock this milestone")');
-  await page.locator('#milestone-editor button:has-text("Lock it permanently")').scrollIntoViewIfNeeded();
-  await shot('lock-confirm');
-  await page.click('#milestone-editor button:has-text("Lock it permanently")');
-  await notice('This milestone is now locked.');
-  await shot('locked');
+  await page.locator('#milestone-editor button:has-text("Mark as shipped")').scrollIntoViewIfNeeded();
+  await shot('ship-ready');
+  await page.click('#milestone-editor button:has-text("Mark as shipped")');
+  await notice('This milestone is marked as shipped.');
+  await shot('shipped');
+  // A mistake? Reopen it, with a reason, then ship it again.
+  await page.click('#milestone-editor summary:has-text("Reopen this milestone")');
+  await page.fill('#milestone-editor details[open] input[name=reason]', 'Passkeys should go out with the beta after all.');
+  await page.locator('#milestone-editor button:has-text("Reopen it")').scrollIntoViewIfNeeded();
+  await shot('reopen');
+  await page.click('#milestone-editor button:has-text("Reopen it")');
+  await notice('This milestone is open again');
+  await shot('reopened');
+  await page.click('#milestone-editor button:has-text("Mark as shipped")');
+  await notice('This milestone is marked as shipped.');
   await page.click('#milestone-editor button:has-text("Done")');
   await settle();
 
