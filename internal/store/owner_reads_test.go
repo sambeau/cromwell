@@ -50,7 +50,7 @@ func TestOwnerReadsAndPrimaryDoc(t *testing.T) {
 		designID = design.ID
 
 		// A milestone owned by the initiative, and a project-owned one.
-		om, err := CreateMilestone(ctx, tx, "Auth v1", "", nil, "sam")
+		om, err := CreateMilestone(ctx, tx, "project", nil, "Auth v1", "", nil, "sam")
 		if err != nil {
 			return err
 		}
@@ -59,14 +59,14 @@ func TestOwnerReadsAndPrimaryDoc(t *testing.T) {
 			`UPDATE milestones SET owner_type='initiative', owner_id=$2 WHERE id=$1`, om.ID, in.ID); err != nil {
 			return err
 		}
-		pm, err := CreateMilestone(ctx, tx, "Project launch", "", nil, "sam")
+		pm, err := CreateMilestone(ctx, tx, "project", nil, "Project launch", "", nil, "sam")
 		if err != nil {
 			return err
 		}
 		projectMS = pm.ID
 
 		// A third milestone the feature is a member of (owned by project).
-		mm, err := CreateMilestone(ctx, tx, "Cross-cutting", "", nil, "sam")
+		mm, err := CreateMilestone(ctx, tx, "project", nil, "Cross-cutting", "", nil, "sam")
 		if err != nil {
 			return err
 		}

@@ -129,7 +129,7 @@ func TestCostRollupsExtended(t *testing.T) {
 	// A milestone over both features costs the union.
 	var ms uuid.UUID
 	err = s.WithTx(ctx, func(tx pgx.Tx) error {
-		m, err := CreateMilestone(ctx, tx, "v1", "", nil, "sam")
+		m, err := CreateMilestone(ctx, tx, "project", nil, "v1", "", nil, "sam")
 		if err != nil {
 			return err
 		}

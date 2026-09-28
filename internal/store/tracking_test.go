@@ -153,7 +153,7 @@ func TestMilestoneResolveProgressAndLock(t *testing.T) {
 	var ms uuid.UUID
 	// Milestone over the whole initiative (transitive to fA, fB).
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		m, err := CreateMilestone(ctx, tx, "v1", "first release", nil, "sam")
+		m, err := CreateMilestone(ctx, tx, "project", nil, "v1", "first release", nil, "sam")
 		if err != nil {
 			return err
 		}
@@ -234,7 +234,7 @@ func TestMilestoneDescopeBeforeLock(t *testing.T) {
 
 	var ms uuid.UUID
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		m, err := CreateMilestone(ctx, tx, "v1", "", nil, "sam")
+		m, err := CreateMilestone(ctx, tx, "project", nil, "v1", "", nil, "sam")
 		if err != nil {
 			return err
 		}
@@ -285,15 +285,15 @@ func TestRoadmapOrdering(t *testing.T) {
 
 	var r, m1, m2 uuid.UUID
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		rm, err := CreateRoadmap(ctx, tx, "2026", "sam")
+		rm, err := CreateRoadmap(ctx, tx, "project", nil, "2026", "sam")
 		if err != nil {
 			return err
 		}
-		a, err := CreateMilestone(ctx, tx, "v1", "", nil, "sam")
+		a, err := CreateMilestone(ctx, tx, "project", nil, "v1", "", nil, "sam")
 		if err != nil {
 			return err
 		}
-		b, err := CreateMilestone(ctx, tx, "v2", "", nil, "sam")
+		b, err := CreateMilestone(ctx, tx, "project", nil, "v2", "", nil, "sam")
 		if err != nil {
 			return err
 		}

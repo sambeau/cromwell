@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,24 +49,54 @@ func scanMilestone(row pgx.Row) (*Milestone, error) {
 	return &m, err
 }
 
-// CreateMilestone creates a project-owned milestone (owner defaults to the
-// project). Owner-scoped creation — an initiative owning its own milestone — is
-// Stage B (SPEC-007 SD-1); the owner columns and their reads land now so
-// browsing is complete.
-func CreateMilestone(ctx context.Context, tx pgx.Tx, name, description string, targetDate *time.Time, actor string) (*Milestone, error) {
+// CreateMilestone creates a milestone owned by the project (ownerType
+// "project", ownerID nil) or by an initiative (DESIGN-008 D-9, SPEC-010
+// FR-1.1). Ownership says whose plan the milestone belongs to and whose page
+// it is edited from; it never constrains membership (D-12).
+func CreateMilestone(ctx context.Context, tx pgx.Tx, ownerType string, ownerID *uuid.UUID, name, description string, targetDate *time.Time, actor string) (*Milestone, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("a milestone needs a name")
+	}
+	if err := checkPlanOwner(ownerType, ownerID); err != nil {
+		return nil, err
+	}
 	m := &Milestone{ID: NewID(), Name: name, Description: description, TargetDate: targetDate,
-		State: lifecycle.MilestoneOpen, OwnerType: "project"}
+		State: lifecycle.MilestoneOpen, OwnerType: ownerType, OwnerID: ownerID}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO milestones (id, name, description, target_date)
-		VALUES ($1, $2, $3, $4)`, m.ID, name, description, targetDate)
+		INSERT INTO milestones (id, name, description, target_date, owner_type, owner_id)
+		VALUES ($1, $2, $3, $4, $5, $6)`, m.ID, name, description, targetDate, ownerType, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	if err := Audit(ctx, tx, actor, "milestone.created", "milestone", &m.ID,
-		map[string]any{"name": name}); err != nil {
+		ownerPayload(map[string]any{"name": name}, ownerType, ownerID)); err != nil {
 		return nil, err
 	}
 	return m, nil
+}
+
+// checkPlanOwner enforces the owner shape milestones and roadmaps allow: the
+// project with no id, or an initiative with one. The table CHECKs say the same;
+// checking first turns a constraint violation into a sentence.
+func checkPlanOwner(ownerType string, ownerID *uuid.UUID) error {
+	switch {
+	case ownerType == "project" && ownerID == nil:
+		return nil
+	case ownerType == "initiative" && ownerID != nil:
+		return nil
+	}
+	return fmt.Errorf("a plan belongs to the project or to an initiative, not to %q", ownerType)
+}
+
+// ownerPayload adds the owner to an audit payload, so the trail says whose
+// plan a milestone or roadmap was created in.
+func ownerPayload(p map[string]any, ownerType string, ownerID *uuid.UUID) map[string]any {
+	p["owner_type"] = ownerType
+	if ownerID != nil {
+		p["owner_id"] = ownerID.String()
+	}
+	return p
 }
 
 func GetMilestone(ctx context.Context, q Querier, id uuid.UUID) (*Milestone, error) {
@@ -132,6 +163,21 @@ func AddMember(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, memberType
 	if err := assertOpen(ctx, tx, milestoneID); err != nil {
 		return err
 	}
+	if memberType == "milestone" {
+		// A milestone inside itself, directly or through nesting, has no
+		// planning meaning; the resolver tolerates the cycle but a picker on
+		// both ends makes one easy to create by accident (SPEC-010 FR-1.5).
+		if memberID == milestoneID {
+			return ErrMilestoneCycle
+		}
+		inside, err := MilestoneContains(ctx, tx, memberID, milestoneID)
+		if err != nil {
+			return err
+		}
+		if inside {
+			return ErrMilestoneCycle
+		}
+	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO milestone_members (milestone_id, member_type, member_id)
 		VALUES ($1, $2, $3)
@@ -165,6 +211,28 @@ func RemoveMember(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, memberT
 	}
 	return Audit(ctx, tx, actor, "milestone.member_removed", "milestone", &milestoneID,
 		map[string]any{"member_type": memberType, "member_id": memberID.String(), "reason": reason})
+}
+
+// ErrMilestoneCycle is returned when adding a milestone would put it inside
+// itself.
+var ErrMilestoneCycle = errors.New("a milestone can't contain itself, directly or through another milestone")
+
+// MilestoneContains reports whether inner is a member of outer, directly or
+// through nested milestones. Initiatives and features are not followed: only
+// milestone nesting can form a cycle.
+func MilestoneContains(ctx context.Context, q Querier, outer, inner uuid.UUID) (bool, error) {
+	var found bool
+	err := q.QueryRow(ctx, `
+		WITH RECURSIVE nested AS (
+			SELECT member_id FROM milestone_members
+			WHERE milestone_id = $1 AND member_type = 'milestone'
+			UNION
+			SELECT mm.member_id FROM milestone_members mm
+			JOIN nested n ON mm.milestone_id = n.member_id
+			WHERE mm.member_type = 'milestone'
+		)
+		SELECT EXISTS (SELECT 1 FROM nested WHERE member_id = $2)`, outer, inner).Scan(&found)
+	return found, err
 }
 
 func assertOpen(ctx context.Context, q Querier, milestoneID uuid.UUID) error {
@@ -382,17 +450,26 @@ func scanRoadmap(row pgx.Row) (*Roadmap, error) {
 	return &r, err
 }
 
-// CreateRoadmap creates a project-owned roadmap (owner defaults to the
-// project). Owner-scoped creation is Stage B (SPEC-007 SD-1).
-func CreateRoadmap(ctx context.Context, tx pgx.Tx, name, actor string) (*Roadmap, error) {
-	r := &Roadmap{ID: NewID(), Name: name, OwnerType: "project"}
-	if _, err := tx.Exec(ctx, `INSERT INTO roadmaps (id, name) VALUES ($1, $2)`, r.ID, name); err != nil {
+// CreateRoadmap creates a roadmap owned by the project or an initiative
+// (DESIGN-008 D-9, SPEC-010 FR-1.1).
+func CreateRoadmap(ctx context.Context, tx pgx.Tx, ownerType string, ownerID *uuid.UUID, name, actor string) (*Roadmap, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("a roadmap needs a name")
+	}
+	if err := checkPlanOwner(ownerType, ownerID); err != nil {
+		return nil, err
+	}
+	r := &Roadmap{ID: NewID(), Name: name, OwnerType: ownerType, OwnerID: ownerID}
+	if _, err := tx.Exec(ctx, `INSERT INTO roadmaps (id, name, owner_type, owner_id) VALUES ($1, $2, $3, $4)`,
+		r.ID, name, ownerType, ownerID); err != nil {
 		return nil, err
 	}
 	// Roadmaps are not a ref_type (DESIGN-001 §3); a roadmap-scoped event is
-	// filed at project level with the roadmap id in the payload.
-	if err := Audit(ctx, tx, actor, "roadmap.created", "project", nil,
-		map[string]any{"roadmap_id": r.ID.String(), "name": name}); err != nil {
+	// filed against its owner (the project, or the owning initiative) with the
+	// roadmap id in the payload, so it shows in that owner's activity.
+	if err := Audit(ctx, tx, actor, "roadmap.created", ownerType, ownerID,
+		ownerPayload(map[string]any{"roadmap_id": r.ID.String(), "name": name}, ownerType, ownerID)); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -444,6 +521,88 @@ func SetRoadmapEntry(ctx context.Context, tx pgx.Tx, roadmapID, milestoneID uuid
 	}
 	return Audit(ctx, tx, actor, "roadmap.entry_set", "milestone", &milestoneID,
 		map[string]any{"roadmap_id": roadmapID.String(), "position": position})
+}
+
+// PlaceRoadmapEntry puts a milestone at a 1-based place in the roadmap's
+// current order — inserting it, or moving it if it is already there — and
+// renumbers every entry 1…n, in the caller's transaction with one audit row
+// (SPEC-010 FR-1.3). place <= 0, or past the end, means "at the end".
+//
+// SetRoadmapEntry stores whatever position it is given, so entries can tie and
+// "move up" can silently do nothing; the editor reorders through this instead.
+func PlaceRoadmapEntry(ctx context.Context, tx pgx.Tx, roadmapID, milestoneID uuid.UUID, place int, actor string) (int, error) {
+	if _, err := GetRoadmap(ctx, tx, roadmapID); err != nil {
+		return 0, err
+	}
+	if _, err := GetMilestone(ctx, tx, milestoneID); err != nil {
+		return 0, err
+	}
+	entries, err := RoadmapEntries(ctx, tx, roadmapID)
+	if err != nil {
+		return 0, err
+	}
+	order := make([]uuid.UUID, 0, len(entries)+1)
+	for _, e := range entries {
+		if e.MilestoneID != milestoneID {
+			order = append(order, e.MilestoneID)
+		}
+	}
+	idx := place - 1
+	if place <= 0 || idx > len(order) {
+		idx = len(order)
+	}
+	order = append(order, uuid.Nil)
+	copy(order[idx+1:], order[idx:])
+	order[idx] = milestoneID
+	if err := writeRoadmapOrder(ctx, tx, roadmapID, order); err != nil {
+		return 0, err
+	}
+	final := idx + 1
+	if err := Audit(ctx, tx, actor, "roadmap.entry_set", "milestone", &milestoneID,
+		map[string]any{"roadmap_id": roadmapID.String(), "position": final}); err != nil {
+		return 0, err
+	}
+	return final, nil
+}
+
+// RemoveRoadmapEntry takes a milestone off a roadmap and renumbers the rest,
+// with an audit row (SPEC-010 FR-1.4). The milestone itself is untouched.
+func RemoveRoadmapEntry(ctx context.Context, tx pgx.Tx, roadmapID, milestoneID uuid.UUID, actor string) error {
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM roadmap_entries WHERE roadmap_id = $1 AND milestone_id = $2`, roadmapID, milestoneID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	entries, err := RoadmapEntries(ctx, tx, roadmapID)
+	if err != nil {
+		return err
+	}
+	order := make([]uuid.UUID, len(entries))
+	for i, e := range entries {
+		order[i] = e.MilestoneID
+	}
+	if err := writeRoadmapOrder(ctx, tx, roadmapID, order); err != nil {
+		return err
+	}
+	return Audit(ctx, tx, actor, "roadmap.entry_removed", "milestone", &milestoneID,
+		map[string]any{"roadmap_id": roadmapID.String()})
+}
+
+// writeRoadmapOrder stores an order as dense positions 1…n.
+func writeRoadmapOrder(ctx context.Context, tx pgx.Tx, roadmapID uuid.UUID, order []uuid.UUID) error {
+	for i, id := range order {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO roadmap_entries (roadmap_id, milestone_id, position)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (roadmap_id, milestone_id) DO UPDATE SET position = EXCLUDED.position`,
+			roadmapID, id, i+1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type RoadmapEntry struct {
