@@ -47,9 +47,15 @@ func loadMigrations() ([]migration, error) {
 		ms = append(ms, migration{version: v, name: name, sql: string(body)})
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].version < ms[j].version })
+	// Versions must be unique and positive, but may have gaps. Two lines of
+	// work can reserve numbers in parallel (SPEC-012 SD-10): a branch holding
+	// 0008 must still load before 0007 has landed.
 	for i, m := range ms {
-		if m.version != i+1 {
-			return nil, fmt.Errorf("migration versions must be contiguous from 1; found %q at position %d", m.name, i+1)
+		if m.version < 1 {
+			return nil, fmt.Errorf("migration %q: version must be 1 or more", m.name)
+		}
+		if i > 0 && m.version == ms[i-1].version {
+			return nil, fmt.Errorf("migrations %q and %q share version %d", ms[i-1].name, m.name, m.version)
 		}
 	}
 	return ms, nil
@@ -67,21 +73,41 @@ func Migrate(ctx context.Context, conn *pgx.Conn) error {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
 
-	var current int
-	if err := conn.QueryRow(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
-		return fmt.Errorf("read schema version: %w", err)
+	applied, err := appliedVersions(ctx, conn)
+	if err != nil {
+		return err
 	}
-
 	ms, err := loadMigrations()
 	if err != nil {
 		return err
 	}
-	return applyMigrations(ctx, conn, current, ms)
+	return applyMigrations(ctx, conn, applied, ms)
 }
 
-func applyMigrations(ctx context.Context, conn *pgx.Conn, current int, ms []migration) error {
+// appliedVersions reads the set of migrations already applied.
+func appliedVersions(ctx context.Context, conn *pgx.Conn) (map[int]bool, error) {
+	rows, err := conn.Query(ctx, `SELECT version FROM schema_migrations`)
+	if err != nil {
+		return nil, fmt.Errorf("read schema versions: %w", err)
+	}
+	defer rows.Close()
+	applied := map[int]bool{}
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		applied[v] = true
+	}
+	return applied, rows.Err()
+}
+
+// applyMigrations applies, in version order, every migration not already
+// applied. It fills a gap as well as extending the top (SPEC-012 SD-10): a
+// database that received 0008 before 0007 existed still gets 0007 later.
+func applyMigrations(ctx context.Context, conn *pgx.Conn, applied map[int]bool, ms []migration) error {
 	for _, m := range ms {
-		if m.version <= current {
+		if applied[m.version] {
 			continue
 		}
 		tx, err := conn.Begin(ctx)
@@ -90,7 +116,7 @@ func applyMigrations(ctx context.Context, conn *pgx.Conn, current int, ms []migr
 		}
 		if _, err := tx.Exec(ctx, m.sql); err != nil {
 			_ = tx.Rollback(ctx)
-			return fmt.Errorf("migration %s failed (schema left at version %d): %w", m.name, m.version-1, err)
+			return fmt.Errorf("migration %s failed (nothing from it was applied): %w", m.name, err)
 		}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO schema_migrations (version, name) VALUES ($1, $2)`, m.version, m.name); err != nil {

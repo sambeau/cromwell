@@ -202,6 +202,13 @@ func MarkDispatchFailed(ctx context.Context, tx pgx.Tx, id uuid.UUID, reason str
 		Scan(&refType, &refID); err != nil {
 		return err
 	}
+	// The attempt's transcript ends with why it failed (SPEC-012 SD-3). This
+	// is the one place every failure passes through — a loop error, a stalled
+	// process, a refusal at admission — and RequeueDispatch later clears
+	// dispatches.error, so the transcript is where the reason survives.
+	if err := appendErrorEntry(ctx, tx, id, reason); err != nil {
+		return err
+	}
 	return Audit(ctx, tx, "orchestrator", "dispatch.failed", refType, &refID,
 		map[string]any{"dispatch_id": id.String(), "error": reason})
 }

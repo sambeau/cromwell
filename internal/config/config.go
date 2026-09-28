@@ -60,6 +60,9 @@ type Config struct {
 	Assignments map[string]string  `yaml:"assignments"`
 	Dispatch    DispatchConfig     `yaml:"dispatch"`
 	Commands    map[string]Command `yaml:"commands"`
+	// Transcripts bounds what each agent run's transcript stores, and for how
+	// long (SPEC-012 FR-2). Optional: every field has a default.
+	Transcripts TranscriptConfig `yaml:"transcripts"`
 }
 
 type DatabaseConfig struct {
@@ -125,6 +128,34 @@ type DispatchConfig struct {
 	// human decides instead (audit §3.3a).
 	MaxReviewRounds int `yaml:"max_review_rounds"`
 	StallSeconds    int `yaml:"stall_seconds"`
+}
+
+// TranscriptConfig limits the size of stored transcripts and sets how long
+// they are kept (SPEC-012 FR-2). An entry over its limit is cut in the middle
+// with a marker, never dropped (SD-4). A pointer distinguishes "not set" from
+// an explicit 0 for retention, where 0 means keep for ever.
+type TranscriptConfig struct {
+	MaxToolResultBytes int  `yaml:"max_tool_result_bytes"`
+	MaxEntryBytes      int  `yaml:"max_entry_bytes"`
+	MaxAttemptBytes    int  `yaml:"max_attempt_bytes"`
+	RetentionDays      *int `yaml:"retention_days"`
+}
+
+// Transcript defaults (SPEC-012 FR-2.1).
+const (
+	DefaultMaxToolResultBytes = 32 << 10
+	DefaultMaxEntryBytes      = 256 << 10
+	DefaultMaxAttemptBytes    = 4 << 20
+	DefaultRetentionDays      = 180
+)
+
+// Retention returns the configured retention in days; 0 keeps transcripts for
+// ever.
+func (t TranscriptConfig) Retention() int {
+	if t.RetentionDays == nil {
+		return DefaultRetentionDays
+	}
+	return *t.RetentionDays
 }
 
 // Command is a tool-host argv whitelist entry (DESIGN-004 §4, DESIGN-006
@@ -230,6 +261,31 @@ func (c *Config) validate() error {
 	}
 	if c.Dispatch.StallSeconds == 0 {
 		c.Dispatch.StallSeconds = 120
+	}
+	t := &c.Transcripts
+	for _, f := range []struct {
+		name string
+		v    int
+	}{
+		{"max_tool_result_bytes", t.MaxToolResultBytes},
+		{"max_entry_bytes", t.MaxEntryBytes},
+		{"max_attempt_bytes", t.MaxAttemptBytes},
+	} {
+		if f.v < 0 {
+			add("transcripts."+f.name, "must not be negative")
+		}
+	}
+	if t.RetentionDays != nil && *t.RetentionDays < 0 {
+		add("transcripts.retention_days", "must not be negative; 0 keeps transcripts for ever")
+	}
+	if t.MaxToolResultBytes == 0 {
+		t.MaxToolResultBytes = DefaultMaxToolResultBytes
+	}
+	if t.MaxEntryBytes == 0 {
+		t.MaxEntryBytes = DefaultMaxEntryBytes
+	}
+	if t.MaxAttemptBytes == 0 {
+		t.MaxAttemptBytes = DefaultMaxAttemptBytes
 	}
 	return join(errs)
 }
