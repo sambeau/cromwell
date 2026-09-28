@@ -13,8 +13,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
+	"subutai/internal/bus"
+	"subutai/internal/lifecycle"
 )
 
 // ---- Actions ----
@@ -614,7 +614,7 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 
 func decideFileChanged(e bus.DocumentFileChanged, snap Snapshot) []Action {
 	if snap.Doc == nil {
-		return nil // unregistered path: not Cromwell's concern
+		return nil // unregistered path: not Subutai's concern
 	}
 	if snap.Doc.State == lifecycle.DocApproved {
 		// Approved documents are immutable; the honest path is revision

@@ -11,12 +11,12 @@ import (
 )
 
 func TestClientImportBoundary(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", "cromwell/internal/client").Output()
+	out, err := exec.Command("go", "list", "-deps", "subutai/internal/client").Output()
 	if err != nil {
 		t.Fatalf("go list: %v", err)
 	}
 	for _, dep := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if dep == "cromwell/internal/store" || strings.Contains(dep, "jackc/pgx") {
+		if dep == "subutai/internal/store" || strings.Contains(dep, "jackc/pgx") {
 			t.Errorf("client package must not depend on %s (FR-2.2, DESIGN-002 O-1)", dep)
 		}
 	}

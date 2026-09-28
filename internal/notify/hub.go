@@ -20,7 +20,7 @@ import (
 	"context"
 	"sync"
 
-	"cromwell/internal/bus"
+	"subutai/internal/bus"
 )
 
 // Notifier is the UI's realtime boundary. Subscribe returns a receive-only

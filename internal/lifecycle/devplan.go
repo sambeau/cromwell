@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"cromwell/internal/content"
+	"subutai/internal/content"
 )
 
 // TaskRow is one parsed row of the dev-plan task table. LocalID is the

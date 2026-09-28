@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"cromwell/internal/config"
+	"subutai/internal/config"
 )
 
 // Section is one heading-delimited block. Position is 0-based document

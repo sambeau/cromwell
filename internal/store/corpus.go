@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/sizing"
+	"subutai/internal/sizing"
 )
 
 // Actuals and the calibration corpus (SPEC-003 FR-3, DESIGN-001 §7). Actual

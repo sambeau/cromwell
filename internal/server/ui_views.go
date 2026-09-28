@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/config"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/sizing"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
+	"subutai/internal/sizing"
+	"subutai/internal/store"
 )
 
 // View assembly for the read surfaces (SPEC-004 FR-4, FR-5, FR-6). Each view is

@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 // driveLoopWithSendback takes auth/login from a draft spec to done, with the

@@ -1,4 +1,4 @@
-// Command cromwell is the single binary (DEC-001): `serve` runs the server;
+// Command subutai is the single binary (DEC-001): `serve` runs the server;
 // every other subcommand is an API client over the unix socket (O-1), except
 // `init`, which applies migrations before any server exists (DESIGN-002 §3).
 package main
@@ -15,48 +15,48 @@ import (
 	"strings"
 	"syscall"
 
-	"cromwell/internal/client"
-	"cromwell/internal/server"
-	"cromwell/internal/starter"
+	"subutai/internal/client"
+	"subutai/internal/server"
+	"subutai/internal/starter"
 )
 
-const usage = `cromwell — document-led, specification-centred workflow
+const usage = `subutai — document-led, specification-centred workflow
 
 Usage:
-  cromwell init                                initialise this repo (once)
-  cromwell serve                               run the server
-  cromwell status                              server, queue, inbox summary
+  subutai init                                initialise this repo (once)
+  subutai serve                               run the server
+  subutai status                              server, queue, inbox summary
 
-  cromwell initiative add <path> --name <n>    create an initiative ("auth" or "auth/basic")
-  cromwell initiative archive <path>           archive (gate G5; may raise a checkpoint)
-  cromwell feature add <init-path>/<slug> --name <n>
-  cromwell feature abandon <path> --reason <r>
-  cromwell feature start <path>                begin work (creates a worktree, dispatches tasks)
-  cromwell task list <feature-path>            show a feature's tasks and states
+  subutai initiative add <path> --name <n>    create an initiative ("auth" or "auth/basic")
+  subutai initiative archive <path>           archive (gate G5; may raise a checkpoint)
+  subutai feature add <init-path>/<slug> --name <n>
+  subutai feature abandon <path> --reason <r>
+  subutai feature start <path>                begin work (creates a worktree, dispatches tasks)
+  subutai task list <feature-path>            show a feature's tasks and states
 
-  cromwell doc add <file> --type spec|dev_plan --owner <feature-path>|project|<init-path>
-  cromwell doc comments <file>                 show the comment thread
-  cromwell validate <file>                     run validation without submitting
-  cromwell submit <file>                       validate + enter review
-  cromwell revise <file>                       create a revision draft of an approved doc
+  subutai doc add <file> --type spec|dev_plan --owner <feature-path>|project|<init-path>
+  subutai doc comments <file>                 show the comment thread
+  subutai validate <file>                     run validation without submitting
+  subutai submit <file>                       validate + enter review
+  subutai revise <file>                       create a revision draft of an approved doc
 
-  cromwell inbox                               pending checkpoints
-  cromwell respond <id> <answer> [--reason r]  answer a checkpoint (approve | request_changes |
+  subutai inbox                               pending checkpoints
+  subutai respond <id> <answer> [--reason r]  answer a checkpoint (approve | request_changes |
                                                override | deny | retry | cancel | proceed | continue | pause)
-  cromwell log [--ref type:id] [--limit n]     audit stream
-  cromwell cost [--ref <entity|milestone|roadmap>]   cost rollup (per entity, or --months)
-  cromwell search <query>                      full-text search
+  subutai log [--ref type:id] [--limit n]     audit stream
+  subutai cost [--ref <entity|milestone|roadmap>]   cost rollup (per entity, or --months)
+  subutai search <query>                      full-text search
 
-  cromwell estimate [--ref <entity>]           roll-up: tokens, tier, unestimated work
-  cromwell estimate set <ref> <tokens> [--rationale r] [--cite-corpus]
-  cromwell estimate ai <ref>                   dispatch the estimator (considered/rough)
-  cromwell milestone create <name> [--target-date YYYY-MM-DD]
-  cromwell milestone add|remove <name> <member> [--reason r]   member: feature/initiative path or milestone
-  cromwell milestone lock <name>               gate G4; snapshots the leaf set
-  cromwell milestone list|show <name>
-  cromwell roadmap create <name>
-  cromwell roadmap add <roadmap> <milestone> [--position n]
-  cromwell roadmap show <name>
+  subutai estimate [--ref <entity>]           roll-up: tokens, tier, unestimated work
+  subutai estimate set <ref> <tokens> [--rationale r] [--cite-corpus]
+  subutai estimate ai <ref>                   dispatch the estimator (considered/rough)
+  subutai milestone create <name> [--target-date YYYY-MM-DD]
+  subutai milestone add|remove <name> <member> [--reason r]   member: feature/initiative path or milestone
+  subutai milestone lock <name>               gate G4; snapshots the leaf set
+  subutai milestone list|show <name>
+  subutai roadmap create <name>
+  subutai roadmap add <roadmap> <milestone> [--position n]
+  subutai roadmap show <name>
 `
 
 func main() {
@@ -85,7 +85,7 @@ func run(cmd string, args []string) error {
 		if err := starter.Init(context.Background(), cwd, exe); err != nil {
 			return err
 		}
-		fmt.Println("initialised .cromwell/ — set ANTHROPIC_API_KEY, then run `cromwell serve`")
+		fmt.Println("initialised .subutai/ — set ANTHROPIC_API_KEY, then run `subutai serve`")
 		return nil
 
 	case "serve":
@@ -135,7 +135,7 @@ func run(cmd string, args []string) error {
 		return submitCmd(c, args)
 	case "revise":
 		if len(args) < 1 {
-			return fmt.Errorf("usage: cromwell revise <file>")
+			return fmt.Errorf("usage: subutai revise <file>")
 		}
 		var out map[string]any
 		if err := c.Call("POST", "/api/docs/revise", map[string]string{"path": args[0]}, &out); err != nil {
@@ -159,7 +159,7 @@ func run(cmd string, args []string) error {
 		return roadmapCmd(c, args)
 	case "search":
 		if len(args) < 1 {
-			return fmt.Errorf("usage: cromwell search <query>")
+			return fmt.Errorf("usage: subutai search <query>")
 		}
 		return getJSON(c, "/api/search?q="+url.QueryEscape(strings.Join(args, " ")))
 	default:
@@ -212,7 +212,7 @@ func printJSON(v any) error {
 
 func initiativeCmd(c *client.Client, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: cromwell initiative add|archive <path> [flags]")
+		return fmt.Errorf("usage: subutai initiative add|archive <path> [flags]")
 	}
 	sub, path := args[0], args[1]
 	fs := flag.NewFlagSet("initiative", flag.ContinueOnError)
@@ -257,7 +257,7 @@ func initiativeCmd(c *client.Client, args []string) error {
 
 func featureCmd(c *client.Client, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: cromwell feature add|abandon <path> [flags]")
+		return fmt.Errorf("usage: subutai feature add|abandon <path> [flags]")
 	}
 	sub, path := args[0], args[1]
 	fs := flag.NewFlagSet("feature", flag.ContinueOnError)
@@ -306,7 +306,7 @@ func featureCmd(c *client.Client, args []string) error {
 
 func taskCmd(c *client.Client, args []string) error {
 	if len(args) < 2 || args[0] != "list" {
-		return fmt.Errorf("usage: cromwell task list <feature-path>")
+		return fmt.Errorf("usage: subutai task list <feature-path>")
 	}
 	var tasks []struct {
 		LocalID   string `json:"LocalID"`
@@ -333,7 +333,7 @@ func taskCmd(c *client.Client, args []string) error {
 
 func docCmd(c *client.Client, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: cromwell doc add|comments <file> [flags]")
+		return fmt.Errorf("usage: subutai doc add|comments <file> [flags]")
 	}
 	sub, path := args[0], args[1]
 	fs := flag.NewFlagSet("doc", flag.ContinueOnError)
@@ -372,7 +372,7 @@ func docCmd(c *client.Client, args []string) error {
 
 func validateCmd(c *client.Client, args []string, endpoint string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: cromwell validate <file>")
+		return fmt.Errorf("usage: subutai validate <file>")
 	}
 	var report struct {
 		Valid  bool `json:"valid"`
@@ -398,7 +398,7 @@ func validateCmd(c *client.Client, args []string, endpoint string) error {
 
 func submitCmd(c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: cromwell submit <file>")
+		return fmt.Errorf("usage: subutai submit <file>")
 	}
 	var out struct {
 		Report struct {
@@ -454,7 +454,7 @@ func inboxCmd(c *client.Client) error {
 // rule engine expects for each checkpoint kind.
 func respondCmd(c *client.Client, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: cromwell respond <checkpoint-id> <answer> [--reason r]")
+		return fmt.Errorf("usage: subutai respond <checkpoint-id> <answer> [--reason r]")
 	}
 	id, answer := args[0], args[1]
 	fs := flag.NewFlagSet("respond", flag.ContinueOnError)
@@ -590,7 +590,7 @@ func estimateCmd(c *client.Client, args []string) error {
 		return err
 	}
 	if *ref == "" {
-		return fmt.Errorf("usage: cromwell estimate --ref <entity>")
+		return fmt.Errorf("usage: subutai estimate --ref <entity>")
 	}
 	var e estimateView
 	if err := c.Call("GET", "/api/estimate?ref="+url.QueryEscape(*ref), nil, &e); err != nil {
@@ -662,7 +662,7 @@ func estimateWriteCmd(c *client.Client, args []string) error {
 	switch sub {
 	case "set":
 		if len(rest) < 2 {
-			return fmt.Errorf("usage: cromwell estimate set <ref> <tokens> [--rationale r] [--cite-corpus]")
+			return fmt.Errorf("usage: subutai estimate set <ref> <tokens> [--rationale r] [--cite-corpus]")
 		}
 		ref := rest[0]
 		var tokens int64
@@ -685,13 +685,13 @@ func estimateWriteCmd(c *client.Client, args []string) error {
 		return nil
 	case "ai":
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: cromwell estimate ai <ref>")
+			return fmt.Errorf("usage: subutai estimate ai <ref>")
 		}
 		var out map[string]any
 		if err := c.Call("POST", "/api/estimate/ai", map[string]string{"ref": rest[0]}, &out); err != nil {
 			return err
 		}
-		fmt.Printf("estimator dispatched for %s (watch `cromwell log`; the estimate lands on completion)\n", rest[0])
+		fmt.Printf("estimator dispatched for %s (watch `subutai log`; the estimate lands on completion)\n", rest[0])
 		return nil
 	}
 	return fmt.Errorf("unknown estimate subcommand %q", sub)
@@ -699,14 +699,14 @@ func estimateWriteCmd(c *client.Client, args []string) error {
 
 func milestoneCmd(c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: cromwell milestone create|add|remove|lock|list|show ...")
+		return fmt.Errorf("usage: subutai milestone create|add|remove|lock|list|show ...")
 	}
 	sub := args[0]
 	rest := args[1:]
 	switch sub {
 	case "create":
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: cromwell milestone create <name> [--target-date YYYY-MM-DD]")
+			return fmt.Errorf("usage: subutai milestone create <name> [--target-date YYYY-MM-DD]")
 		}
 		fs := flag.NewFlagSet("milestone create", flag.ContinueOnError)
 		target := fs.String("target-date", "", "target date YYYY-MM-DD")
@@ -723,7 +723,7 @@ func milestoneCmd(c *client.Client, args []string) error {
 		return nil
 	case "add", "remove":
 		if len(rest) < 2 {
-			return fmt.Errorf("usage: cromwell milestone %s <name> <member> [--reason r]", sub)
+			return fmt.Errorf("usage: subutai milestone %s <name> <member> [--reason r]", sub)
 		}
 		fs := flag.NewFlagSet("milestone member", flag.ContinueOnError)
 		reason := fs.String("reason", "", "reason (required to remove — the descope record)")
@@ -740,7 +740,7 @@ func milestoneCmd(c *client.Client, args []string) error {
 		return nil
 	case "lock":
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: cromwell milestone lock <name>")
+			return fmt.Errorf("usage: subutai milestone lock <name>")
 		}
 		var out map[string]any
 		err := c.Call("POST", "/api/milestones/lock", map[string]string{"milestone": rest[0]}, &out)
@@ -768,7 +768,7 @@ func milestoneCmd(c *client.Client, args []string) error {
 		return nil
 	case "show":
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: cromwell milestone show <name>")
+			return fmt.Errorf("usage: subutai milestone show <name>")
 		}
 		var out struct {
 			Milestone struct {
@@ -793,14 +793,14 @@ func milestoneCmd(c *client.Client, args []string) error {
 
 func roadmapCmd(c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: cromwell roadmap create|add|show ...")
+		return fmt.Errorf("usage: subutai roadmap create|add|show ...")
 	}
 	sub := args[0]
 	rest := args[1:]
 	switch sub {
 	case "create":
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: cromwell roadmap create <name>")
+			return fmt.Errorf("usage: subutai roadmap create <name>")
 		}
 		var out map[string]any
 		if err := c.Call("POST", "/api/roadmaps", map[string]string{"name": rest[0]}, &out); err != nil {
@@ -810,7 +810,7 @@ func roadmapCmd(c *client.Client, args []string) error {
 		return nil
 	case "add":
 		if len(rest) < 2 {
-			return fmt.Errorf("usage: cromwell roadmap add <roadmap> <milestone> [--position n]")
+			return fmt.Errorf("usage: subutai roadmap add <roadmap> <milestone> [--position n]")
 		}
 		fs := flag.NewFlagSet("roadmap add", flag.ContinueOnError)
 		position := fs.Int("position", 0, "order position")
@@ -827,7 +827,7 @@ func roadmapCmd(c *client.Client, args []string) error {
 		return nil
 	case "show":
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: cromwell roadmap show <name>")
+			return fmt.Errorf("usage: subutai roadmap show <name>")
 		}
 		var out struct {
 			Roadmap string `json:"roadmap"`

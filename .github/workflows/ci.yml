@@ -1,6 +1,6 @@
 name: CI
 
-# The suite is host-agnostic: it takes CROMWELL_TEST_DATABASE_URL and creates
+# The suite is host-agnostic: it takes SUBUTAI_TEST_DATABASE_URL and creates
 # isolated per-package test databases on the target server. This job runs it
 # against plain Postgres (DEC-002's compatibility boundary). SPEC-002 NFR-2
 # also requires a Supabase-local-stack run; that matrix leg is added when a
@@ -19,8 +19,8 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_PASSWORD: cromwell
-          POSTGRES_DB: cromwell
+          POSTGRES_PASSWORD: subutai
+          POSTGRES_DB: subutai
         ports:
           - 5432:5432
         options: >-
@@ -29,7 +29,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      CROMWELL_TEST_DATABASE_URL: postgres://postgres:cromwell@localhost:5432/cromwell
+      SUBUTAI_TEST_DATABASE_URL: postgres://postgres:subutai@localhost:5432/subutai
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

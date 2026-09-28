@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // onlyWriteSpec comments out the starter's write-dev-plan assignment, so a
@@ -32,7 +32,7 @@ func (h *harness) onlyWriteSpec() {
 // editConfig replaces one line of the test project's config.yaml.
 func (h *harness) editConfig(old, new string) {
 	h.t.Helper()
-	cfgPath := filepath.Join(h.root, ".cromwell/config.yaml")
+	cfgPath := filepath.Join(h.root, ".subutai/config.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		h.t.Fatal(err)

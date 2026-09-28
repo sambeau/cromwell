@@ -16,8 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/store"
 )
 
 // The web command centre (DESIGN-007, SPEC-004): a second rendering of the same

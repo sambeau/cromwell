@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/sizing"
-	"cromwell/internal/store"
+	"subutai/internal/sizing"
+	"subutai/internal/store"
 )
 
 // The UI service layer: shared read assembly both renderings could use

@@ -6,16 +6,16 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/testdb"
+	"subutai/internal/testdb"
 )
 
 // testDatabaseURL returns this package's dedicated integration-test
-// database, or skips. CI and local dev set CROMWELL_TEST_DATABASE_URL to a
+// database, or skips. CI and local dev set SUBUTAI_TEST_DATABASE_URL to a
 // dedicated plain-Postgres instance (DEC-002); tests must never point this
 // at a real project.
 func testDatabaseURL(t *testing.T) string {
 	t.Helper()
-	return testdb.URL(t, "cromwell_store_test")
+	return testdb.URL(t, "subutai_store_test")
 }
 
 // freshConn connects and resets the public schema so every test starts from

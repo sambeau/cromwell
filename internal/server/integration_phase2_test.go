@@ -14,9 +14,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 const devPlanOneTask = `---

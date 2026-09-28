@@ -1,5 +1,5 @@
 // Package starter ships the embedded starter pack and implements
-// `cromwell init` (FR-1.1/1.2, vision §12): copy the pack, generate
+// `subutai init` (FR-1.1/1.2, vision §12): copy the pack, generate
 // config.yaml, write the pack lock with shipped hashes (DESIGN-004 §8),
 // install the post-commit hook, and apply migrations.
 package starter
@@ -16,8 +16,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/config"
-	"cromwell/internal/store"
+	"subutai/internal/config"
+	"subutai/internal/store"
 )
 
 //go:embed pack
@@ -29,7 +29,7 @@ const PackVersion = "0.1.0"
 const generatedConfig = `version: 1
 
 database:
-  url_env: CROMWELL_DATABASE_URL
+  url_env: SUBUTAI_DATABASE_URL
 
 budget:
   period: monthly
@@ -96,7 +96,7 @@ commands:
 `
 
 const hookScript = `#!/bin/sh
-# Installed by cromwell init: notify the server of document changes
+# Installed by subutai init: notify the server of document changes
 # (FR-4.2). Silent no-op when the server is not running.
 exec %q hook post-commit --repo %q >/dev/null 2>&1 || true
 `
@@ -104,19 +104,19 @@ exec %q hook post-commit --repo %q >/dev/null 2>&1 || true
 // Init runs once per project. It refuses to run twice (D-3) and applies all
 // migrations transactionally.
 func Init(ctx context.Context, repoRoot, executable string) error {
-	compRoot := filepath.Join(repoRoot, ".cromwell")
+	compRoot := filepath.Join(repoRoot, ".subutai")
 	if _, err := os.Stat(compRoot); err == nil {
-		return fmt.Errorf(".cromwell/ already exists at %s; init runs once per project (use upgrade when it exists in a later phase)", compRoot)
+		return fmt.Errorf(".subutai/ already exists at %s; init runs once per project (use upgrade when it exists in a later phase)", compRoot)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, ".git")); err != nil {
-		return fmt.Errorf("%s is not a git repository (cromwell manages documents in git)", repoRoot)
+		return fmt.Errorf("%s is not a git repository (subutai manages documents in git)", repoRoot)
 	}
 
 	// The database must be reachable before we write anything, so a failed
-	// init leaves no partial .cromwell/ behind (FR-1.2).
-	dbURL := os.Getenv("CROMWELL_DATABASE_URL")
+	// init leaves no partial .subutai/ behind (FR-1.2).
+	dbURL := os.Getenv("SUBUTAI_DATABASE_URL")
 	if dbURL == "" {
-		return fmt.Errorf("CROMWELL_DATABASE_URL is not set (secrets live in the environment, never in files — NFR-4)")
+		return fmt.Errorf("SUBUTAI_DATABASE_URL is not set (secrets live in the environment, never in files — NFR-4)")
 	}
 	conn, err := pgx.Connect(ctx, dbURL)
 	if err != nil {
@@ -170,7 +170,7 @@ func Init(ctx context.Context, repoRoot, executable string) error {
 		cleanup()
 		return err
 	}
-	writes["pack.lock.yaml"] = "# Machine-managed by cromwell init/upgrade; do not edit (DESIGN-004 §8).\n" + string(lockBytes)
+	writes["pack.lock.yaml"] = "# Machine-managed by subutai init/upgrade; do not edit (DESIGN-004 §8).\n" + string(lockBytes)
 	for rel, body := range writes {
 		if err := os.WriteFile(filepath.Join(compRoot, rel), []byte(body), 0o644); err != nil {
 			cleanup()

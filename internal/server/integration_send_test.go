@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 // legacyDesignReviewer turns the test project into one made before SPEC-011:
@@ -22,7 +22,7 @@ import (
 // exist. Such a project keeps its reviewer (SD-8).
 func (h *harness) legacyDesignReviewer() {
 	h.t.Helper()
-	comp := filepath.Join(h.root, ".cromwell")
+	comp := filepath.Join(h.root, ".subutai")
 	write := func(rel, body string) {
 		p := filepath.Join(comp, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -684,7 +684,7 @@ func TestDocumentPageSubmitReviseDetach(t *testing.T) {
 
 func TestDesignReviewerRetiredAndChainEnabled(t *testing.T) {
 	h := newHarness(t)
-	comp := filepath.Join(h.root, ".cromwell")
+	comp := filepath.Join(h.root, ".subutai")
 	if _, err := os.Stat(filepath.Join(comp, "roles/design-reviewer.yaml")); !os.IsNotExist(err) {
 		t.Error("the starter pack must not ship the design reviewer")
 	}

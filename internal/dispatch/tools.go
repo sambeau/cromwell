@@ -1,6 +1,6 @@
 package dispatch
 
-import "cromwell/internal/provider"
+import "subutai/internal/provider"
 
 // Tool definitions offered to dispatched agents (DESIGN-006 §4.4). The
 // outcome tools complete a dispatch; the file/command tools have worktree

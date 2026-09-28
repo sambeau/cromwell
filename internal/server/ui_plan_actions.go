@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // Milestones and roadmaps you can edit (SPEC-010). Creating happens on the

@@ -13,16 +13,16 @@ import (
 )
 
 // URL returns a connection string to a dedicated database named dbname,
-// creating it on the server behind CROMWELL_TEST_DATABASE_URL if needed.
+// creating it on the server behind SUBUTAI_TEST_DATABASE_URL if needed.
 func URL(t *testing.T, dbname string) string {
 	t.Helper()
-	base := os.Getenv("CROMWELL_TEST_DATABASE_URL")
+	base := os.Getenv("SUBUTAI_TEST_DATABASE_URL")
 	if base == "" {
-		t.Skip("CROMWELL_TEST_DATABASE_URL not set; skipping integration test")
+		t.Skip("SUBUTAI_TEST_DATABASE_URL not set; skipping integration test")
 	}
 	u, err := url.Parse(base)
 	if err != nil {
-		t.Fatalf("bad CROMWELL_TEST_DATABASE_URL: %v", err)
+		t.Fatalf("bad SUBUTAI_TEST_DATABASE_URL: %v", err)
 	}
 
 	ctx := context.Background()

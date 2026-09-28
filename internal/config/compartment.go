@@ -53,7 +53,7 @@ type Role struct {
 	Identity string `yaml:"identity"`
 	// Vocabulary is the routing signal: 15–30 precise domain terms that
 	// determine which knowledge the model reaches for. This is the single
-	// highest-ROI element of a prompt per the research, and Cromwell had
+	// highest-ROI element of a prompt per the research, and this project had
 	// none of it before SPEC-009 (audit §3.1).
 	Vocabulary []string `yaml:"vocabulary"`
 	// AntiPatterns are named failure modes. Naming one activates expert
@@ -280,7 +280,7 @@ func (pl *PackLock) Marshal() ([]byte, error) {
 	return yaml.Marshal(pl)
 }
 
-// Compartment is the fully loaded .cromwell/ directory.
+// Compartment is the fully loaded .subutai/ directory.
 type Compartment struct {
 	Root      string
 	Config    *Config

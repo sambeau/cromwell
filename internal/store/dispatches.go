@@ -130,7 +130,7 @@ func MarkDispatchRunning(ctx context.Context, tx pgx.Tx, id uuid.UUID, priceSnap
 }
 
 // SetQueueReason records why the governor is holding a dispatch (visible in
-// cromwell status; DESIGN-002 §6 "nothing is dropped").
+// subutai status; DESIGN-002 §6 "nothing is dropped").
 func (s *Store) SetQueueReason(ctx context.Context, id uuid.UUID, reason string) error {
 	_, err := s.Pool.Exec(ctx,
 		`UPDATE dispatches SET queue_reason = $2 WHERE id = $1 AND state = 'queued'`, id, reason)
@@ -212,7 +212,7 @@ func MarkDispatchSucceeded(ctx context.Context, tx pgx.Tx, id uuid.UUID, usage T
 	return Audit(ctx, tx, "orchestrator", "dispatch.succeeded", refType, &refID,
 		map[string]any{"dispatch_id": id.String(), "cost_usd": costUSD,
 			"input_tokens": usage.Input, "output_tokens": usage.Output,
-			// The structured outcome rides along so `cromwell log` answers
+			// The structured outcome rides along so `subutai log` answers
 			// "what did the reviewer say" without a ledger query.
 			"outcome": outcome})
 }
@@ -300,7 +300,7 @@ func PeriodCost(ctx context.Context, q Querier, since time.Time) (float64, error
 	return total, err
 }
 
-// CostRow is one line of the cost rollup (cromwell cost, FR-7.2).
+// CostRow is one line of the cost rollup (subutai cost, FR-7.2).
 type CostRow struct {
 	RefType string
 	RefID   uuid.UUID

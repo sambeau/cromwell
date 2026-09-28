@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/store"
+	"subutai/internal/store"
 )
 
 // The SPEC-010 suite: milestones and roadmaps edited from the web UI and over

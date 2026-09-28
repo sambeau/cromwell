@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // TestPlanEditorsRender renders every SPEC-010 template in each of its shapes

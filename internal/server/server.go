@@ -15,19 +15,19 @@ import (
 	"sync"
 	"time"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/config"
-	"cromwell/internal/dispatch"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/notify"
-	"cromwell/internal/provider"
-	"cromwell/internal/provider/anthropic"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/config"
+	"subutai/internal/dispatch"
+	"subutai/internal/lifecycle"
+	"subutai/internal/notify"
+	"subutai/internal/provider"
+	"subutai/internal/provider/anthropic"
+	"subutai/internal/store"
 )
 
 type Server struct {
 	RepoRoot        string // git repo root; document paths are relative to it
-	CompartmentRoot string // .cromwell/
+	CompartmentRoot string // .subutai/
 	Store           *store.Store
 	Bus             *bus.Bus
 	Dispatcher      *dispatch.Dispatcher
@@ -46,7 +46,7 @@ type Server struct {
 // server. Any config error aborts startup naming file and field
 // (DESIGN-004 §9).
 func New(ctx context.Context, repoRoot string, log *slog.Logger) (*Server, error) {
-	compRoot := filepath.Join(repoRoot, ".cromwell")
+	compRoot := filepath.Join(repoRoot, ".subutai")
 	comp, err := config.Load(compRoot, lifecycle.RuleKinds())
 	if err != nil {
 		return nil, fmt.Errorf("configuration invalid; refusing to start:\n%w", err)
@@ -152,7 +152,7 @@ func (s *Server) Run(ctx context.Context) error {
 	var serveWG sync.WaitGroup
 	serveErr := make(chan error, len(listeners))
 	for _, ln := range listeners {
-		s.Log.Info("cromwell server listening", "net", ln.Addr().Network(), "addr", ln.Addr().String())
+		s.Log.Info("subutai server listening", "net", ln.Addr().Network(), "addr", ln.Addr().String())
 		serveWG.Add(1)
 		go func(ln net.Listener) {
 			defer serveWG.Done()

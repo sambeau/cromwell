@@ -10,13 +10,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/config"
-	"cromwell/internal/dispatch"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/rules"
-	"cromwell/internal/store"
-	"cromwell/internal/toolhost"
+	"subutai/internal/config"
+	"subutai/internal/dispatch"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/rules"
+	"subutai/internal/store"
+	"subutai/internal/toolhost"
 )
 
 // Plan assembles a claimed dispatch's plan, switching on purpose — one loop,

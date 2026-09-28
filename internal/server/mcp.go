@@ -10,7 +10,7 @@ import (
 )
 
 // The MCP facet, slice 1 (SPEC-008): the interface a human's chat agent uses to
-// author Cromwell's planning layer — creating initiatives and features, setting
+// author Subutai's planning layer — creating initiatives and features, setting
 // their titles and descriptions in human prose, and attaching documents.
 //
 // It is a THIRD rendering over the same phase 1–3 service layer the web UI and
@@ -267,8 +267,8 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeRPCResult(w, req.ID, map[string]any{
 			"protocolVersion": mcpProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "cromwell", "version": "1"},
-			"instructions": "Cromwell's planning surface. You can create and shape initiatives, " +
+			"serverInfo":      map[string]any{"name": "subutai", "version": "1"},
+			"instructions": "Subutai's planning surface. You can create and shape initiatives, " +
 				"features, titles, descriptions and document attachments, and plan with milestones " +
 				"and roadmaps: create them, fill them, and order them. You can also carry a person's " +
 				"decisions on documents — a verdict, an issue, a request for an agent review, or " +

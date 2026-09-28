@@ -1,4 +1,4 @@
-// Package config loads the .cromwell/ compartment (DESIGN-004): project
+// Package config loads the .subutai/ compartment (DESIGN-004): project
 // config, roles, skills, template manifests, and the pack lock. Parsing is
 // strict — unknown keys are errors (F-1) — and every error names the file,
 // the field where possible, and the reason (DESIGN-004 §9). Secrets are
@@ -44,7 +44,7 @@ func strictUnmarshal(file string, data []byte, out any) error {
 	return nil
 }
 
-// Config is .cromwell/config.yaml (DESIGN-004 §4).
+// Config is .subutai/config.yaml (DESIGN-004 §4).
 type Config struct {
 	Version   int                 `yaml:"version"`
 	Database  DatabaseConfig      `yaml:"database"`
@@ -196,7 +196,7 @@ type Command struct {
 
 const configFile = "config.yaml"
 
-// LoadConfig reads and validates .cromwell/config.yaml. Defaults are applied
+// LoadConfig reads and validates .subutai/config.yaml. Defaults are applied
 // for optional operational settings; structural fields are required.
 func LoadConfig(root string) (*Config, error) {
 	file := filepath.Join(root, configFile)
@@ -227,7 +227,7 @@ func (c *Config) validate() error {
 		add("database.url_env", "required: name of the env var holding the Postgres URL")
 	}
 	if c.Server.Socket == "" {
-		c.Server.Socket = ".cromwell/run/cromwell.sock"
+		c.Server.Socket = ".subutai/run/subutai.sock"
 	}
 	if c.Server.HeartbeatSeconds == 0 {
 		c.Server.HeartbeatSeconds = 30

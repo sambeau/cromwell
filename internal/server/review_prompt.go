@@ -13,11 +13,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/dispatch"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/rules"
-	"cromwell/internal/store"
+	"subutai/internal/dispatch"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/rules"
+	"subutai/internal/store"
 )
 
 // revisionContext writes the current draft and what must change into an

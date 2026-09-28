@@ -9,7 +9,7 @@ import (
 
 const validConfig = `version: 1
 database:
-  url_env: CROMWELL_DATABASE_URL
+  url_env: SUBUTAI_DATABASE_URL
 budget:
   period: monthly
   cap_usd: 100.00
@@ -41,7 +41,7 @@ func write(t *testing.T, root, rel, content string) {
 	}
 }
 
-// validCompartment builds a minimal, fully consistent .cromwell/ directory.
+// validCompartment builds a minimal, fully consistent .subutai/ directory.
 func validCompartment(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -240,13 +240,13 @@ func TestEnvIndirection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("CROMWELL_DATABASE_URL", "postgres://x")
+	t.Setenv("SUBUTAI_DATABASE_URL", "postgres://x")
 	url, err := c.DatabaseURL()
 	if err != nil || url != "postgres://x" {
 		t.Errorf("DatabaseURL = %q, %v", url, err)
 	}
-	os.Unsetenv("CROMWELL_DATABASE_URL")
-	if _, err := c.DatabaseURL(); err == nil || !strings.Contains(err.Error(), "CROMWELL_DATABASE_URL") {
+	os.Unsetenv("SUBUTAI_DATABASE_URL")
+	if _, err := c.DatabaseURL(); err == nil || !strings.Contains(err.Error(), "SUBUTAI_DATABASE_URL") {
 		t.Errorf("unset env should error naming the variable: %v", err)
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")

@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/config"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/config"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 // recorder writes one attempt's transcript as the agent loop runs (SPEC-012

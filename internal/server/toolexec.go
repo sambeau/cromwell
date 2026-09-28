@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"cromwell/internal/dispatch"
-	"cromwell/internal/toolhost"
+	"subutai/internal/dispatch"
+	"subutai/internal/toolhost"
 )
 
 // Execute runs one non-outcome tool call in the worktree (DESIGN-006 §4).

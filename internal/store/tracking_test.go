@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/sizing"
+	"subutai/internal/lifecycle"
+	"subutai/internal/sizing"
 )
 
 // seedTree builds an initiative with two features (and one feature's tasks) so

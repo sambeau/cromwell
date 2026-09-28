@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/content"
-	"cromwell/internal/lifecycle"
+	"subutai/internal/content"
+	"subutai/internal/lifecycle"
 )
 
 type Document struct {
@@ -151,7 +151,7 @@ func ReplaceSections(ctx context.Context, tx pgx.Tx, docID uuid.UUID, contentHas
 	return err
 }
 
-// SearchHit is one FTS result (cromwell search, FR-4.1).
+// SearchHit is one FTS result (subutai search, FR-4.1).
 type SearchHit struct {
 	DocID   uuid.UUID
 	Path    string

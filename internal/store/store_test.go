@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"cromwell/internal/content"
-	"cromwell/internal/lifecycle"
+	"subutai/internal/content"
+	"subutai/internal/lifecycle"
 )
 
 func testStore(t *testing.T) *Store {

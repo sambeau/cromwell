@@ -1,4 +1,4 @@
-module cromwell
+module subutai
 
 go 1.26
 

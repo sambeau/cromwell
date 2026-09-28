@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/config"
-	"cromwell/internal/content"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/config"
+	"subutai/internal/content"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // readDocFile reads a repo-relative document path, jailed to the repo root.

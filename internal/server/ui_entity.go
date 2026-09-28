@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/config"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/sizing"
-	"cromwell/internal/store"
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
+	"subutai/internal/sizing"
+	"subutai/internal/store"
 )
 
 // The workflow surface, Stage A (SPEC-007): the project as a browsable place.

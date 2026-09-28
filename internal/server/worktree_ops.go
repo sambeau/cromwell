@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // publishFeatureStarted signals the rule engine to dispatch the feature's
@@ -24,7 +24,7 @@ func (s *Server) publishFeatureStarted(featureID uuid.UUID) {
 // gitignored in the main repo so the server-authored commits never sweep
 // worktree files in.
 func (s *Server) worktreesRoot() string {
-	return filepath.Join(s.RepoRoot, ".cromwell", "worktrees")
+	return filepath.Join(s.RepoRoot, ".subutai", "worktrees")
 }
 
 // StartFeature transitions a ready feature to active and creates its worktree
@@ -52,8 +52,8 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 	if !s.currentDocApproved(ctx, "spec", f.ID) || !s.currentDocApproved(ctx, "dev_plan", f.ID) {
 		return nil, fmt.Errorf("This feature's specification or dev-plan is being revised, so building can't start until the revision is approved.")
 	}
-	branch := "cromwell/" + path
-	relPath := filepath.Join(".cromwell", "worktrees", store.ShortID("feat", f.ID))
+	branch := "subutai/" + path
+	relPath := filepath.Join(".subutai", "worktrees", store.ShortID("feat", f.ID))
 
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionFeature(ctx, tx, f, lifecycle.FeatStart, actor, nil); err != nil {

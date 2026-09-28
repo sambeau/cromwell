@@ -6,7 +6,7 @@ description: A cold read of a design document, done in chat on request, before a
 
 This skill is for a chat AI working with a person on a design. Use it when
 they ask for a cold read of a design before they approve it. The orchestrator
-never runs it: Cromwell's design reviewer was retired (DESIGN-010 §3), because
+never runs it: Subutai's design reviewer was retired (DESIGN-010 §3), because
 a design gets its review in the conversation that writes it, with a person in
 the room.
 

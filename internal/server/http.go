@@ -10,17 +10,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/config"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // The HTTP API is the single mutation surface for humans and the CLI (O-1).
-// Every handler resolves the actor from the X-Cromwell-Actor header.
+// Every handler resolves the actor from the X-Subutai-Actor header.
 
 func actor(r *http.Request) string {
-	if a := r.Header.Get("X-Cromwell-Actor"); a != "" {
+	if a := r.Header.Get("X-Subutai-Actor"); a != "" {
 		return a
 	}
 	return "unknown"

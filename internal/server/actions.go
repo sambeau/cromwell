@@ -11,12 +11,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/config"
-	"cromwell/internal/content"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/rules"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/config"
+	"subutai/internal/content"
+	"subutai/internal/lifecycle"
+	"subutai/internal/rules"
+	"subutai/internal/store"
 )
 
 // handle fetches the snapshot for an event, runs the rule engine, and
@@ -295,7 +295,7 @@ func (s *Server) configErrorCheckpoint(ctx context.Context, refType string, refI
 	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		var e error
 		cp, e = store.CreateCheckpoint(ctx, tx, "config-error", refType, refID,
-			"A .cromwell/ configuration error is blocking dispatch. Fix the file and respond to resume.",
+			"A .subutai/ configuration error is blocking dispatch. Fix the file and respond to resume.",
 			map[string]any{"error": cause.Error()})
 		return e
 	})
@@ -440,8 +440,8 @@ func (s *Server) takeOverCanonicalPath(successorPath, canonicalPath, archived st
 		{"git", "mv", canonicalPath, archived},
 		{"git", "mv", successorPath, canonicalPath},
 		{"git", "commit", "-m",
-			fmt.Sprintf("cromwell: revision of %s approved; predecessor archived", canonicalPath),
-			"--author", "cromwell <cromwell@localhost>"},
+			fmt.Sprintf("subutai: revision of %s approved; predecessor archived", canonicalPath),
+			"--author", "subutai <subutai@localhost>"},
 	}
 	for _, argv := range steps {
 		cmd := exec.Command(argv[0], argv[1:]...)

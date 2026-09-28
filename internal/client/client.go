@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"cromwell/internal/config"
+	"subutai/internal/config"
 )
 
 type Client struct {
@@ -25,19 +25,19 @@ type Client struct {
 	actor string
 }
 
-// FindRepoRoot walks up from dir to the directory containing .cromwell/.
+// FindRepoRoot walks up from dir to the directory containing .subutai/.
 func FindRepoRoot(dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(abs, ".cromwell")); err == nil {
+		if _, err := os.Stat(filepath.Join(abs, ".subutai")); err == nil {
 			return abs, nil
 		}
 		parent := filepath.Dir(abs)
 		if parent == abs {
-			return "", fmt.Errorf("no .cromwell/ found from %s upward; run `cromwell init` first", dir)
+			return "", fmt.Errorf("no .subutai/ found from %s upward; run `subutai init` first", dir)
 		}
 		abs = parent
 	}
@@ -46,7 +46,7 @@ func FindRepoRoot(dir string) (string, error) {
 // New builds a client for the project at repoRoot, reading the socket path
 // from config.yaml (the CLI reads config files, never the database).
 func New(repoRoot string) (*Client, error) {
-	cfg, err := config.LoadConfig(filepath.Join(repoRoot, ".cromwell"))
+	cfg, err := config.LoadConfig(filepath.Join(repoRoot, ".subutai"))
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func New(repoRoot string) (*Client, error) {
 	if !filepath.IsAbs(sock) {
 		sock = filepath.Join(repoRoot, sock)
 	}
-	c.base = "http://cromwell"
+	c.base = "http://subutai"
 	c.http = &http.Client{Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
@@ -99,13 +99,13 @@ func (c *Client) Call(method, path string, body any, out any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-Cromwell-Actor", c.actor)
+	req.Header.Set("X-Subutai-Actor", c.actor)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("cromwell server not running (start it with `cromwell serve`): %w", err)
+		return fmt.Errorf("subutai server not running (start it with `subutai serve`): %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(resp.Body)
