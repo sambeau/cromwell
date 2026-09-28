@@ -306,6 +306,21 @@ func TestSendIsTheTrigger(t *testing.T) {
 	}
 	// A replayed send, and a sweep, dispatch nothing more (FR-4.6 of SPEC-009).
 	h.quiet()
+	// Unscripted, the write-spec has failed. Its retry belongs to that row
+	// (the retry sweep, then its dispatch-failure checkpoint), so a re-check
+	// must not enqueue a fresh one beside it. Called directly, so the check
+	// does not depend on when the bus delivers the replayed event.
+	var state string
+	if err := h.srv.Store.Pool.QueryRow(ctx, `SELECT state FROM dispatches
+		WHERE ref_id = $1 AND purpose = 'write-spec'`, told.ID).Scan(&state); err != nil || state != "failed" {
+		t.Fatalf("the unscripted write-spec should rest at failed; got %q (%v)", state, err)
+	}
+	if err := h.srv.restoreAuthoring(ctx, told.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.countPurpose("pf/told", "write-spec"); got != 1 {
+		t.Fatalf("a re-check beside a failed write-spec must not enqueue another; got %d", got)
+	}
 	h.srv.Bus.Publish(bus.FeatureSent{FeatureID: told.ID})
 	h.srv.ReconcileAuthoringSweep(ctx)
 	h.quiet()

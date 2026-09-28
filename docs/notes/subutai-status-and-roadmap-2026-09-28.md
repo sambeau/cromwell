@@ -428,9 +428,10 @@ early.
     automatically.
   - While open, a milestone shows progress two ways: *X of Y deliverables
     done*, and *how much of the estimated token work is done*.
-  - **Locking** freezes it. The system takes a permanent snapshot of what
-    actually shipped. It can only lock once at least one deliverable is done
-    (gate G4), and it can never be unlocked.
+  - **Marking it as shipped** freezes it: the system records exactly what it
+    covered at that moment. It needs at least one deliverable done (gate G4).
+    *Revised 2026-09-28:* it can now be undone with *Reopen* (SPEC-010 SD-11).
+    Revision 2 of this report said locking was permanent.
 - **A roadmap** is an ordered list of milestones. The order means whatever the
   planner wants, such as sequence or priority. Each entry shows its milestone's
   progress.
@@ -602,7 +603,9 @@ the recommended defaults.
   (all twenty findings addressed) and **approved by Sam**, with all seven of its
   §17a proposals:
   - the design reviewer is retired (in M3);
-  - there is no chat lock tool;
+  - there is no chat lock tool (superseded the same day: locking became a
+    reversible *Mark as shipped*, which chat may do under DEC-004
+    Amendment 1);
   - bugs can be milestone deliverables;
   - checklists belong to the project or an initiative, and chat can create
     them;
@@ -636,8 +639,9 @@ stops. The cascade smoke (§7) runs in the same session.
 - Add and remove members from either end.
 - Reorder roadmap entries.
 - Lock a milestone, showing why when G4 refuses.
-- Add chat tools for the same actions, except locking. Locking stays in the UI
-  (DESIGN-010 §17a item 2, accepted).
+- Add chat tools for the same actions. *Built:* locking became a reversible
+  *Mark as shipped*, which chat may do too (SPEC-010 SD-11, DEC-004
+  Amendment 1).
 
 *Done when:* a person can build a two-milestone roadmap for an initiative
 entirely in the browser, and the chat agent can do the same. **Done:** see the
@@ -648,9 +652,9 @@ entirely in the browser, and the chat agent can do the same. **Done:** see the
 - Add checklists and jobs with a table and pages.
 - Tick jobs in the UI, or relay them from chat, with the tick audited.
 - A checklist can be a milestone deliverable.
-- Progress and the lock gate count jobs.
+- Progress and the shipping gate (G4) count jobs.
 
-*Done when:* a milestone won't show as done, and won't lock as complete, while
+*Done when:* a milestone won't show as done, and can't be marked shipped as complete, while
 one of its jobs is unticked.
 
 **M6 — See the work** · M · no dependencies · lane 2 · ✅ **done 2026-09-28**, see the [M6 handoff](handoff-M6-2026-09-28.md)

@@ -372,6 +372,14 @@ func (s *Server) queueAuthoring(ctx context.Context, purpose string, featureID u
 		if live, err := store.LiveDispatchForRef(ctx, tx, "feature", featureID, purpose); err != nil || live {
 			return err
 		}
+		// Nor beside a failed one. Its retry, automatic or answered at its
+		// dispatch-failure checkpoint, reuses that row; a re-check event (a
+		// replayed send, a description edit) enqueueing a fresh dispatch
+		// would go round the person's answer, which the sweep already
+		// refuses to do (attemptedFor).
+		if failed, err := store.LatestDispatchFailedForRef(ctx, tx, "feature", featureID, purpose); err != nil || failed {
+			return err
+		}
 		n, err := store.CountDispatchesForRef(ctx, tx, "feature", featureID, purpose)
 		if err != nil {
 			return err

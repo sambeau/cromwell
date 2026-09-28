@@ -117,6 +117,20 @@ func CancelQueuedDispatch(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor, w
 		map[string]any{"dispatch_id": id.String(), "why": why})
 }
 
+// LatestDispatchFailedForRef reports whether the most recent dispatch of a
+// purpose for a ref has failed. A failed dispatch is still being dealt with:
+// the retry sweep re-queues it while attempts remain, and a dispatch-failure
+// checkpoint governs it after that. Either way it is the same row that runs
+// again, so a new one must not be enqueued beside it.
+func LatestDispatchFailedForRef(ctx context.Context, q Querier, refType string, refID uuid.UUID, purpose string) (bool, error) {
+	var failed bool
+	err := q.QueryRow(ctx, `SELECT COALESCE((SELECT state = 'failed' FROM dispatches
+		WHERE ref_type = $1 AND ref_id = $2 AND purpose = $3
+		ORDER BY queued_at DESC, id DESC LIMIT 1), false)`,
+		refType, refID, purpose).Scan(&failed)
+	return failed, err
+}
+
 // LiveDispatchForRef reports whether a dispatch of a purpose is queued or
 // running for a ref.
 func LiveDispatchForRef(ctx context.Context, q Querier, refType string, refID uuid.UUID, purpose string) (bool, error) {

@@ -1,6 +1,8 @@
 # DESIGN-010: Subutai
 
-**Status:** **Approved — Sam, 2026-09-28.** This is Draft 2, consistency-
+**Status:** **Approved — Sam, 2026-09-28.** *Amended the same day:* milestone
+locking became a reversible *Mark as shipped*, which the chat agent may also
+do (§5c, §6, §17a item 2; SPEC-010 SD-11; DEC-004 Amendment 1). This is Draft 2, consistency-
 reviewed (§19). The seven proposals in §17a were accepted with it. Drafted by
 Claude; the author isn't the approval gate, and wasn't.
 **Date:** 2026-09-28 (Draft 1: 2026-07-31)
@@ -170,7 +172,7 @@ Subutai keeps a deliberately small set of concepts, in two groups: things that
 | Term | What it is |
 |---|---|
 | **Deliverable** | Anything a milestone can contain: an initiative (meaning everything under it), a feature, a bug (§17a), a checklist, or another milestone. |
-| **Milestone** | An *unordered* collection of deliverables that ship together. It is live while open, and frozen when locked, so the record of what shipped is honest (§6). |
+| **Milestone** | An *unordered* collection of deliverables that ship together. It is live while open. Marking it as shipped freezes a record of what shipped, so the record stays honest (§6). |
 | **Roadmap** | An *ordered* list of **milestones**, and only milestones (DESIGN-008 D-11). The order means whatever the planner wants it to mean, and the system just preserves it. |
 
 ### Documents
@@ -202,8 +204,8 @@ difference between the two worlds:
 There are **two routine buttons**, **Send to development** and **Start
 building**, and both are about timing. Beyond them, a human steps in only:
 - when they choose to (raising an issue, holding a spec);
-- when the work needs a human decision by its nature (triaging a bug, locking
-  a milestone, closing a spike);
+- when the work needs a human decision by its nature (triaging a bug, closing
+  a spike);
 - or when something has gone wrong (checkpoints).
 
 After approving a design and pressing the two buttons, a human's usual next
@@ -433,8 +435,10 @@ by *what an act does*, not which channel it comes through.
 - **It doesn't answer checkpoints at all**, even the ones that don't override a
   gate, such as keep-or-redo. Checkpoints are UI acts. The chat agent can read
   them and help a human decide (DEC-005).
-- **Proposal (§17a): it may not lock a milestone either**, because locking
-  can't be undone.
+- **It may mark a milestone as shipped, and reopen it**
+  ([DEC-004](../decisions/DEC-004-mcp-planning-authoring.md) Amendment 1).
+  Shipping is a record that can be undone, not a development gate. This
+  replaces Draft 2's "may not lock", which assumed locking was permanent.
 
 ## 6. Planning and tracking
 
@@ -466,12 +470,18 @@ questions.**
 Both are shown. On the page a milestone looks like what it is: a checklist of
 its deliverables (DESIGN-008 D-10).
 
-**Locking** freezes a milestone. Subutai takes a permanent snapshot of what
-actually shipped, so the record stays honest even when the plan changes later.
-- Locking needs at least one deliverable done (gate G4).
-- It can't be undone, so the web UI asks for confirmation first.
-- Deliverables not done at lock time are recorded as not shipped. They are not
-  quietly dropped.
+**Marking a milestone as shipped** freezes it. A milestone's contents are
+live, so without this a feature added later under an included initiative would
+quietly change the record of what shipped. Shipping records exactly what the
+milestone covered at that moment, and reports against that fixed list from
+then on.
+- It needs at least one deliverable done (gate G4, a record-keeping check).
+- **It can be undone**: *Reopen* returns the milestone to live membership.
+  This was changed from Draft 2's permanent lock on 2026-09-28 (SPEC-010
+  SD-11).
+- Deliverables not done when it is shipped are recorded as not shipped. They
+  are not quietly dropped.
+- A person does it in the web UI, and the chat agent may do it too (§5c).
 
 ### Roadmaps
 
@@ -872,8 +882,10 @@ These went beyond the decisions accepted earlier. **Sam accepted all seven with
 the design, on 2026-09-28.**
 
 1. **Retire the design reviewer** (§3), in M3.
-2. **The chat agent may not lock a milestone** (§5c), because locking can't be
-   undone. Roadmap M4 is built without a chat lock tool, pending this.
+2. ~~**The chat agent may not lock a milestone**~~ **Superseded the same day.**
+   Sam made locking a reversible *Mark as shipped* (SPEC-010 SD-11). DEC-004
+   Amendment 1 then lets the chat agent mark a milestone as shipped and reopen
+   it (§5c, §6).
 3. **Bugs as milestone deliverables** (§4, §6).
 4. **Checklists owned by the project or an initiative**, and **the chat agent
    may create checklists and jobs** as planning structure (§5c, §6).
