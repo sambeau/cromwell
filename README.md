@@ -25,6 +25,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [vision-v1](docs/vision/vision-v1.md) | Product vision and architectural sketch (draft v1) |
 | [DEC-001](docs/decisions/DEC-001-server-language-go.md) | Server language: **Go** |
 | [DEC-002](docs/decisions/DEC-002-postgres-via-supabase.md) | State store: **Supabase-hosted Postgres**, plain-Postgres compatible |
+| [DEC-006](docs/decisions/DEC-006-humans-start-development.md) | Subutai: approving a design starts nothing; a human presses **Send to development** |
 | [DESIGN-001](docs/design/DESIGN-001-data-model-and-schema.md) | Data model and Postgres schema |
 | [DESIGN-002](docs/design/DESIGN-002-orchestrator.md) | The orchestrator: events, dispatch, tool host, governance |
 | [DESIGN-003](docs/design/DESIGN-003-document-lifecycle-and-gates.md) | Document lifecycle, feature lifecycle, gate catalogue |

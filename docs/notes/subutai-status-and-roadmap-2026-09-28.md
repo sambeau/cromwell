@@ -1,10 +1,17 @@
 # Subutai: where we are, and the road to done
 
-**Date:** 2026-09-28 (revision 2, same day)
+**Date:** 2026-09-28 (revision 3, same day)
 **Author:** Claude, from a review of the repository as it stands at `2ce24b3`
 **For:** Sam, and anyone picking the project back up
 **Status:** Status report and proposed roadmap. The roadmap is a proposal, not a
 decision.
+
+**Revision 3:**
+- **Sam accepted all fourteen recommendations in §12 on 2026-09-28.**
+- DEC-006 is written up as
+  [DEC-006](../decisions/DEC-006-humans-start-development.md), which completes
+  M1.
+- DEC-007 is accepted in principle, and its document is written in M2.
 
 **What changed in revision 2**, after Sam's comments:
 
@@ -199,6 +206,10 @@ written the way the decision record would read.
 
 ### DEC-006: Humans decide when development starts
 
+**Accepted 2026-09-28.** The decision record is
+[DEC-006](../decisions/DEC-006-humans-start-development.md). What follows is the
+proposal as it was put to Sam.
+
 **The question.** When does the orchestrator take over, and who says so?
 
 **Where this has been.**
@@ -289,6 +300,8 @@ discussion response's §2a recommendation (chat writes the spec) is withdrawn.
 - whether cascade rewrites wait for a new send.
 
 ### DEC-007: Who does the work is flexible; who judges it is not
+
+**Accepted in principle 2026-09-28.** The decision document is written in M2.
 
 **The question.** May the chat AI, or a human, do a stage's work themselves,
 for example implement a tricky task, rather than leaving it to a dispatched
@@ -564,11 +577,13 @@ to.
 *Done when:* a fresh cloud session can run the full suite unaided, and the
 README is honest.
 
-**M1 — Decide DEC-006** · S · decision
+**M1 — Decide DEC-006** · S · decision · ✅ **done 2026-09-28**
 *Goal: settle when development starts, and who starts it.*
 - Accept, change or reject §6's DEC-006, including its small choices.
 
-*Done when:* DEC-006 is accepted. This unblocks M3.
+*Done when:* DEC-006 is accepted. This unblocks M3. **Done:**
+[DEC-006](../decisions/DEC-006-humans-start-development.md) was accepted with
+the recommended defaults.
 
 **M2 — Design Draft 2, approved** · M · decision
 *Goal: an approved Subutai design with a clear v1 cut line.*
@@ -740,7 +755,10 @@ These are small, independent jobs for any idle session:
 
 ## 12. Decisions waiting on Sam
 
-In the order they unblock work:
+**All fourteen are accepted, as recommended (Sam, 2026-09-28).** Decisions 1 to
+6 are recorded in [DEC-006](../decisions/DEC-006-humans-start-development.md).
+The rest take effect in the milestones named. The table is kept as the record,
+and new decisions get added below it as they arise.
 
 | # | Decision | Recommendation | Unblocks |
 |---|---|---|---|
