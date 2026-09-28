@@ -255,6 +255,7 @@ func (s *Server) handleUITriageDecide(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
+	pushPageURL(w, r, "/ui/triage") // the queue's address, not the form's
 	s.render(w, "page-triage", s.page(ctx, "triage", p))
 }
 

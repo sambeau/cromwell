@@ -43,7 +43,8 @@
       <svg class="icon icon-lg icon-entity" data-entity="bug" aria-hidden="true"><use href="#i-bug"/></svg>
       <div>
         <h2 class="checkpoint-question"><a href="{{.URL}}">{{template "ident" .PublicID}}{{.Title}}</a></h2>
-        <p class="t-meta u-mt-2">{{.ReportedBy}} {{ago .ReportedAt}} ago, on {{if .OriginName}}<a href="{{.OriginURL}}">{{.OriginName}}</a>, under {{end}}{{.HangsOn}}.</p>
+        <p class="t-meta u-mt-2">{{.ReportedBy}}</p>
+        <p class="t-meta">Found {{if .OriginName}}on <a href="{{.OriginURL}}">{{.OriginName}}</a>, under{{else}}under{{end}} {{.HangsOn}}, {{ago .ReportedAt}} ago.</p>
       </div>
     </div>
     <div class="checkpoint-context">
@@ -121,8 +122,11 @@
     <input type="hidden" name="from" value="{{.From}}">
     <input type="hidden" name="decision" value="accept">
     <button class="answer" type="submit">
-      <svg class="icon icon-md" aria-hidden="true"><use href="#i-approve"/></svg>
-      <span><b>Accept it</b><span class="answer-consequence">It becomes committed work. Nothing starts until someone sends it to development.</span></span>
+      <span class="answer-mark"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg></span>
+      <span>
+        <span class="answer-title">Accept it</span>
+        <span class="answer-conseq">It becomes committed work. Nothing starts until someone sends it to development.</span>
+      </span>
     </button>
   </form>
   <form method="post" action="/ui/bugs/triage" class="triage-with-field">

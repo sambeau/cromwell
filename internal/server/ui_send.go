@@ -196,7 +196,7 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 	st := sendStep{Name: "Write the specification", Who: s.roleWho(cfg, "write-spec", cfg.Assignments["write-spec"])}
 	st.Done, st.DoneNote = written(spec, specErr)
 	if f.IsBug() && specErr == nil && st.Done {
-		st.DoneNote = "The bug report is the specification, so this step is skipped."
+		st.Who, st.DoneNote = "nobody", "The bug report is the specification, so this step is skipped."
 	}
 	if st.Who == "" && !st.Done && !f.IsBug() {
 		st.Note = "Nobody is assigned to write the specification, so it won't be written until you write it or assign write-spec in config.yaml."
