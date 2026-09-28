@@ -1,10 +1,11 @@
 # Walkthrough: checklists and jobs (SPEC-014)
 
 **Date:** 2026-09-28
-**Spec:** [SPEC-014](specs/SPEC-014-checklists-and-jobs.md), draft for Sam's
-approval, reviewed in [REVIEW-014](reviews/REVIEW-014-checklists-and-jobs.md)
+**Spec:** [SPEC-014](specs/SPEC-014-checklists-and-jobs.md), **approved by
+Sam on 2026-09-28**, reviewed in [REVIEW-014](reviews/REVIEW-014-checklists-and-jobs.md)
 **Status:** Definition of done items 2 to 5 run in this session, against the
-build that is on the branch.
+build that is on the branch. Sam approved the spec and the build on
+2026-09-28.
 **Set-up:** a fresh build of `./cmd/subutai`, a throwaway project made with
 `subutai init` in `/var/tmp/m5demo`, served on `127.0.0.1:8815` against
 Postgres 16. There was **no AI provider**: `ANTHROPIC_API_KEY` was a dummy, and

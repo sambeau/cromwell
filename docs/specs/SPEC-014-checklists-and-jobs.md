@@ -1,12 +1,13 @@
 # SPEC-014: Checklists and jobs
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude; the approval
-decision is Sam's, as the author can't be the approval gate. Sam approves the
-spec and the build together. An independent consistency review,
+**Status:** **Approved and binding — Sam, 2026-09-28**, together with the
+build, with all eight choices in §5 as recommended. Authored by Claude; the
+approval decision was Sam's, as the author can't be the approval gate. An
+independent consistency review,
 [REVIEW-014](../reviews/REVIEW-014-checklists-and-jobs.md), found eight
 material and five smaller problems in the first draft. All of them are dealt
-with in this revision; §7 says how, finding by finding. The choices Sam must
-confirm are listed in the definition of done (§5).
+with in this revision; §7 says how, finding by finding. The dated notes the
+choices called for are in DEC-004, DEC-006 and DESIGN-010 (§9).
 **Date:** 2026-09-28
 **Roadmap milestone:** M5 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §11
@@ -127,7 +128,7 @@ Two supporting claims:
   ten-job checklist outweigh three features in the count. The roadmap's
   "progress and the shipping gate count jobs" is read as "jobs count, through
   their checklist". The checklist's own page shows its jobs ("3 of 5 jobs
-  ticked"). **For Sam to confirm.**
+  ticked"). **Accepted by Sam, 2026-09-28.**
 
 - **SD-2 — An initiative in a milestone doesn't bring in the checklists it
   owns.** An initiative member resolves to every feature under it, live. A
@@ -149,7 +150,7 @@ Two supporting claims:
   other purpose ("Things to do before the offsite") would otherwise hold open
   every release that contains the initiative, without anyone having chosen
   that. The cost is that a person must add a checklist to a milestone to make
-  it count, which the picker makes one click. **For Sam to confirm.**
+  it count, which the picker makes one click. **Accepted by Sam, 2026-09-28.**
 
 - **SD-3 — A done checklist can satisfy G4 on its own.** G4 lets a milestone be
   marked as shipped when at least one of its items is done. DESIGN-010 §6 says
@@ -180,7 +181,7 @@ Two supporting claims:
   stopping shipping "when none of its features is done", because features
   were the only leaves when it was written. It is an accepted decision, so this
   spec doesn't edit it; the handoff suggests a dated note once Sam decides.
-  **For Sam to confirm.**
+  **Accepted by Sam, 2026-09-28.**
 
 - **SD-4 — Shipping records an unticked checklist as not shipped, and a shipped
   record never goes backwards.** Marking a milestone as shipped snapshots its
@@ -200,7 +201,7 @@ Two supporting claims:
   added and removed, and its own page always shows its current state. Freezing
   it was the alternative (REVIEW-014 R14-1(a)); it would stop a person
   recording a chore that turned out to need redoing, just because a release
-  that included it had shipped. **For Sam to confirm.**
+  that included it had shipped. **Accepted by Sam, 2026-09-28.**
 
 - **SD-5 — Ticking happens on the checklist page; editing happens in a modal.**
   DESIGN-010 §6 says jobs "are ticked on the checklist page", and that
@@ -214,7 +215,7 @@ Two supporting claims:
     owner's page opens it with **Edit** beside each checklist. The checklist
     page also has an **Edit this checklist** button in its header, following
     SPEC-010 SD-6, which Sam accepted for milestone and roadmap pages.
-  **For Sam to confirm.**
+  **Accepted by Sam, 2026-09-28.**
 
 - **SD-6 — A job has one note.** The note says something about the job: where
   the key is kept, why the contract is late. It can be set when the job is
@@ -222,7 +223,7 @@ Two supporting claims:
   given with a tick or untick replaces the job's note; leaving it blank keeps
   the note as it was. Every note change is on the audit trail, with the old
   note, so nothing is lost. Keeping one note, rather than a note per tick,
-  keeps a job a single line on the page, as D-10 asks. **For Sam to confirm.**
+  keeps a job a single line on the page, as D-10 asks. **Accepted by Sam, 2026-09-28.**
 
 - **SD-7 — Only `relay_tick_job` ticks, and no planning tool can make a
   checklist done in its place.** DEC-006 Amendment 1 lists "a ticked job"
@@ -253,8 +254,8 @@ Two supporting claims:
   under the chat agent's name with the reason, and undone by adding the job
   back. The alternatives are to make any removal of an unticked job a relay
   act, which needs a decision under DEC-006 Amendment 1, or to keep removal
-  out of chat altogether. **For Sam to confirm**, with a dated note on
-  DESIGN-010 §5c if he agrees.
+  out of chat altogether. **Accepted by Sam, 2026-09-28**, with a dated note on
+  DESIGN-010 §5c.
 
 - **SD-8 — Who ticked a job is the actor, how, and the words.** A job stores
   `ticked_by` (the UI actor or the MCP actor, as configured), `ticked_at`,
@@ -275,8 +276,8 @@ Two supporting claims:
   undone, and corrects a tick that was wrong ("the key was revoked"). So it
   passes the Amendment's test of consequence, and `relay_tick_job` carries
   both, with the person's words either way. The alternative is a tick-only
-  relay, with unticking left to the web UI. **For Sam to confirm**, with a
-  dated note on DEC-006 Amendment 1 if he agrees.
+  relay, with unticking left to the web UI. **Accepted by Sam, 2026-09-28**,
+  with a dated note on DEC-006 Amendment 1.
 
 ## 3. Requirements
 
@@ -672,7 +673,7 @@ refusals come back as sentences.
 7. A handoff note records what was built, what was decided, and what needs
    Sam.
 
-**For Sam to confirm:**
+**Decided by Sam, 2026-09-28 — all eight as recommended:**
 
 1. **G4 counts items**, so a done checklist can satisfy it on its own, which
    loosens it (SD-3). The alternatives are "features first" and "features
@@ -743,3 +744,16 @@ editing it.
 | FR-7.8 | `get_milestone` lists checklist members with their id. |
 | FR-7.9 | The advertised tool set is thirty-three. |
 | FR-7.10 | `mark_milestone_shipped`'s description counts items. |
+
+## 9. Sam's decision (2026-09-28)
+
+Sam approved the spec and the build, and accepted all eight choices in §5 as
+recommended. The dated notes they called for:
+
+| Document | Note |
+|---|---|
+| [DEC-004](../decisions/DEC-004-mcp-planning-authoring.md) Amendment 1 | G4 counts items, features and checklists alike (SD-3). |
+| [DEC-006](../decisions/DEC-006-humans-start-development.md) Amendment 1, decision 8 | "A ticked job" includes unticking one; no planning tool can stand in for a tick (SD-7, SD-10). |
+| [DESIGN-010](../design/DESIGN-010-subutai.md) §5c | The chat agent may rename, reorder and remove jobs, with the two limits (SD-7). |
+| DESIGN-010 §6 | How checklists count, resolve, ship and are edited (SD-1 to SD-6). |
+| DESIGN-010 §17a item 4 | Built in M5, pointing to the two notes above. |

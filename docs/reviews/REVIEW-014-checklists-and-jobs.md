@@ -2,7 +2,7 @@
 
 **Status:** Complete. The author has dealt with every finding (§6, and
 [SPEC-014 §7](../specs/SPEC-014-checklists-and-jobs.md#7-changes-after-review)).
-SPEC-014 waits on Sam's approval.
+**SPEC-014 approved by Sam, 2026-09-28.**
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author. Approval is
 Sam's, recorded in §5.
@@ -518,7 +518,8 @@ already lists:
 **Recommended for approval once R14-1 to R14-8 are fixed.** The reviewer does
 not approve.
 
-_Decision (Sam): pending._
+_Decision (Sam, 2026-09-28): SPEC-014 and the build approved, with all eight
+choices as recommended, including the four this review raised._
 
 ## 6. How the findings were dealt with
 
