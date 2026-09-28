@@ -41,6 +41,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
 | [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |
+| [Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) | Where the Subutai revision stands (2026-09-28), and the milestone plan to finish it |
 
 ## Phase plan
 
