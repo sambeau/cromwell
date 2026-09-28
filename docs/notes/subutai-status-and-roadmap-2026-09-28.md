@@ -595,6 +595,13 @@ the recommended defaults.
 
 *Done when:* DESIGN-010 is approved and DEC-007 is accepted.
 
+**In progress (2026-09-28):**
+- [DEC-007](../decisions/DEC-007-the-judgement-boundary.md) is written up from
+  the accepted proposal.
+- [DESIGN-010 Draft 2](../design/DESIGN-010-subutai.md) is written and
+  consistency-reviewed, and is waiting for Sam's approval. Its §18 lists what
+  changed from Draft 1.
+
 ### Phase B: the Subutai core
 
 **M3 — Send to development** · M · needs M1 · lane 1
