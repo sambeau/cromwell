@@ -19,7 +19,7 @@ Phase A and the first three build milestones are merged:
   development**;
 - M6: every agent run keeps its transcript, and each feature has a timeline.
 
-Their specs (SPEC-010 to SPEC-012) await Sam's approval.
+Their specs (SPEC-010 to SPEC-012) are approved.
 
 Build: `go build ./cmd/cromwell` · Test: `eval "$(scripts/test-db.sh)"` then
 `go test -race -count=1 ./...` (without `CROMWELL_TEST_DATABASE_URL` the
@@ -101,10 +101,11 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
   slice 1) ✅ **delivered**: a browsable, document-led UI, and nine MCP tools
   a chat agent uses to author the planning layer. Their human-confirmed live
   smokes still await Sam.
-- **The authoring chain** (SPEC-009 Stage 1) ✅ **delivered**: an approved
-  design produces a reviewed spec, dev-plan and tasks with no further human
-  act, and stops at gate 2; proven live for 15,976 tokens. The revision-cascade
-  smoke (DoD 3) has not run.
+- **The authoring chain** (SPEC-009 Stage 1) ✅ **delivered**: agents write
+  and review the spec and dev-plan, decompose the tasks, and stop at gate 2;
+  proven live for 15,976 tokens, when approving a design was still the trigger
+  (Send to development is the trigger now). The revision-cascade smoke (DoD 3)
+  has not run.
 - **Subutai** (in progress): the revision planned in the
   [roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) §11.
   - **Merged:**
