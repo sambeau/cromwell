@@ -16,16 +16,21 @@ from an approved design. It is now being revised as **Subutai**: the same
 engine with a clearer workflow and a new name. Where that stands, and the
 milestones to finish it, are in the
 [Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md).
-The design ([DESIGN-010](docs/design/DESIGN-010-subutai.md)) is approved.
-Phase A and the first three build milestones are merged:
-- M4: milestones and roadmaps are editable in the browser and from chat;
+The design ([DESIGN-010](docs/design/DESIGN-010-subutai.md)) is approved, and
+**phase B, the Subutai core, is merged (2026-09-28)**, with its specs
+(SPEC-010 to SPEC-017) approved:
 - M3: approving a design starts nothing, and a human presses **Send to
   development**;
-- M6: every agent run keeps its transcript, and each feature has a timeline.
+- M4 and M5: milestones, roadmaps and checklists, editable in the browser and
+  from chat;
+- M6: transcripts, timelines and review health;
+- M7: the rename to Subutai;
+- M8: an ID for everything, and documents adopted where they sit;
+- M9: editing in the browser;
+- M10: the chat agent's seat, and who wrote every document.
 
-Their specs (SPEC-010 to SPEC-012) are approved. M7, the rename to Subutai, is
-built, and its spec ([SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md)) is
-approved.
+What stands between this and "Subutai usable" is the live smoke runs against a
+real provider. Their checklists are in the M0, M3 and M6 handoffs.
 
 Build: `go build ./cmd/subutai` · Test: `eval "$(scripts/test-db.sh)"` then
 `go test -race -count=1 ./...` (without `SUBUTAI_TEST_DATABASE_URL` the

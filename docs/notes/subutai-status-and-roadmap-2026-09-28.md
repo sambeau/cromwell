@@ -703,6 +703,11 @@ flows to *Start building*, and every document shows who wrote it.
 roadmaps, design in chat, send work to development when resources allow, and
 follow it through to done.
 
+**Reached in code on 2026-09-28.** M3 to M10 are all merged, with SPEC-010 to
+SPEC-017 approved, and the full suite passes (287 tests). The line is crossed
+once the live smokes pass against a real provider. Their checklists are in the
+M0, M3 and M6 handoffs.
+
 ### Phase C: complete the model
 
 **M11 — Decisions** · S · needs M8
