@@ -382,3 +382,27 @@ func TestUnclassifiedFindingIsMajor(t *testing.T) {
 		t.Error("an explicitly minor finding must not count as major")
 	}
 }
+
+// TestABugsReportIsItsSpec is SPEC-019 FR-4.2 and SD-7: an approved report
+// moves a bug on as an approved spec moves a feature; a report sent back goes
+// to its author; the spec author's outcome on a bug is filed as its report.
+func TestABugsReportIsItsSpec(t *testing.T) {
+	bug := &FeatureSnap{ID: uuid.New(), State: lifecycle.FeatIdea, Kind: "bug"}
+	doc := &DocSnap{ID: uuid.New(), Type: "bug_report", OwnerType: "feature", OwnerID: bug.ID}
+
+	acts := Decide(bus.DocumentTransitioned{DocID: doc.ID, From: lifecycle.DocReviewing, To: lifecycle.DocApproved,
+		Event: lifecycle.DocApprove}, Snapshot{Doc: doc, OwnerFeature: bug})
+	if len(acts) != 2 || acts[0].ActionKind() != "reconcile_authoring" || acts[1].ActionKind() != "evaluate_contract_gate" {
+		t.Errorf("an approved report re-checks the plan invariant and G1; got %v", acts)
+	}
+	acts = Decide(bus.DocumentTransitioned{DocID: doc.ID, From: lifecycle.DocReviewing, To: lifecycle.DocDraft,
+		Event: lifecycle.DocRequestChanges}, Snapshot{Doc: doc, OwnerFeature: bug})
+	if len(acts) != 1 || acts[0].(ReviseAuthoredDocument).DocType != "bug_report" {
+		t.Errorf("a report sent back goes to its author; got %v", acts)
+	}
+	acts = Decide(bus.DispatchSucceeded{Purpose: "write-spec", RefType: "feature", RefID: bug.ID,
+		Outcome: []byte(`{"body":"---\ntype: bug_report\n---\n"}`)}, Snapshot{RefFeature: bug})
+	if len(acts) != 1 || acts[0].(FileAuthoredDocument).DocType != "bug_report" {
+		t.Errorf("the spec author's outcome on a bug is its report; got %v", acts)
+	}
+}

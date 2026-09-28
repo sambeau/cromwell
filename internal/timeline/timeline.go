@@ -196,6 +196,10 @@ func docNoun(docType string) string {
 
 var plannedDocs = docIs("design", "spec", "dev_plan", "bug_report")
 
+// writtenDocs are the documents whose writing is a moment. A bug's report is
+// written as it is reported, so "Reported" already says it.
+var writtenDocs = docIs("design", "spec", "dev_plan")
+
 func not(f func(Event) bool) func(Event) bool { return func(e Event) bool { return !f(e) } }
 
 func has(key string) func(Event) bool {
@@ -234,7 +238,7 @@ var Rules = []Rule{
 	// feature without one simply has no such moment (FR-5.3).
 	{Kind: "feature.sent", Make: fixed("Sent to development", "active", "start")},
 
-	{Kind: "document.registered", When: plannedDocs, CausedBy: []string{"write-"},
+	{Kind: "document.registered", When: writtenDocs, CausedBy: []string{"write-"},
 		Make: func(e Event, _ *Context) (string, string, string) {
 			return docNoun(e.DocType) + " written", "draft", "edit"
 		}},

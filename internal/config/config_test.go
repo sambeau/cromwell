@@ -454,3 +454,19 @@ func TestActorNamesMustDiffer(t *testing.T) {
 		t.Errorf("different names are fine: %v", err)
 	}
 }
+
+// TestReportBugOnlyWhereWorktreeToolsAreOffered is SPEC-019 R19-10:
+// report_bug is a known tool a read-only role may declare, and declaring it on
+// a document reviewer, which is never offered worktree tools, is an error that
+// says so rather than a tool silently ignored.
+func TestReportBugOnlyWhereWorktreeToolsAreOffered(t *testing.T) {
+	root := validCompartment(t)
+	write(t, root, "roles/spec-reviewer.yaml", "model: claude-sonnet-5\nskill: review-spec\nidentity: x\ntools: [report_bug]\n")
+	_, err := Load(root, testRuleKinds)
+	if err == nil || !strings.Contains(err.Error(), "can't use report_bug") {
+		t.Fatalf("report_bug on a document reviewer should be refused; got %v", err)
+	}
+	if !KnownTools()["report_bug"] || MutatingTools()["report_bug"] {
+		t.Error("report_bug is a known tool, and not a mutating one")
+	}
+}

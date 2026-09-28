@@ -235,13 +235,19 @@ func (s *Server) sendReadiness(ctx context.Context, f *store.Feature) (bool, str
 	if _, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID); err == nil {
 		return false, "This feature has already been sent to development."
 	}
+	// A bug's gate is acceptance, and its report is its contract
+	// (DESIGN-010 §9, §17a item 6; SPEC-019 FR-4.1). Triage speaks first, so
+	// a rejected bug is told it was rejected, not that it is abandoned.
+	if f.IsBug() {
+		if ok, why := s.bugSendReadiness(ctx, f); !ok {
+			return false, why
+		}
+	}
 	if f.State != lifecycle.FeatIdea && f.State != lifecycle.FeatReady {
 		return false, "Only a feature that hasn't started building can be sent to development; this one is " + string(f.State) + "."
 	}
-	// A bug's gate is acceptance, and its report is its contract
-	// (DESIGN-010 §9, §17a item 6; SPEC-019 FR-4.1).
 	if f.IsBug() {
-		return s.bugSendReadiness(ctx, f)
+		return true, ""
 	}
 	if g := s.specReady(ctx, f); !g.Pass {
 		return false, g.Reason
