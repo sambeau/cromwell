@@ -1,6 +1,6 @@
 # SPEC-016: Edit in the browser
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. The author
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its eighteen choices (DoD 8). It was drafted for Sam's approval as follows. Authored by Claude. The author
 can't be the approval gate, so the decision is Sam's, and Sam has said they
 will approve the spec and the build together. An independent review is
 recorded in [REVIEW-016](../reviews/REVIEW-016-edit-in-the-browser.md). It

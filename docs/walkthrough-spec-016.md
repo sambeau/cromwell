@@ -1,8 +1,8 @@
 # Walkthrough — SPEC-016, edit in the browser
 
 **Date:** 2026-09-28
-**Spec:** [SPEC-016](specs/SPEC-016-edit-in-the-browser.md), draft for Sam's
-approval
+**Spec:** [SPEC-016](specs/SPEC-016-edit-in-the-browser.md), approved by
+Sam on 2026-09-28
 **Review:** [REVIEW-016](reviews/REVIEW-016-edit-in-the-browser.md)
 **Handoff:** [M9 handoff](notes/handoff-M9-2026-09-28.md)
 

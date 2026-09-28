@@ -1,7 +1,7 @@
 # REVIEW-016: Consistency Review of SPEC-016 (Edit in the browser)
 
-**Status:** Complete. The author dealt with every finding (§6); the spec and
-build await Sam's decision.
+**Status:** Complete. The author dealt with every finding (§6). Sam approved
+SPEC-016 and the build on 2026-09-28, with all eighteen choices.
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author. Approval is
 Sam's.

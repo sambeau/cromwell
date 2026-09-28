@@ -1,6 +1,6 @@
 # DESIGN-003: Document Lifecycle and Gates
 
-**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md))
+**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md)). *Dated note, 2026-09-28:* who may `withdraw` (§2), from SPEC-016.
 **Date:** 2026-07-02
 **Parent:** [vision-v1](../vision/vision-v1.md) §3, §4, §6, §9
 **Depends on:** DESIGN-001 (schema), DESIGN-002 (orchestrator)
@@ -39,6 +39,11 @@ events, not states.**
 | `escalate` | (none) | agent-reviewer outcome | checkpoint created with reviewer reasoning; human response maps to approve / request_changes |
 | `supersede` | approved → superseded | lifecycle engine only | fired only by a successor's approval — never directly by a user |
 | `withdraw` | reviewing → draft | author | cancels pending review dispatch |
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-016](../specs/SPEC-016-edit-in-the-browser.md)
+> SD-9, choice 7).** A person who saves an edit to a reviewing document in the
+> browser editor withdraws it, whoever wrote it. The queued review is
+> cancelled, any hold cleared, and the document submitted again when ready.
 
 Terminal states: `superseded`. `approved` documents are immutable — the git
 watcher flags any file change to an approved document's path as an **integrity
