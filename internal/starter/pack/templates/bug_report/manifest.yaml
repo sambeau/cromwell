@@ -1,0 +1,28 @@
+type: bug_report
+# A bug's report serves as its spec (DESIGN-010 §9), so the spec reviewer
+# reviews it, and its approval moves the bug on as a spec's does.
+reviewer_role: spec-reviewer
+front_matter:
+  required: [title, type, owner]
+sections:
+  order: strict
+  required:
+    - heading: Summary
+    - heading: Steps to reproduce
+    - heading: Expected
+    - heading: Actual
+    - heading: Acceptance criteria
+  optional:
+    - heading: Where it was found
+    - heading: Notes
+rules:
+  - kind: min_list_items
+    section: Steps to reproduce
+    min: 1
+  - kind: min_list_items
+    section: Acceptance criteria
+    min: 1
+  # The built-in criterion (SPEC-019 SD-5): more may be added, this one stays.
+  - kind: contains_text
+    section: Acceptance criteria
+    text: The defect no longer reproduces

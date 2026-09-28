@@ -138,10 +138,12 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 	v := sendFeature{ID: f.ID, Name: f.Name, URL: "/ui/f/" + path, Description: f.Description}
 	v.CanSend, v.Reason = s.sendReadiness(ctx, f)
 
-	spec, specErr := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", f.ID)
+	// A bug's specification is its report (SPEC-019 FR-4.1).
+	specType := specTypeOf(f)
+	spec, specErr := store.CurrentDocForOwner(ctx, s.Store.Pool, specType, "feature", f.ID)
 	plan, planErr := store.CurrentDocForOwner(ctx, s.Store.Pool, "dev_plan", "feature", f.ID)
 	agent := cfg.AgentSpecReview()
-	specHumanApproved := s.humanApprovalType("spec")
+	specHumanApproved := s.humanApprovalType(specType)
 
 	written := func(d *store.Document, err error) (bool, string) {
 		if err != nil {
@@ -189,34 +191,46 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 		v.Steps = append(v.Steps, step)
 	}
 
-	// 1. Write the spec.
+	// 1. Write the spec. A bug's report is its specification, so the step
+	// is skipped (DESIGN-010 §9).
 	st := sendStep{Name: "Write the specification", Who: s.roleWho(cfg, "write-spec", cfg.Assignments["write-spec"])}
 	st.Done, st.DoneNote = written(spec, specErr)
-	if st.Who == "" && !st.Done {
+	if f.IsBug() && specErr == nil && st.Done {
+		st.Who, st.DoneNote = "nobody", "The bug report is the specification, so this step is skipped."
+	}
+	if st.Who == "" && !st.Done && !f.IsBug() {
 		st.Note = "Nobody is assigned to write the specification, so it won't be written until you write it or assign write-spec in config.yaml."
 	}
 	add(st, "write-spec")
 
 	// 2. Review the spec.
-	st = sendStep{Name: "Review the specification", Done: approved(spec, specErr)}
+	specWords := "specification"
+	reviewName := "Review the specification"
+	if f.IsBug() {
+		specWords, reviewName = "bug report", "Review the bug report as a specification"
+	}
+	st = sendStep{Name: reviewName, Done: approved(spec, specErr)}
 	if st.Done {
 		st.DoneNote = approvedNote(spec, "")
 	}
-	specNote := unsubmitted(spec, specErr, "specification")
+	specNote := unsubmitted(spec, specErr, specWords)
+	if f.IsBug() && specNote != "" {
+		specNote = "The bug report is a draft; sending the bug submits it for review."
+	}
 	switch {
 	case specHumanApproved:
 		st.Who = "you"
-		v.Reviewer = "You approve the specification: this project's spec template says a person approves specs."
+		v.Reviewer = "You approve the " + specWords + ": this project's template says a person approves it."
 	case !agent:
 		st.Who = "you"
-		v.Reviewer = "You review the specification. Agent review is switched off for this project, so every spec waits for a person."
+		v.Reviewer = "You review the " + specWords + ". Agent review is switched off for this project, so every spec waits for a person."
 	default:
-		role := s.reviewerRole("spec")
-		st.Who = s.roleWho(cfg, "review-spec", role)
+		role := s.reviewerRole(specType)
+		st.Who = s.roleWho(cfg, "review-"+specType, role)
 		if hold {
-			v.Reviewer = "The spec reviewer (" + st.Who + ") checks the specification, then it waits for you."
+			v.Reviewer = "The spec reviewer (" + st.Who + ") checks the " + specWords + ", then it waits for you."
 		} else {
-			v.Reviewer = "The spec reviewer (" + st.Who + ") approves the specification."
+			v.Reviewer = "The spec reviewer (" + st.Who + ") approves the " + specWords + "."
 		}
 	}
 	if specNote != "" {
@@ -225,13 +239,13 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 	if st.Who == "you" {
 		v.Steps = append(v.Steps, st)
 	} else {
-		add(st, "review-spec")
+		add(st, "review-"+specType)
 	}
 
 	// 3. The hold.
 	if (hold || !agent) && !specHumanApproved && !st.Done {
-		v.Steps = append(v.Steps, sendStep{Name: "Hold the specification for you", Who: "you",
-			Note: "The specification waits after its review until you approve it, raise an issue, or let the reviewer decide."})
+		v.Steps = append(v.Steps, sendStep{Name: "Hold the " + specWords + " for you", Who: "you",
+			Note: "The " + specWords + " waits after its review until you approve it, raise an issue, or let the reviewer decide."})
 	}
 
 	// 4. Write the plan.
@@ -453,6 +467,7 @@ type docActions struct {
 	IsDecision   bool
 	RecordRuling bool
 	CanSupersede bool
+	SubmitWhy    string // why a draft can't be submitted yet, when that isn't obvious
 }
 
 func (s *Server) docActionsFor(ctx context.Context, doc *store.Document) docActions {
@@ -481,6 +496,12 @@ func (s *Server) docActionsFor(ctx context.Context, doc *store.Document) docActi
 		a.AuthorAtWork = true
 		a.CanSubmit = false
 	}
+	// A bug's report waits for its bug's triage (SPEC-019 FR-4.4).
+	if a.CanSubmit {
+		if err := s.refuseReportBeforeAcceptance(ctx, doc); err != nil {
+			a.CanSubmit, a.SubmitWhy = false, err.Error()
+		}
+	}
 	if err := s.refuseIfPending(ctx, doc); err != nil {
 		a.Pending = err.Error()
 	}
@@ -491,7 +512,7 @@ func (s *Server) docActionsFor(ctx context.Context, doc *store.Document) docActi
 		a.CanRaiseIssue = doc.State == lifecycle.DocDraft || doc.State == lifecycle.DocReviewing
 		return a
 	}
-	if doc.Type != "spec" && doc.Type != "dev_plan" {
+	if !lifecycle.IsContractType(doc.Type) {
 		return a
 	}
 	a.AgentReviewed = true

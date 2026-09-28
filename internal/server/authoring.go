@@ -122,8 +122,12 @@ func (s *Server) neededAuthoring(ctx context.Context, featureID uuid.UUID) (auth
 		return none, err
 	}
 
-	// Invariant 1 — the spec.
-	spec, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", f.ID)
+	// Invariant 1 — the spec. A bug's spec is its report (SPEC-019 FR-4.2).
+	spec, err := store.CurrentDocForOwner(ctx, s.Store.Pool, specTypeOf(f), "feature", f.ID)
+	if err == store.ErrNotFound && f.IsBug() {
+		// Nothing writes a bug a fresh report; the send refuses one without.
+		return none, nil
+	}
 	if err == store.ErrNotFound {
 		// An undescribed feature is not dispatched, not checkpointed, and not
 		// complained about: in width-first planning a placeholder feature is

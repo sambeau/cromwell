@@ -29,7 +29,7 @@ func (s *Server) executePhase2(ctx context.Context, action rules.Action) (bool, 
 	case rules.CompleteImplementation:
 		return true, s.completeImplementation(ctx, a.TaskID, a.DispatchID, a.Summary)
 	case rules.ApproveTaskCode:
-		return true, s.approveTaskCode(ctx, a.TaskID, a.Actor, a.DroppedMinor)
+		return true, s.approveTaskCode(ctx, a.TaskID, a.Actor, a.DroppedMinor, a.DispatchID)
 	case rules.ReturnTaskCode:
 		return true, s.returnTaskCode(ctx, a)
 	case rules.AbandonTask:
@@ -298,7 +298,7 @@ func (s *Server) abandonTask(ctx context.Context, a rules.AbandonTask) error {
 
 // approveTaskCode records a code-review approval: task → done, readiness
 // re-evaluation, then G2 (DESIGN-006 §5).
-func (s *Server) approveTaskCode(ctx context.Context, taskID uuid.UUID, actor string, droppedMinor []rules.ReviewComment) error {
+func (s *Server) approveTaskCode(ctx context.Context, taskID uuid.UUID, actor string, droppedMinor []rules.ReviewComment, reviewRun *uuid.UUID) error {
 	task, err := store.GetTask(ctx, s.Store.Pool, taskID)
 	if err != nil {
 		return err
@@ -309,11 +309,15 @@ func (s *Server) approveTaskCode(ctx context.Context, taskID uuid.UUID, actor st
 			return err
 		}
 		// Minor findings did not send the work back, but they are not
-		// thrown away: they are the material a retrospective picks up
-		// once the cycle is complete (audit §3.3a).
+		// thrown away: they are audited here, with the review that raised
+		// them, and filed as one bug report when the feature merges
+		// (audit §3.3a, DESIGN-010 §5, SPEC-019 SD-9).
 		if len(droppedMinor) > 0 {
-			if err := store.Audit(ctx, tx, actor, "task.review_minor_findings", "task", &taskID,
-				map[string]any{"comments": droppedMinor}); err != nil {
+			payload := map[string]any{"comments": droppedMinor}
+			if reviewRun != nil {
+				payload["dispatch_id"] = reviewRun.String()
+			}
+			if err := store.Audit(ctx, tx, actor, "task.review_minor_findings", "task", &taskID, payload); err != nil {
 				return err
 			}
 		}
@@ -466,7 +470,7 @@ func (s *Server) mergeFeature(ctx context.Context, featureID uuid.UUID, actor st
 		return err
 	}
 	g := lifecycle.G3(true, true)
-	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := s.auditGateTx(ctx, tx, featureID, g); err != nil {
 			return err
 		}
@@ -481,7 +485,17 @@ func (s *Server) mergeFeature(ctx context.Context, featureID uuid.UUID, actor st
 		return store.Audit(ctx, tx, "orchestrator", "feature.merged", "feature", &featureID,
 			map[string]any{"branch": wt.Branch})
 	})
+	if err != nil {
+		return err
+	}
+	// The code reviews' minor findings become one bug report, now that the
+	// code they describe is on the main line (SPEC-019 SD-9). Best effort:
+	// the merge stands whether or not the report can be filed.
+	if _, ferr := s.fileMinorFindings(ctx, feature); ferr != nil {
+		s.Log.Warn("could not file minor review findings as a bug", "feature", feature.PublicID, "err", ferr)
+	}
 	// The git worktree directory is removed by the heartbeat GC pass.
+	return nil
 }
 
 // returnFeatureForCriteria records a verification request_changes: unmet

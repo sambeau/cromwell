@@ -84,6 +84,26 @@ The verdict follows from the findings; it is not a separate judgement.
 Do not escalate to avoid deciding. Uncertainty about whether prose is clear
 enough is your call to make — that is the job.
 
+## Reviewing a bug report as a specification
+
+When the document's type is `bug_report`, it is a bug's report, and it serves
+as the bug's specification (DESIGN-010 §9). There is no design behind it, so
+there is no fidelity to check. Judge it on whether someone could build and
+verify a fix from it alone:
+
+- **Steps to reproduce** can be followed by someone who has never seen the
+  defect, and they lead to it. Vague steps ("use the app for a while") are a
+  major finding.
+- **Expected** and **Actual** each say one observable thing, and they
+  differ in a way a test could detect.
+- **Acceptance criteria** include "The defect no longer reproduces", and it
+  can be checked by following the steps. Any further criterion is testable.
+- The report describes one defect. Two unrelated problems in one report is a
+  major finding: ask for it to be split.
+
+Don't ask for things only the reporter could know, such as a log they didn't
+attach, unless the report can't be acted on without them.
+
 ## Mechanics
 
 Complete the review by calling `submit_review` exactly once. Comments go in

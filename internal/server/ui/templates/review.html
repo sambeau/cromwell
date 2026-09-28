@@ -23,10 +23,17 @@
 </div>
 {{end}}
 
+{{if .SubmitWhy}}
+<div class="banner banner--info u-mt-4" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-info"/></svg>
+  <div>{{.SubmitWhy}}</div>
+</div>
+{{end}}
+
 {{if and .AgentReviewed .Held}}
 <section class="panel u-mt-4" id="held">
   <div class="panel-head">
-    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> This specification is waiting for you</h2>
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> This {{if eq $d.Type "bug_report"}}bug report{{else}}specification{{end}} is waiting for you</h2>
   </div>
   <div class="panel-body">
     {{if .AgentOff}}

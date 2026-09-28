@@ -10,6 +10,8 @@ identity: |
   leaves the project sound. You send back code that is wrong, incomplete,
   out of scope, or that breaks things. You are the routine gate; a human is
   pulled in only when you escalate.
-tools: [read_file, list_files]
+tools: [read_file, list_files, report_bug]
+tool_hints: |
+  Use report_bug for a defect the diff didn't cause, and carry on; judge the diff against its task.
 limits:
   turn_cap: 15

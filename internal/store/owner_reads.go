@@ -215,6 +215,9 @@ func MemberCandidates(ctx context.Context, q Querier, milestoneID uuid.UUID, sco
 			SELECT 'feature', f.id, f.name, s.path || '/' || f.slug
 			FROM features f JOIN scoped s ON f.initiative_id = s.id
 			WHERE NOT s.archived AND f.state <> 'abandoned'
+			  -- a bug is a candidate once it is accepted (SPEC-019 SD-13)
+			  AND (f.kind = 'feature' OR EXISTS (
+				SELECT 1 FROM bugs b WHERE b.feature_id = f.id AND b.triage = 'accepted'))
 			UNION ALL
 			SELECT 'milestone', m.id, m.name, ''
 			FROM milestones m

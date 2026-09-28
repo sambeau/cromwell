@@ -143,6 +143,15 @@ type Rule struct {
 	Make     func(Event, *Context) (label, state, icon string)
 	Fold     string
 	CausedBy []string
+	// Agentive, if set, says an event was an agent's act even though its
+	// actor ran no run on this feature: a bug an agent filed while working
+	// on another (SPEC-019 FR-5.3).
+	Agentive func(Event) bool
+}
+
+func reportedByAgent(e Event) bool {
+	k := e.Str("reporter_kind")
+	return k == "agent" || k == "review"
 }
 
 func fixed(label, state, icon string) func(Event, *Context) (string, string, string) {
@@ -177,23 +186,59 @@ func docNoun(docType string) string {
 		return "Plan"
 	case "design":
 		return "Design"
+	case "bug_report":
+		// A bug's report is its spec (SPEC-019 FR-5.3).
+		return "Report"
 	default:
 		return "Document"
 	}
 }
 
-var plannedDocs = docIs("design", "spec", "dev_plan")
+var plannedDocs = docIs("design", "spec", "dev_plan", "bug_report")
+
+// writtenDocs are the documents whose writing is a moment. A bug's report is
+// written as it is reported, so "Reported" already says it.
+var writtenDocs = docIs("design", "spec", "dev_plan")
+
+func not(f func(Event) bool) func(Event) bool { return func(e Event) bool { return !f(e) } }
+
+func has(key string) func(Event) bool {
+	return func(e Event) bool { _, ok := e.Payload[key]; return ok }
+}
 
 // Rules is the mapping table (FR-5.2). Order matters only within one kind:
 // the first rule whose When matches decides.
 var Rules = []Rule{
-	{Kind: "feature.created", Make: fixed("Created", "idea", "feature")},
+	{Kind: "feature.created", When: not(field("kind", "bug")), Make: fixed("Created", "idea", "feature")},
+
+	// A bug's first moments (SPEC-019 FR-5.3): who reported it, and how a
+	// person triaged it. Rejecting or marking a duplicate abandons the row in
+	// the same act, so that abandonment isn't a second moment.
+	{Kind: "bug.reported", Agentive: reportedByAgent,
+		Make: func(e Event, _ *Context) (string, string, string) {
+			switch e.Str("reporter_kind") {
+			case "review":
+				return "Reported from a code review's minor findings", "idea", "bug"
+			case "agent":
+				return "Reported by an agent at work", "idea", "bug"
+			}
+			return "Reported", "idea", "bug"
+		}},
+	{Kind: "bug.triaged", Make: func(e Event, _ *Context) (string, string, string) {
+		switch e.Str("decision") {
+		case "accepted":
+			return "Accepted in triage", "ready", "approve"
+		case "duplicate":
+			return "Marked as a duplicate in triage", "abandoned", "state-abandoned"
+		}
+		return "Rejected in triage", "abandoned", "request-changes"
+	}},
 
 	// M3's "sent to development" event (DEC-006). Nothing emits it yet; a
 	// feature without one simply has no such moment (FR-5.3).
 	{Kind: "feature.sent", Make: fixed("Sent to development", "active", "start")},
 
-	{Kind: "document.registered", When: plannedDocs, CausedBy: []string{"write-"},
+	{Kind: "document.registered", When: writtenDocs, CausedBy: []string{"write-"},
 		Make: func(e Event, _ *Context) (string, string, string) {
 			return docNoun(e.DocType) + " written", "draft", "edit"
 		}},
@@ -229,7 +274,7 @@ var Rules = []Rule{
 		Make: fixed("Verification sent it back", "abandoned", "request-changes")},
 	{Kind: "feature.transition", When: field("event", "verified"), CausedBy: []string{"verify-feature"},
 		Make: fixed("Done", "done", "state-done")},
-	{Kind: "feature.transition", When: field("event", "abandon"), Make: fixed("Abandoned", "abandoned", "state-abandoned")},
+	{Kind: "feature.transition", When: and(field("event", "abandon"), not(has("triage"))), Make: fixed("Abandoned", "abandoned", "state-abandoned")},
 	{Kind: "feature.transition", When: field("event", "contract_invalidated"),
 		Make: fixed("Back to an idea, because its design changed", "idea", "state-idea")},
 	{Kind: "feature.spec_stale", Make: fixed("Spec out of date", "idea", "alert")},
@@ -391,6 +436,8 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 			m.Fold = label
 		}
 		switch {
+		case rule.Agentive != nil && rule.Agentive(e):
+			m.By = ByAgent
 		case e.Actor == "orchestrator" || roles[e.Actor]:
 			m.By = BySystem
 			if c := cause(rule, e, runs); c != nil {

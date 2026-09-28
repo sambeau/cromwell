@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -121,10 +122,47 @@ type Feature struct {
 	// LegacyDocPaths marks a feature that existed before migration 0010: its
 	// authored documents keep SPEC-009's paths (SPEC-015 SD-16).
 	LegacyDocPaths bool
+	// Kind is "feature" or "bug" (SPEC-019 SD-1). A bug is a feature row; what
+	// only a bug has lives in the bugs table.
+	Kind string
 }
 
+// Kinds of features row (SPEC-019 SD-1).
+const (
+	KindFeature = "feature"
+	KindBug     = "bug"
+)
+
+// IsBug reports whether the row is a bug.
+func (f *Feature) IsBug() bool { return f.Kind == KindBug }
+
+// FeatureCols is the column list ScanFeature reads, in order.
+const FeatureCols = `id, initiative_id, slug, name, description, state, created_at, public_id, legacy_doc_paths, kind`
+
+// ScanFeature reads one row selected with FeatureCols.
+func ScanFeature(row pgx.Row) (*Feature, error) {
+	var f Feature
+	err := row.Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description, &f.State, &f.CreatedAt,
+		&f.PublicID, &f.LegacyDocPaths, &f.Kind)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// ErrBugSlug refuses a feature slug shaped like a bug's (SPEC-019 R19-6).
+var ErrBugSlug = errors.New("slugs like bug-007 are kept for bugs, whose slug is their ID; choose another slug for this feature")
+
+var bugSlugRe = regexp.MustCompile(`^bug-[0-9]+$`)
+
 func CreateFeature(ctx context.Context, tx pgx.Tx, initiativeID uuid.UUID, slug, name, description, actor string) (*Feature, error) {
-	f := &Feature{ID: NewID(), InitiativeID: initiativeID, Slug: slug, Name: name, Description: description, State: lifecycle.FeatIdea}
+	if bugSlugRe.MatchString(slug) {
+		return nil, ErrBugSlug
+	}
+	f := &Feature{ID: NewID(), InitiativeID: initiativeID, Slug: slug, Name: name, Description: description, State: lifecycle.FeatIdea, Kind: KindFeature}
 	err := tx.QueryRow(ctx, `
 		INSERT INTO features (id, initiative_id, slug, name, description)
 		VALUES ($1, $2, $3, $4, $5) RETURNING public_id`,
@@ -179,15 +217,7 @@ func UpdateEntityFields(ctx context.Context, tx pgx.Tx, refType string, id uuid.
 }
 
 func GetFeature(ctx context.Context, q Querier, id uuid.UUID) (*Feature, error) {
-	var f Feature
-	err := q.QueryRow(ctx, `
-		SELECT id, initiative_id, slug, name, description, state, created_at, public_id, legacy_doc_paths
-		FROM features WHERE id = $1`, id).
-		Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description, &f.State, &f.CreatedAt, &f.PublicID, &f.LegacyDocPaths)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return &f, err
+	return ScanFeature(q.QueryRow(ctx, `SELECT `+FeatureCols+` FROM features WHERE id = $1`, id))
 }
 
 // TransitionFeature applies a lifecycle event, writing the audit row in the
@@ -196,6 +226,16 @@ func TransitionFeature(ctx context.Context, tx pgx.Tx, f *Feature, event lifecyc
 	next, err := lifecycle.FeatureTransition(f.State, event)
 	if err != nil {
 		return err
+	}
+	// A reported bug is closed by triage, never abandoned round it: that
+	// would leave it waiting in the queue with nothing to decide (SPEC-019
+	// R19-4). Triage's own abandonment says so in its payload.
+	if event == lifecycle.FeatAbandon && f.Kind == KindBug && payload["triage"] == nil {
+		var triage string
+		if err := tx.QueryRow(ctx, `SELECT triage FROM bugs WHERE feature_id = $1`, f.ID).Scan(&triage); err == nil &&
+			triage == "reported" {
+			return ErrBugUntriaged
+		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE features SET state = $2 WHERE id = $1`, f.ID, next); err != nil {
 		return err
@@ -212,6 +252,9 @@ func TransitionFeature(ctx context.Context, tx pgx.Tx, f *Feature, event lifecyc
 	f.State = next
 	return nil
 }
+
+// ErrBugUntriaged refuses to abandon a bug that is waiting for triage.
+var ErrBugUntriaged = errors.New("This bug hasn't been triaged yet. Reject it in the triage queue instead, with a reason, so whoever reported it can see why.")
 
 // Querier is satisfied by both *pgxpool.Pool and pgx.Tx.
 type Querier interface {

@@ -53,3 +53,14 @@ Write the whole document, front matter included, and call `submit_document`
 exactly once with it. You do not choose where it is filed and you do not touch
 git — the server does both. If validation rejects the document, you will get
 the reasons back; fix them and submit again.
+
+## Revising a bug report
+
+You may be asked to revise a **bug report** that its reviewer or a person sent
+back. A bug's report is its specification, and it translates no design.
+Revise it so every finding and issue is dealt with, keeping its sections.
+Make the reproduction and the acceptance criteria clear and testable, and
+keep the criterion "The defect no longer reproduces". **Never invent**
+reproduction steps, expected behaviour or facts that the report and the
+findings don't support: where the reviewer asks for something that isn't
+known, say so plainly in Notes, so a person can supply it.

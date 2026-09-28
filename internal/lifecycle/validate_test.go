@@ -156,3 +156,32 @@ func TestFrontMatterPlaceholders(t *testing.T) {
 		t.Fatal("front-matter placeholder should fail validation")
 	}
 }
+
+// TestContainsTextAndFences is SPEC-019 SD-5 and R19-3: contains_text wants a
+// list item that starts with its text, forgiving case and spacing; fenced
+// code isn't a placeholder or a TODO.
+func TestContainsTextAndFences(t *testing.T) {
+	m := &config.Manifest{Type: "bug_report", Rules: []config.Rule{
+		{Kind: "contains_text", Section: "Acceptance criteria", Text: "The defect no longer reproduces"}}}
+	doc := func(criteria, notes string) string {
+		return "---\ntitle: x\ntype: bug_report\n---\n\n# x\n\n## Acceptance criteria\n\n" + criteria + "\n\n## Notes\n\n" + notes + "\n"
+	}
+	cases := []struct {
+		name, criteria, notes string
+		valid                 bool
+	}{
+		{"the built-in item", "- The defect no longer reproduces: the steps now work.", "", true},
+		{"wrapped and lower-case", "- the defect no\n  longer reproduces", "", true},
+		{"numbered", "1. The defect no longer reproduces", "", true},
+		{"inside another item", "- It works, and the defect no longer reproduces", "", false},
+		{"missing", "- It works", "", false},
+		{"only in a fence", "```\n- The defect no longer reproduces\n```", "", false},
+		{"a fenced placeholder and TODO", "- The defect no longer reproduces", "```text\n{{.User}} TODO\n```", true},
+		{"a bare placeholder", "- The defect no longer reproduces", "{{notes}}", false},
+	}
+	for _, c := range cases {
+		if got := Validate(m, doc(c.criteria, c.notes), nil).Valid; got != c.valid {
+			t.Errorf("%s: valid = %v, want %v", c.name, got, c.valid)
+		}
+	}
+}

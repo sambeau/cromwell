@@ -374,6 +374,11 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 	if err != nil {
 		return nil, total, err
 	}
+	if plan.ToolCtx != nil {
+		// Which run is calling, for tools that record who did something
+		// (report_bug, SPEC-019 FR-3.3).
+		plan.ToolCtx.DispatchID, plan.ToolCtx.Role = d.ID.String(), d.Role
+	}
 	cfg, err := dp.Config()
 	if err != nil {
 		return nil, total, err

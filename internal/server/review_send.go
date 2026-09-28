@@ -48,7 +48,8 @@ func (a relayAct) payload(extra map[string]any) map[string]any {
 // for a person (FR-5.2). Only specs are held (FR-5.7). With agent review off
 // the hold is forced on, so there is always at least one reviewer.
 func (s *Server) specHeld(ctx context.Context, d *store.Document) bool {
-	if d.Type != "spec" {
+	// A bug's report is its spec, and is held as one (SPEC-019 SD-8).
+	if !lifecycle.IsSpecType(d.Type) {
 		return false
 	}
 	cfg, err := s.freshConfig()
@@ -88,6 +89,7 @@ func (s *Server) reviseAuthoredDocument(ctx context.Context, a rules.ReviseAutho
 }
 
 func authorPurpose(docType string) string {
+	// A bug's report, sent back, is revised by the spec author (SPEC-019 SD-7).
 	if docType == "dev_plan" {
 		return "write-dev-plan"
 	}
@@ -100,6 +102,8 @@ func docTypeWords(docType string) string {
 		return "dev-plan"
 	case "spec":
 		return "specification"
+	case "bug_report":
+		return "bug report"
 	}
 	return docType
 }
@@ -189,7 +193,7 @@ func (s *Server) reviewKey(ctx context.Context, a rules.QueueReview) (string, er
 // invariant can write a new one. A feature being built keeps its plan: that
 // is the revision-in-flight path's business (SPEC-009 FR-9.6).
 func (s *Server) supersedePlanWithSpec(ctx context.Context, tx pgx.Tx, spec *store.Document) ([]archivedMove, error) {
-	if spec.Type != "spec" || spec.OwnerType != "feature" || spec.OwnerID == nil {
+	if !lifecycle.IsSpecType(spec.Type) || spec.OwnerType != "feature" || spec.OwnerID == nil {
 		return nil, nil
 	}
 	f, err := store.GetFeature(ctx, tx, *spec.OwnerID)
@@ -231,8 +235,19 @@ func (s *Server) sendReadiness(ctx context.Context, f *store.Feature) (bool, str
 	if _, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID); err == nil {
 		return false, "This feature has already been sent to development."
 	}
+	// A bug's gate is acceptance, and its report is its contract
+	// (DESIGN-010 §9, §17a item 6; SPEC-019 FR-4.1). Triage speaks first, so
+	// a rejected bug is told it was rejected, not that it is abandoned.
+	if f.IsBug() {
+		if ok, why := s.bugSendReadiness(ctx, f); !ok {
+			return false, why
+		}
+	}
 	if f.State != lifecycle.FeatIdea && f.State != lifecycle.FeatReady {
 		return false, "Only a feature that hasn't started building can be sent to development; this one is " + string(f.State) + "."
+	}
+	if f.IsBug() {
+		return true, ""
 	}
 	if g := s.specReady(ctx, f); !g.Pass {
 		return false, g.Reason
@@ -261,6 +276,14 @@ func (s *Server) SendToDevelopment(ctx context.Context, featureID uuid.UUID, hol
 	if !cfg.AgentSpecReview() {
 		hold = true
 	}
+	// A bug's draft report is checked before the mark and submitted after
+	// it: for a bug, sending is "review this and go on" (SPEC-019 SD-6).
+	var report *store.Document
+	if f.IsBug() {
+		if report, err = s.checkReportSubmittable(ctx, f); err != nil {
+			return err
+		}
+	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		_, e := store.RecordFeatureSend(ctx, tx, f.ID, actor, hold)
 		return e
@@ -270,6 +293,13 @@ func (s *Server) SendToDevelopment(ctx context.Context, featureID uuid.UUID, hol
 	}
 	if err != nil {
 		return err
+	}
+	if report != nil {
+		if r, _, err := s.SubmitDoc(ctx, report.Path, actor); err != nil {
+			s.Log.Warn("could not submit a sent bug's report", "bug", f.PublicID, "err", err)
+		} else if !r.Valid {
+			s.Log.Warn("a sent bug's report failed validation after the send", "bug", f.PublicID)
+		}
 	}
 	s.notifyEntityChanged("feature", f.ID)
 	s.Bus.Publish(bus.FeatureSent{FeatureID: f.ID})
@@ -294,6 +324,18 @@ func (s *Server) withdrawable(ctx context.Context, f *store.Feature) (bool, []st
 	ds, err := store.DispatchesForRefSince(ctx, s.Store.Pool, "feature", f.ID, authoringPurposes, send.SentAt)
 	if err != nil {
 		return false, nil, err
+	}
+	// A bug's send submits its report, so the report's review is the work
+	// the send set off, and it too must still be waiting (SPEC-019 R19-12).
+	if f.IsBug() {
+		if rep, err := store.CurrentDocForOwner(ctx, s.Store.Pool, lifecycle.DocTypeBugReport, "feature", f.ID); err == nil {
+			rs, err := store.DispatchesForRefSince(ctx, s.Store.Pool, "document", rep.ID,
+				[]string{"review-" + lifecycle.DocTypeBugReport}, send.SentAt)
+			if err != nil {
+				return false, nil, err
+			}
+			ds = append(ds, rs...)
+		}
 	}
 	for _, d := range ds {
 		if d.State != "queued" {
@@ -331,6 +373,20 @@ func (s *Server) WithdrawSend(ctx context.Context, featureID uuid.UUID, actor st
 				return errors.New("Work on this feature started just now, so the send can't be withdrawn. Abandon the feature if it should stop.")
 			}
 			cancelled++
+		}
+		// A bug's report goes back to draft with its review cancelled, as it
+		// was before the send (SPEC-019 R19-12).
+		if f.IsBug() {
+			if rep, err := store.CurrentDocForOwner(ctx, tx, lifecycle.DocTypeBugReport, "feature", f.ID); err == nil &&
+				rep.State == lifecycle.DocReviewing {
+				if err := store.ClearDocumentHold(ctx, tx, rep.ID); err != nil {
+					return err
+				}
+				if err := store.TransitionDocument(ctx, tx, rep, lifecycle.DocWithdraw, actor,
+					map[string]any{"cause": "send withdrawn"}); err != nil {
+					return err
+				}
+			}
 		}
 		return store.DeleteFeatureSend(ctx, tx, f.ID, actor, cancelled)
 	})
@@ -548,8 +604,8 @@ func (s *Server) RaiseIssue(ctx context.Context, docID uuid.UUID, body, section 
 			return e
 		})
 	}
-	if doc.Type != "spec" && doc.Type != "dev_plan" {
-		return nil, fmt.Errorf("Issues can be raised on specifications, dev-plans and designs, not on a %s.", doc.Type)
+	if !lifecycle.IsContractType(doc.Type) {
+		return nil, fmt.Errorf("Issues can be raised on specifications, bug reports, dev-plans and designs, not on a %s.", doc.Type)
 	}
 	if err := s.checkIssueAllowed(ctx, doc); err != nil {
 		return nil, err
@@ -750,7 +806,7 @@ func (s *Server) afterSubmission(ctx context.Context, doc *store.Document) strin
 	if err != nil {
 		return "It is in review."
 	}
-	if doc.Type == "spec" && !cfg.AgentSpecReview() {
+	if lifecycle.IsSpecType(doc.Type) && !cfg.AgentSpecReview() {
 		return "Agent review is switched off for this project, so the " + words + " waits for a person to approve it."
 	}
 	role := s.reviewerRole(doc.Type)
@@ -845,7 +901,7 @@ func (s *Server) ReleaseHold(ctx context.Context, docID uuid.UUID, act relayAct)
 // refuseIfAuthorAtWork refuses a person's submission of a draft while its
 // author agent is revising it, so the two can't race (FR-3.6).
 func (s *Server) refuseIfAuthorAtWork(ctx context.Context, doc *store.Document) error {
-	if doc.OwnerType != "feature" || doc.OwnerID == nil || (doc.Type != "spec" && doc.Type != "dev_plan") {
+	if doc.OwnerType != "feature" || doc.OwnerID == nil || !lifecycle.IsContractType(doc.Type) {
 		return nil
 	}
 	live, err := store.LiveDispatchForRef(ctx, s.Store.Pool, "feature", *doc.OwnerID, authorPurpose(doc.Type))

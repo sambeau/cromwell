@@ -69,10 +69,12 @@ func ChildInitiatives(ctx context.Context, q Querier, parentID uuid.UUID) ([]Ini
 }
 
 // FeaturesForInitiative lists an initiative's own features, ordered by slug.
+// Bugs are left out: where the word means features, it means them only
+// (SPEC-019 FR-1.6). BugsFor lists the bugs.
 func FeaturesForInitiative(ctx context.Context, q Querier, initiativeID uuid.UUID) ([]Feature, error) {
 	rows, err := q.Query(ctx, `
-		SELECT id, initiative_id, slug, name, description, state, created_at, public_id, legacy_doc_paths
-		FROM features WHERE initiative_id = $1
+		SELECT `+FeatureCols+`
+		FROM features WHERE initiative_id = $1 AND kind = 'feature'
 		ORDER BY slug`, initiativeID)
 	if err != nil {
 		return nil, err
@@ -80,12 +82,11 @@ func FeaturesForInitiative(ctx context.Context, q Querier, initiativeID uuid.UUI
 	defer rows.Close()
 	var out []Feature
 	for rows.Next() {
-		var f Feature
-		if err := rows.Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description,
-			&f.State, &f.CreatedAt, &f.PublicID, &f.LegacyDocPaths); err != nil {
+		f, err := ScanFeature(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, f)
+		out = append(out, *f)
 	}
 	return out, rows.Err()
 }

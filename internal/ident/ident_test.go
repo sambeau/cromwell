@@ -71,3 +71,17 @@ func TestDecisionFromFileName(t *testing.T) {
 		}
 	}
 }
+
+// TestBugIDs is SPEC-019 FR-1.2: a bug's ID, its tasks' IDs and its report's
+// ID parse.
+func TestBugIDs(t *testing.T) {
+	if r, ok := Parse("BUG-007"); !ok || r.Shape != ShapeEntity || r.Kind.Name != "bug" || r.Kind.Table != "features" {
+		t.Errorf("BUG-007: %+v %v", r, ok)
+	}
+	if r, ok := Parse("bug-007-t01"); !ok || r.Shape != ShapeTask || r.Entity != "BUG-007" || r.Kind.Name != "bug" || r.Number != 1 {
+		t.Errorf("BUG-007-T01: %+v %v", r, ok)
+	}
+	if r, ok := Parse("BUG-007-bug-report"); !ok || r.Shape != ShapeDocument || r.DocType != "bug_report" || r.Entity != "BUG-007" {
+		t.Errorf("BUG-007-bug-report: %+v %v", r, ok)
+	}
+}

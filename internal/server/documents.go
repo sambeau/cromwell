@@ -130,16 +130,14 @@ func (s *Server) featureByPath(ctx context.Context, path string) (*store.Feature
 	if err != nil {
 		return nil, err
 	}
-	var f store.Feature
-	err = s.Store.Pool.QueryRow(ctx, `
-		SELECT id, initiative_id, slug, name, description, state, created_at, public_id, legacy_doc_paths
+	f, err := store.ScanFeature(s.Store.Pool.QueryRow(ctx, `
+		SELECT `+store.FeatureCols+`
 		FROM features WHERE initiative_id = $1 AND slug = $2`,
-		in.ID, parts[len(parts)-1]).
-		Scan(&f.ID, &f.InitiativeID, &f.Slug, &f.Name, &f.Description, &f.State, &f.CreatedAt, &f.PublicID, &f.LegacyDocPaths)
+		in.ID, parts[len(parts)-1]))
 	if err != nil {
 		return nil, store.ErrNotFound
 	}
-	return &f, nil
+	return f, nil
 }
 
 // ValidateDoc runs validation without submitting (FR-5.2).
@@ -176,6 +174,11 @@ func (s *Server) submitDocWith(ctx context.Context, path, actor string, payload 
 	inTx func(context.Context, pgx.Tx, *store.Document) error) (*lifecycle.Report, *store.Document, error) {
 	doc, err := store.LiveDocumentByPath(ctx, s.Store.Pool, path)
 	if err != nil {
+		return nil, nil, err
+	}
+	// Reviewing spends agent time, and accepting a bug is the commitment of
+	// scope, so a report waits for its bug's triage (SPEC-019 SD-6).
+	if err := s.refuseReportBeforeAcceptance(ctx, doc); err != nil {
 		return nil, nil, err
 	}
 	manifest, err := config.LoadManifest(s.CompartmentRoot, doc.Type)

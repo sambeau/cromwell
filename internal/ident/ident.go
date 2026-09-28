@@ -19,9 +19,10 @@ import (
 type Kind struct {
 	Name   string // "initiative", "feature", …
 	Prefix string // "INIT", "FEAT", …
-	// Table is the entity table whose public_id column defaults to this
-	// prefix, or "" while the entity doesn't exist (bugs, spikes) or isn't an
-	// entity (decisions are documents).
+	// Table is the entity table whose rows carry this prefix — for most, the
+	// one whose public_id column defaults to it (a bug names its own) — or
+	// "" while the entity doesn't exist (spikes) or isn't an entity
+	// (decisions are documents).
 	Table string
 }
 
@@ -31,7 +32,9 @@ type Kind struct {
 var Kinds = []Kind{
 	{Name: "initiative", Prefix: "INIT", Table: "initiatives"},
 	{Name: "feature", Prefix: "FEAT", Table: "features"},
-	{Name: "bug", Prefix: "BUG"},
+	// A bug is a features row with kind 'bug' (SPEC-019 SD-1); its insert
+	// names mint_ident('BUG') rather than taking the column default.
+	{Name: "bug", Prefix: "BUG", Table: "features"},
 	{Name: "spike", Prefix: "SPK"},
 	{Name: "decision", Prefix: "DEC"},
 	{Name: "milestone", Prefix: "MS", Table: "milestones"},
@@ -40,8 +43,9 @@ var Kinds = []Kind{
 }
 
 // DocTypes are the document types an ID can name, in database form
-// (migration 0001's document_type, plus 0010's decision and 0012's conventions).
-var DocTypes = []string{"spec", "dev_plan", "design", "research", "report", "note", "policy", "decision", "conventions"}
+// (migration 0001's document_type, plus 0010's decision, 0012's conventions and
+// 0013's bug_report).
+var DocTypes = []string{"spec", "dev_plan", "design", "research", "report", "note", "policy", "decision", "conventions", "bug_report"}
 
 // IsDocType reports whether t is a document type.
 func IsDocType(t string) bool {
@@ -150,9 +154,11 @@ type Ref struct {
 }
 
 var (
-	prefixAlt  = prefixAlternation()
-	entityRe   = regexp.MustCompile(`^(` + prefixAlt + `)-(\d{3,})$`)
-	taskRe     = regexp.MustCompile(`^(FEAT-\d{3,})-T(\d{2,})$`)
+	prefixAlt = prefixAlternation()
+	entityRe  = regexp.MustCompile(`^(` + prefixAlt + `)-(\d{3,})$`)
+	// A bug's tasks are numbered from its ID too, "BUG-007-T01" (SPEC-019
+	// FR-1.2).
+	taskRe     = regexp.MustCompile(`^((?:FEAT|BUG)-\d{3,})-T(\d{2,})$`)
 	decisionRe = regexp.MustCompile(`^DEC-(\d{3,})$`)
 	documentRe = regexp.MustCompile(`^((?:` + prefixAlt + `)-\d{3,}|` + ProjectOwner + `)-([a-z]+(?:-[a-z]+)*?)(?:-(\d+))?$`)
 	revisionRe = regexp.MustCompile(`^(.+)\.r(\d+)$`)
@@ -193,7 +199,7 @@ func Parse(s string) (Ref, bool) {
 			return Ref{Shape: ShapeEntity, ID: up, Kind: k, Entity: up, Number: n}, true
 		}
 		if m := taskRe.FindStringSubmatch(up); m != nil {
-			k, _ := KindByPrefix("FEAT")
+			k, _ := KindByPrefix(m[1][:strings.IndexByte(m[1], '-')])
 			n, _ := strconv.ParseInt(m[2], 10, 64)
 			return Ref{Shape: ShapeTask, ID: up, Kind: k, Entity: m[1], Number: n}, true
 		}
