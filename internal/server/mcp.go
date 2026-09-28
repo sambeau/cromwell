@@ -91,10 +91,10 @@ func (s *Server) mcpTools() []mcpTool {
 				"for. To nest it, pass the parent initiative's path; leave the parent out to create " +
 				"a top-level initiative.",
 			Schema: objectSchema(map[string]any{
-				"slug":        stringProp("A short lower-case identifier used in the initiative's address, for example \"auth\"."),
-				"name":        stringProp("The human-readable name, for example \"Authentication\"."),
-				"description": stringProp("A short description in plain prose, written for a person to read."),
-				"parent_path": stringProp("Optional. The path of the parent initiative, for example \"auth/basic\", or its ID, such as \"INIT-003\". Omit for a top-level initiative."),
+				"slug":            stringProp("A short lower-case identifier used in the initiative's address, for example \"auth\"."),
+				"name":            stringProp("The human-readable name, for example \"Authentication\"."),
+				"description":     stringProp("A short description in plain prose, written for a person to read."),
+				"parent_path":     stringProp("Optional. The path of the parent initiative, for example \"auth/basic\", or its ID, such as \"INIT-003\". Omit for a top-level initiative."),
 				"design_document": boolProp("Optional, true unless you say otherwise. Whether to start the initiative's design document from the project's template, in its folder under docs/work/. Say false only when a design already exists to attach, or none is wanted."),
 			}, "slug", "name"),
 			Handler: s.mcpCreateInitiative,

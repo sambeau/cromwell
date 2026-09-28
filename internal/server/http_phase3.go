@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"subutai/internal/sizing"
 	"subutai/internal/ident"
+	"subutai/internal/sizing"
 	"subutai/internal/store"
 )
 
