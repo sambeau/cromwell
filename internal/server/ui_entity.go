@@ -121,7 +121,10 @@ type entityPage struct {
 	OwnedMilestones []milestoneCard
 	OwnedRoadmaps   []roadmapCard
 	MemberOf        []milestoneCard
-	Activity        []store.AuditEvent
+	// The open milestones this entity could be added to, grouped by where each
+	// is planned — the member-side end of D-12 (SPEC-010 FR-3.1).
+	MilestoneChoices []milestoneChoiceGroup
+	Activity         []store.AuditEvent
 
 	Notice string
 	Error  string
@@ -527,6 +530,9 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 	if page.MemberOf, err = s.memberOfCards(ctx, "initiative", in.ID); err != nil {
 		return nil, err
 	}
+	if page.MilestoneChoices, err = s.milestoneChoices(ctx, "initiative", in.ID, page.MemberOf); err != nil {
+		return nil, err
+	}
 	if page.Activity, err = s.Store.AuditTail(ctx, "initiative", &in.ID, 10); err != nil {
 		return nil, err
 	}
@@ -575,6 +581,9 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 	}
 	page.Documents = s.documentCards(docs, primaryDocID(page.BodyDoc))
 	if page.MemberOf, err = s.memberOfCards(ctx, "feature", f.ID); err != nil {
+		return nil, err
+	}
+	if page.MilestoneChoices, err = s.milestoneChoices(ctx, "feature", f.ID, page.MemberOf); err != nil {
 		return nil, err
 	}
 	if page.Activity, err = s.Store.AuditTail(ctx, "feature", &f.ID, 10); err != nil {

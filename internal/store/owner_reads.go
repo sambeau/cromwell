@@ -255,4 +255,3 @@ func MemberCandidates(ctx context.Context, q Querier, milestoneID uuid.UUID, sco
 func likeEscape(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
-

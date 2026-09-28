@@ -1,0 +1,474 @@
+{{/* Milestones and roadmaps you can edit (SPEC-010).
+
+     Creating happens on the owner's page. Composing a milestone, ordering a
+     roadmap and locking happen in an editor loaded by HTMX into a native
+     <dialog> (DESIGN-008 §5.1a): every form inside it posts with HTMX and gets
+     the editor back, so the dialog stays open while a person makes several
+     changes. Closing it after a change reloads the page underneath.
+
+     The display stays the two Markdown lists (D-10): a milestone is edited as
+     a checklist, a roadmap as a numbered list. Every entity in a form is
+     carried by its id in a hidden field or chosen from a list — never typed
+     (NFR-4). All copy is written for people (D-6). */}}
+
+{{/* ---------- The owner's plan section ----------
+     Always shown on the project and on an initiative, even when empty, because
+     it is where planning at this level starts (FR-2.1). Only the milestones and
+     roadmaps parented directly here appear (D-9). */}}
+
+{{define "plan-section"}}
+<details class="section" id="planning" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-milestone"/></svg>
+    <span class="section-title">This {{if eq .Kind "project"}}project{{else}}{{.Kind}}{{end}}&#39;s own plan</span>
+    <span class="section-summary"><span class="count-pill">{{add (len .OwnedMilestones) (len .OwnedRoadmaps)}}</span></span>
+  </summary>
+  <div class="section-body">
+    <div class="plan-head">
+      <p class="t-meta">Milestones and roadmaps planned at this level. A milestone may include work from anywhere in the project, not only from here.</p>
+      <div class="action-row">
+        <button class="btn btn--sm" type="button" data-open-dialog="dlg-new-milestone">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New milestone</button>
+        <button class="btn btn--sm" type="button" data-open-dialog="dlg-new-roadmap">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New roadmap</button>
+      </div>
+    </div>
+
+    {{if or .OwnedMilestones .OwnedRoadmaps}}
+    {{range .OwnedRoadmaps}}
+    {{/* A block, not a card: this already sits inside one. */}}
+    <div class="u-mt-6 u-mb-6">
+      <div class="u-row u-mb-4">
+        <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
+        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+        <span class="u-push u-row">
+          <span class="t-meta">In intended order</span>
+          <button class="btn btn--sm" type="button" aria-label="Edit the roadmap {{.Name}}"
+                  hx-get="/ui/r/{{.ID}}/edit" hx-target="#modal-slot" hx-swap="innerHTML">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit</button>
+        </span>
+      </div>
+      {{with .Milestones}}{{template "roadmap-spine" .}}
+      {{else}}<p class="empty--inline">No milestones have been placed on this roadmap yet. Choose Edit to place some.</p>{{end}}
+    </div>
+    {{end}}
+
+    {{range .OwnedMilestones}}
+    <div class="u-mb-4">
+      <div class="u-row u-mb-4">
+        <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+        <span class="u-push u-row">
+          {{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}
+          <button class="btn btn--sm" type="button" aria-label="Edit the milestone {{.Name}}"
+                  hx-get="/ui/m/{{.ID}}/edit" hx-target="#modal-slot" hx-swap="innerHTML">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit</button>
+        </span>
+      </div>
+      {{template "milestone-progress" .}}
+      <div class="rail-divider u-mt-4"></div>
+    </div>
+    {{end}}
+    {{else}}
+    <div class="empty">
+      <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-roadmap"/></svg></span>
+      <p class="empty-title">Nothing is planned here yet</p>
+      <p class="empty-text">A milestone gathers the work that ships together, and a roadmap puts milestones in the order you intend. Plans made here belong to {{if eq .Kind "project"}}the project{{else}}{{.Title}}{{end}}, but they can include work from anywhere in the project.</p>
+    </div>
+    {{end}}
+  </div>
+</details>
+{{end}}
+
+{{/* ---------- Creating a milestone or a roadmap (FR-2) ---------- */}}
+
+{{define "plan-create-modals"}}
+<dialog class="modal" id="dlg-new-milestone" aria-labelledby="t-new-milestone">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-new-milestone"><svg class="icon icon-md" aria-hidden="true"><use href="#i-milestone"/></svg> New milestone</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/milestone/new">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">A milestone gathers the work that ships together and shows how far along it is. This one will be planned in {{if eq .Kind "project"}}the project{{else}}<b>{{.Title}}</b>{{end}}; what it contains can come from anywhere.</p>
+        <div class="field">
+          <label class="field-label" for="nm-name">Name</label>
+          <input class="input" id="nm-name" name="name" placeholder="First public release" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="nm-date">Target date <span class="opt">optional</span></label>
+          <input class="input" id="nm-date" name="target_date" type="date">
+        </div>
+        <div class="field">
+          <label class="field-label" for="nm-desc">Description <span class="opt">optional</span></label>
+          <input class="input" id="nm-desc" name="description" placeholder="What does reaching it mean, in one sentence?">
+        </div>
+      </div>
+      <input type="hidden" name="owner_type" value="{{.RefType}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Create the milestone</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="dlg-new-roadmap" aria-labelledby="t-new-roadmap">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-new-roadmap"><svg class="icon icon-md" aria-hidden="true"><use href="#i-roadmap"/></svg> New roadmap</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/roadmap/new">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">A roadmap puts milestones in the order you intend — sequence, priority or schedule; the order means what you mean by it. This one will be planned in {{if eq .Kind "project"}}the project{{else}}<b>{{.Title}}</b>{{end}}.</p>
+        <div class="field">
+          <label class="field-label" for="nr-name">Name</label>
+          <input class="input" id="nr-name" name="name" placeholder="The road to version one" required>
+        </div>
+      </div>
+      <input type="hidden" name="owner_type" value="{{.RefType}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Create the roadmap</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{/* ---------- The member's end: "Add to a milestone…" (FR-3.1) ----------
+     Lists the milestones this is directly part of, each with a way to take it
+     out, and the open milestones it could join, grouped by where each is
+     planned. Both lists are short by nature. */}}
+
+{{define "member-milestones-modal"}}
+<dialog class="modal" id="dlg-milestones" aria-labelledby="t-milestones">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-milestones"><svg class="icon icon-md" aria-hidden="true"><use href="#i-add-to-milestone"/></svg> Milestones for {{.Title}}</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="modal-body">
+    <div class="form">
+      <p class="t-meta">A milestone gathers the work that ships together. This {{.Kind}} can be part of milestones planned anywhere in the project.</p>
+      {{if .MemberOf}}
+      <div class="field">
+        <span class="field-label">It is part of</span>
+        <div class="rows rows--boxed">
+          {{range .MemberOf}}
+          <div class="row">
+            <svg class="icon icon-sm icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+            <span class="row-main">
+              <span class="row-title"><a href="{{.URL}}">{{.Name}}</a></span>
+              {{if .Locked}}<span class="row-sub">Locked, so what it contains is fixed.</span>{{end}}
+            </span>
+            <span class="row-end">
+              {{if not .Locked}}
+              <form method="post" action="/ui/milestone/member/remove">
+                <input type="hidden" name="milestone_id" value="{{.ID}}">
+                <input type="hidden" name="member_type" value="{{$.Kind}}">
+                <input type="hidden" name="member_id" value="{{$.ID}}">
+                <input type="hidden" name="from" value="member">
+                <button class="btn btn--sm" type="submit" aria-label="Take this out of {{.Name}}">
+                  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-minus"/></svg>Take it out</button>
+              </form>
+              {{end}}
+            </span>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
+      {{if .Choices}}
+      <form method="post" action="/ui/milestone/member/add" id="f-add-to-milestone">
+        <div class="field">
+          <label class="field-label" for="atm-select">Add it to a milestone</label>
+          <select class="select" id="atm-select" name="milestone_id" required>
+            <option value="">Choose a milestone…</option>
+            {{range .Choices}}
+            <optgroup label="{{.Label}}">
+              {{range .Options}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+            </optgroup>
+            {{end}}
+          </select>
+          <p class="field-hint">Only open milestones are listed. A locked milestone's contents are fixed.</p>
+        </div>
+        <input type="hidden" name="member_type" value="{{.Kind}}">
+        <input type="hidden" name="member_id" value="{{.ID}}">
+        <input type="hidden" name="from" value="member">
+      </form>
+      {{else}}
+      <p class="t-meta">There is no open milestone this could join yet. Create one from the project page or from an initiative's page.</p>
+      {{end}}
+    </div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" type="button" data-close-dialog>{{if .Choices}}Cancel{{else}}Close{{end}}</button>
+    {{if .Choices}}<button class="btn btn--primary" type="submit" form="f-add-to-milestone">Add it to the milestone</button>{{end}}
+  </div>
+</dialog>
+{{end}}
+
+{{/* ---------- The milestone editor (FR-3.2, FR-5, FR-6) ---------- */}}
+
+{{define "milestone-editor-dialog"}}
+<dialog class="modal modal--wide" id="dlg-milestone" data-autoshow data-refresh-on-close aria-labelledby="t-milestone-editor">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-milestone-editor"><svg class="icon icon-md" aria-hidden="true"><use href="#i-milestone"/></svg> {{.Milestone.Name}}</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  {{template "milestone-editor" .}}
+</dialog>
+{{end}}
+
+{{define "milestone-editor"}}
+<div id="milestone-editor" {{if .Changed}}data-changed="true"{{end}}>
+  <div class="modal-body">
+    {{if .Notice}}
+    <div class="banner banner--success u-mb-4" role="status">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+    {{end}}
+    {{if .Error}}
+    <div class="banner banner--error u-mb-4" role="alert">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+    {{end}}
+
+    <p class="t-meta u-mb-4">Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a>{{if .Milestone.TargetDate}}, aiming for {{.Milestone.TargetDate.Format "2 January 2006"}}{{end}}. {{if .Locked}}{{template "state-badge" "locked"}}{{end}}</p>
+    {{template "milestone-progress" .Card}}
+
+    <h3 class="t-row-title u-mt-6 u-mb-2">What this milestone delivers</h3>
+    {{with .Members}}
+    <div class="checklist rows--boxed">
+      {{range .}}
+      <div class="check-item" data-done="{{.Done}}">
+        <span class="check-box">
+          {{if .Done}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg>{{end}}
+        </span>
+        <span class="check-title">
+          <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+          <a href="{{.URL}}">{{.Label}}</a>
+        </span>
+        <span class="check-end">
+          <span class="t-meta">{{.Kind}}</span>
+          {{if not $.Locked}}
+          <details class="inline-confirm">
+            <summary class="btn btn--ghost btn--sm" aria-label="Take {{.Label}} out">Take it out…</summary>
+            <form class="inline-confirm-form" method="post" action="/ui/milestone/member/remove"
+                  hx-post="/ui/milestone/member/remove" hx-target="#milestone-editor" hx-swap="outerHTML">
+              <input type="hidden" name="milestone_id" value="{{$.Milestone.ID}}">
+              <input type="hidden" name="member_type" value="{{.Kind}}">
+              <input type="hidden" name="member_id" value="{{.ID}}">
+              <input class="input input--sm" name="reason" placeholder="Why? (optional)" aria-label="Why is it coming out? This is optional.">
+              <button class="btn btn--sm btn--danger" type="submit">Take it out</button>
+            </form>
+          </details>
+          {{end}}
+        </span>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="empty--inline">Nothing has been added yet. A milestone's contents can come from anywhere in the project.</p>
+    {{end}}
+
+    {{if .Locked}}
+    <div class="banner banner--info u-mt-6">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-lock"/></svg>
+      <div><b>This milestone is locked.</b>What it contains is fixed, and its progress is measured against the snapshot taken when it was locked.</div>
+    </div>
+    {{else}}
+    <h3 class="t-row-title u-mt-6 u-mb-2">Add to this milestone</h3>
+    <div class="field">
+      <label class="field-label" for="mc-search-{{.Milestone.ID}}">Search the whole project</label>
+      <input class="input" id="mc-search-{{.Milestone.ID}}" type="search" name="q" value="{{.Picker.Query}}"
+             placeholder="Type part of a name" autocomplete="off"
+             hx-get="/ui/m/{{.Milestone.ID}}/candidates" hx-trigger="input changed delay:250ms, search"
+             hx-target="#member-candidates" hx-swap="outerHTML">
+      <p class="field-hint">With the box empty, this lists {{.Picker.ScopeLabel}}.</p>
+    </div>
+    {{template "member-candidates" .Picker}}
+
+    <h3 class="t-row-title u-mt-6 u-mb-2">Lock this milestone</h3>
+    {{if .CanLock}}
+    <details class="inline-confirm inline-confirm--block">
+      <summary class="btn btn--danger"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Lock this milestone…</summary>
+      <div class="banner banner--warning u-mt-4">
+        <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg>
+        <div><b>Locking is permanent.</b>It takes a snapshot of the {{.LeafCount}} features this milestone comes down to ({{.LeafDone}} of them done so far) and freezes what it contains. It can't be unlocked.</div>
+      </div>
+      <form class="u-mt-4" method="post" action="/ui/milestone/lock"
+            hx-post="/ui/milestone/lock" hx-target="#milestone-editor" hx-swap="outerHTML">
+        <input type="hidden" name="milestone_id" value="{{.Milestone.ID}}">
+        <input type="hidden" name="confirm" value="permanent">
+        <button class="btn btn--danger" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Lock it permanently</button>
+      </form>
+    </details>
+    {{else}}
+    <div class="action">
+      <button class="btn" type="button" disabled aria-describedby="why-lock-{{.Milestone.ID}}">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Lock this milestone</button>
+      <p class="action-reason" id="why-lock-{{.Milestone.ID}}">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg>
+        <span>{{.LockReason}}</span></p>
+    </div>
+    {{end}}
+    {{end}}
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn--primary" type="button" data-close-dialog>Done</button>
+  </div>
+</div>
+{{end}}
+
+{{/* The picker's list. Re-rendered on its own as the search box is typed in. */}}
+{{define "member-candidates"}}
+<div id="member-candidates">
+  {{if .Candidates}}
+  <div class="rows rows--boxed">
+    {{range .Candidates}}
+    <div class="row">
+      <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
+      <span class="row-main">
+        <span class="row-title">{{.Name}}</span>
+        <span class="row-sub">{{if .Path}}{{.Kind}} · {{.Path}}{{else}}{{.Kind}}{{end}}</span>
+      </span>
+      <span class="row-end">
+        <form method="post" action="/ui/milestone/member/add"
+              hx-post="/ui/milestone/member/add" hx-target="#milestone-editor" hx-swap="outerHTML">
+          <input type="hidden" name="milestone_id" value="{{$.MilestoneID}}">
+          <input type="hidden" name="member_type" value="{{.Kind}}">
+          <input type="hidden" name="member_id" value="{{.ID}}">
+          <button class="btn btn--sm" type="submit" aria-label="Add {{.Name}}">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>Add</button>
+        </form>
+      </span>
+    </div>
+    {{end}}
+  </div>
+  {{if .More}}<p class="t-meta u-mt-2">Showing the first 50. Type part of a name to narrow the list.</p>{{end}}
+  {{else}}
+  <p class="empty--inline">{{if .Query}}Nothing else in the project matches “{{.Query}}”.{{else}}Everything here is already in this milestone. Search to find work elsewhere in the project.{{end}}</p>
+  {{end}}
+</div>
+{{end}}
+
+{{/* ---------- The roadmap editor (FR-4, FR-6) ---------- */}}
+
+{{define "roadmap-editor-dialog"}}
+<dialog class="modal modal--wide" id="dlg-roadmap" data-autoshow data-refresh-on-close aria-labelledby="t-roadmap-editor">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-roadmap-editor"><svg class="icon icon-md" aria-hidden="true"><use href="#i-roadmap"/></svg> {{.Roadmap.Name}}</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  {{template "roadmap-editor" .}}
+</dialog>
+{{end}}
+
+{{define "roadmap-editor"}}
+<div id="roadmap-editor" {{if .Changed}}data-changed="true"{{end}}>
+  <div class="modal-body">
+    {{if .Notice}}
+    <div class="banner banner--success u-mb-4" role="status">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+    {{end}}
+    {{if .Error}}
+    <div class="banner banner--error u-mb-4" role="alert">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+    {{end}}
+
+    <p class="t-meta u-mb-4">Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a>. The milestones are numbered in the order you intend; the order means whatever you mean by it.</p>
+
+    {{if .Entries}}
+    <ol class="plan-order">
+      {{range .Entries}}
+      <li class="plan-order-item">
+        <span class="roadmap-num">{{.Place}}</span>
+        <span class="plan-order-main">
+          <svg class="icon icon-sm icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
+          <a class="t-row-title" href="{{.Card.URL}}">{{.Card.Name}}</a>
+          {{if .Card.Locked}}{{template "state-badge" "locked"}}{{end}}
+          <span class="t-meta">{{.Card.Done}} of {{.Card.Total}} done</span>
+        </span>
+        <span class="plan-order-actions">
+          {{if not .First}}
+          <form method="post" action="/ui/roadmap/entry/place"
+                hx-post="/ui/roadmap/entry/place" hx-target="#roadmap-editor" hx-swap="outerHTML">
+            <input type="hidden" name="roadmap_id" value="{{$.Roadmap.ID}}">
+            <input type="hidden" name="milestone_id" value="{{.Card.ID}}">
+            <input type="hidden" name="place" value="{{dec .Place}}">
+            <button class="btn btn--ghost btn--sm" type="submit" aria-label="Move {{.Card.Name}} up">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-up"/></svg>Up</button>
+          </form>
+          {{end}}
+          {{if not .Last}}
+          <form method="post" action="/ui/roadmap/entry/place"
+                hx-post="/ui/roadmap/entry/place" hx-target="#roadmap-editor" hx-swap="outerHTML">
+            <input type="hidden" name="roadmap_id" value="{{$.Roadmap.ID}}">
+            <input type="hidden" name="milestone_id" value="{{.Card.ID}}">
+            <input type="hidden" name="place" value="{{inc .Place}}">
+            <button class="btn btn--ghost btn--sm" type="submit" aria-label="Move {{.Card.Name}} down">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>Down</button>
+          </form>
+          {{end}}
+          <form method="post" action="/ui/roadmap/entry/remove"
+                hx-post="/ui/roadmap/entry/remove" hx-target="#roadmap-editor" hx-swap="outerHTML">
+            <input type="hidden" name="roadmap_id" value="{{$.Roadmap.ID}}">
+            <input type="hidden" name="milestone_id" value="{{.Card.ID}}">
+            <button class="btn btn--ghost btn--sm" type="submit" aria-label="Take {{.Card.Name}} off the roadmap">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-minus"/></svg>Take off</button>
+          </form>
+        </span>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}
+    <p class="empty--inline">No milestones are on this roadmap yet. Place the first one below.</p>
+    {{end}}
+
+    <h3 class="t-row-title u-mt-6 u-mb-2">Place a milestone</h3>
+    {{if or .Here .Elsewhere}}
+    <form method="post" action="/ui/roadmap/entry/place"
+          hx-post="/ui/roadmap/entry/place" hx-target="#roadmap-editor" hx-swap="outerHTML">
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label" for="rp-ms-{{.Roadmap.ID}}">Milestone</label>
+          <select class="select" id="rp-ms-{{.Roadmap.ID}}" name="milestone_id" required>
+            <option value="">Choose a milestone…</option>
+            {{with .Here}}<optgroup label="Planned in {{$.Owner.Label}}">{{range .}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</optgroup>{{end}}
+            {{with .Elsewhere}}<optgroup label="Planned elsewhere">{{range .}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</optgroup>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="rp-place-{{.Roadmap.ID}}">Where</label>
+          <select class="select" id="rp-place-{{.Roadmap.ID}}" name="place">
+            <option value="0">At the end</option>
+            {{if .Entries}}<option value="1">First</option>{{end}}
+            {{range .Entries}}{{if not .Last}}<option value="{{inc .Place}}">After {{.Card.Name}}</option>{{end}}{{end}}
+          </select>
+        </div>
+      </div>
+      <input type="hidden" name="roadmap_id" value="{{.Roadmap.ID}}">
+      <div class="form-actions u-mt-4">
+        <button class="btn btn--primary" type="submit">Place it on the roadmap</button>
+      </div>
+    </form>
+    {{else}}
+    <p class="t-meta">Every milestone is already on this roadmap. Create another milestone from a project or initiative page to place more.</p>
+    {{end}}
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn--primary" type="button" data-close-dialog>Done</button>
+  </div>
+</div>
+{{end}}

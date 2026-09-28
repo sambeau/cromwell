@@ -61,9 +61,18 @@ func TestOwnerScopedCreation(t *testing.T) {
 
 	// A bad owner or a blank name writes nothing.
 	for _, bad := range []func(tx pgx.Tx) error{
-		func(tx pgx.Tx) error { _, e := CreateMilestone(ctx, tx, "initiative", nil, "x", "", nil, "sam"); return e },
-		func(tx pgx.Tx) error { _, e := CreateMilestone(ctx, tx, "feature", &initID, "x", "", nil, "sam"); return e },
-		func(tx pgx.Tx) error { _, e := CreateMilestone(ctx, tx, "project", nil, "   ", "", nil, "sam"); return e },
+		func(tx pgx.Tx) error {
+			_, e := CreateMilestone(ctx, tx, "initiative", nil, "x", "", nil, "sam")
+			return e
+		},
+		func(tx pgx.Tx) error {
+			_, e := CreateMilestone(ctx, tx, "feature", &initID, "x", "", nil, "sam")
+			return e
+		},
+		func(tx pgx.Tx) error {
+			_, e := CreateMilestone(ctx, tx, "project", nil, "   ", "", nil, "sam")
+			return e
+		},
 		func(tx pgx.Tx) error { _, e := CreateRoadmap(ctx, tx, "project", &initID, "x", "sam"); return e },
 		func(tx pgx.Tx) error { _, e := CreateRoadmap(ctx, tx, "project", nil, "", "sam"); return e },
 	} {

@@ -1,5 +1,5 @@
-// The only bespoke script in the app. Two things the design system genuinely
-// cannot do in CSS, and nothing else.
+// The only bespoke script in the app. The few things the design system
+// genuinely cannot do in CSS, and nothing else.
 //
 // Both are single delegated listeners on the document, so a modal or a menu that
 // arrives inside an HTMX fragment works with no re-initialisation — nothing here
@@ -40,6 +40,35 @@
       e.target.close();
     }
   });
+
+  // --- 1a. An editor loaded by HTMX opens itself (SPEC-010 FR-6) -----------
+  //
+  // The milestone and roadmap editors arrive as a <dialog data-autoshow> in
+  // #modal-slot. htmx:load fires for every piece of content HTMX inserts, so
+  // this one listener opens any such dialog however it arrived.
+  document.addEventListener('htmx:load', function (e) {
+    var el = e.detail && e.detail.elt;
+    if (!el || !el.querySelector) return;
+    var dlg = el.matches('dialog[data-autoshow]') ? el : el.querySelector('dialog[data-autoshow]');
+    if (dlg && !dlg.open && typeof dlg.showModal === 'function') dlg.showModal();
+  });
+
+  // --- 1b. Closing an editor after a change refreshes the page -------------
+  //
+  // Forms inside an editor swap only the editor, so the page underneath is
+  // stale once something changed. The server marks the editor data-changed
+  // after a successful change; closing it by any means (Done, Escape, the
+  // backdrop) then reloads, and closing without a change just closes. The
+  // close event does not bubble, hence the capture listener.
+  document.addEventListener('close', function (e) {
+    var dlg = e.target;
+    if (!dlg || !dlg.matches || !dlg.matches('dialog[data-refresh-on-close]')) return;
+    if (dlg.querySelector('[data-changed="true"]')) {
+      window.location.reload();
+    } else if (dlg.parentNode) {
+      dlg.parentNode.removeChild(dlg);
+    }
+  }, true);
 
   // --- 2. The overflow menu is a native <details>, which opens and closes on
   // its own summary but does NOT close on Escape or on a click elsewhere.

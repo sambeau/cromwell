@@ -90,6 +90,7 @@ var uiFuncs = template.FuncMap{
 	"verbConsequence": verbConsequence,
 	"add":             func(a, b int) int { return a + b },
 	"inc":             func(i int) int { return i + 1 },
+	"dec":             func(i int) int { return i - 1 },
 	// nonPrimary drops the document that is already rendered as the page body,
 	// so the Documents section lists the *other* documents rather than repeating
 	// the one you are looking at (design round 4 §2).
@@ -375,6 +376,8 @@ func eventLabel(v any) string {
 		return "created a roadmap"
 	case "roadmap.entry_set":
 		return "placed a milestone on a roadmap"
+	case "roadmap.entry_removed":
+		return "took a milestone off a roadmap"
 	case "worktree.created":
 		return "made a working copy of the repository"
 	default:
@@ -604,6 +607,10 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/d/{path...}", s.handleUIDocumentPage)
 	mux.HandleFunc("GET /ui/m/{id}", s.handleUIMilestonePage)
 	mux.HandleFunc("GET /ui/r/{id}", s.handleUIRoadmapPage)
+	// The milestone and roadmap editors, loaded into a <dialog> (SPEC-010 FR-6).
+	mux.HandleFunc("GET /ui/m/{id}/edit", s.handleUIMilestoneEdit)
+	mux.HandleFunc("GET /ui/m/{id}/candidates", s.handleUIMilestoneCandidates)
+	mux.HandleFunc("GET /ui/r/{id}/edit", s.handleUIRoadmapEdit)
 	mux.HandleFunc("GET /ui/t/{id}", s.handleUITaskPage)
 
 	// Actions on their things (FR-5): each carries the entity's id from the
@@ -620,6 +627,14 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/feature/new", s.handleEntityFeatureCreate)
 	mux.HandleFunc("POST /ui/initiative/new", s.handleEntityInitiativeCreate)
 	mux.HandleFunc("POST /ui/initiative/archive", s.handleEntityInitiativeArchive)
+	// Milestones and roadmaps (SPEC-010 FR-2 to FR-5).
+	mux.HandleFunc("POST /ui/milestone/new", s.handleMilestoneCreate)
+	mux.HandleFunc("POST /ui/roadmap/new", s.handleRoadmapCreate)
+	mux.HandleFunc("POST /ui/milestone/member/add", s.handleMilestoneMemberAdd)
+	mux.HandleFunc("POST /ui/milestone/member/remove", s.handleMilestoneMemberRemove)
+	mux.HandleFunc("POST /ui/milestone/lock", s.handleMilestoneLock)
+	mux.HandleFunc("POST /ui/roadmap/entry/place", s.handleRoadmapEntryPlace)
+	mux.HandleFunc("POST /ui/roadmap/entry/remove", s.handleRoadmapEntryRemove)
 
 	// Live-region fragments (re-read through the normal service path on an SSE
 	// signal, SD-5).

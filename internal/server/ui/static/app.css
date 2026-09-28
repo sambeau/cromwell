@@ -2073,3 +2073,36 @@ dialog.modal::backdrop { background: var(--c-overlay); }
    `.modal-head` and has to keep growing, or the close button stops being
    pushed to the right edge. */
 .modal-title { display: flex; align-items: center; gap: var(--sp-2); }
+
+/* == Plan editing (SPEC-010) ============================================== */
+
+/* The owner page's plan section: the explanation and its two create buttons
+   on one line, wrapping on a narrow screen. */
+.plan-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); margin-bottom: var(--sp-4);
+}
+
+/* A list inside a modal body gets its own border, since the modal has no
+   panel to supply one. */
+.rows--boxed { border: var(--bw) solid var(--c-line); border-radius: var(--r-md); overflow: hidden; }
+.checklist.rows--boxed .check-item { padding-left: var(--sp-4); }
+
+/* A confirm step built into the page (FR-5.2): a <details> whose summary is
+   the button, and whose body is the consequence and the real action. */
+.inline-confirm > summary { list-style: none; cursor: pointer; width: fit-content; }
+.inline-confirm > summary::-webkit-details-marker { display: none; }
+.inline-confirm[open] > summary { margin-bottom: var(--sp-2); }
+.inline-confirm-form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.input--sm { height: 26px; font-size: var(--fs-xs); padding: 0 var(--sp-2); min-width: 12ch; }
+
+/* The roadmap editor: still a numbered list (D-10), each entry a row with its
+   number, its milestone and the controls that move it. */
+.plan-order { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.plan-order-item {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  gap: var(--sp-3); padding: var(--sp-2) var(--sp-3);
+  border: var(--bw) solid var(--c-line); border-radius: var(--r-md);
+}
+.plan-order-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.plan-order-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); justify-content: flex-end; }

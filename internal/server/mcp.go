@@ -75,10 +75,11 @@ type mcpTool struct {
 
 // mcpTools builds the tool registry. This function IS the DEC-004 boundary: the
 // set it returns is exactly the authoring writes (FR-2) and the authoring reads
-// (FR-3), and nothing else. A development-side or gate tool would have to be
+// (FR-3), plus the milestone and roadmap tools of SPEC-010 (mcpPlanTools, which
+// has no lock tool), and nothing else. A development-side or gate tool would have to be
 // added here to exist at all, which is what makes the line reviewable.
 func (s *Server) mcpTools() []mcpTool {
-	return []mcpTool{
+	return append([]mcpTool{
 		// --- The writes (FR-2) ---
 		{
 			Name: "create_initiative",
@@ -183,7 +184,7 @@ func (s *Server) mcpTools() []mcpTool {
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
-	}
+	}, s.mcpPlanTools()...)
 }
 
 // mcpToolNames is the sorted list of advertised tool names — the assertion
@@ -266,8 +267,10 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "cromwell", "version": "1"},
 			"instructions": "Cromwell's planning surface. You can create and shape initiatives, " +
-				"features, titles, descriptions and document attachments. You cannot start work, " +
-				"change a gate, or run an agent — a person does that from the command centre.",
+				"features, titles, descriptions and document attachments, and plan with milestones " +
+				"and roadmaps: create them, fill them, and order them. You cannot start work, " +
+				"change a gate, lock a milestone, or run an agent — a person does that from the " +
+				"command centre.",
 		})
 	case "ping":
 		writeRPCResult(w, req.ID, map[string]any{})

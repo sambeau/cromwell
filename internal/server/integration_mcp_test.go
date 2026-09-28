@@ -99,6 +99,7 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 	sort.Strings(got)
 
 	want := []string{
+		// SPEC-008: the planning-tree authoring slice.
 		"attach_document",
 		"create_feature",
 		"create_initiative",
@@ -108,7 +109,21 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"list_documents",
 		"update_feature",
 		"update_initiative",
+		// SPEC-010: milestones and roadmaps, as planning authoring under
+		// DEC-004 (SD-5). Each is named here on purpose; there is no lock tool
+		// (SD-4), and lock_milestone is in the must-not-exist list below.
+		"add_milestone_member",
+		"create_milestone",
+		"create_roadmap",
+		"get_milestone",
+		"get_roadmap",
+		"list_milestones",
+		"list_roadmaps",
+		"place_roadmap_entry",
+		"remove_milestone_member",
+		"remove_roadmap_entry",
 	}
+	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("advertised tools = %v\nwant exactly %v (DEC-004, FR-4.1)", got, want)
 	}
@@ -118,6 +133,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 	for _, forbidden := range []string{
 		"start_feature", "transition_feature", "override_gate", "spawn_agent",
 		"dispatch_review", "respond_checkpoint", "archive_initiative", "set_estimate",
+		// SPEC-010 SD-4: locking a milestone is a gated, one-way lifecycle act
+		// and stays a person's act in the web UI.
+		"lock_milestone",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {
