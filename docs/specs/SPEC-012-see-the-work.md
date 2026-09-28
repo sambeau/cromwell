@@ -1,12 +1,10 @@
 # SPEC-012: See the work
 
-**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its nine choices (DoD 6). It was drafted for Sam's approval as follows. Authored by Claude. An independent
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with all nine
+choices in §5 (DoD 6) as recommended. Authored by Claude. An independent
 consistency review, [REVIEW-012](../reviews/REVIEW-012-see-the-work.md), found
 four material and thirteen smaller problems in the first draft. All of them
-are dealt with in this revision, and §7 says how, finding by finding. The
-author can't be the approval gate, so the decision is Sam's. Sam has said he
-will approve the spec and the build together. Nine choices in it need his
-explicit yes (§5, DoD 6).
+are dealt with in this revision, and §7 says how, finding by finding.
 **Date:** 2026-09-28
 **Roadmap milestone:** M6 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §11
@@ -180,7 +178,7 @@ high enough that ordinary prompts are never cut.
   have no timeline.
 
 - **SD-8 — Review health counts agent verdicts only, for now. This narrows
-  DESIGN-010 §8, and needs Sam's yes as such.** §8 asks for review health "per
+  DESIGN-010 §8, and Sam accepted it as such.** §8 asks for review health "per
   reviewer" and attribution of every verdict to an agent, the chat AI, or a
   human. A review here is a succeeded run whose purpose is a review
   (`review-*`) or verification (`verify-feature`), and whose outcome carries a
@@ -248,7 +246,7 @@ high enough that ordinary prompts are never cut.
   surprise.
 
 - **SD-14 — The line of moments sits above the page body. This adds to
-  DESIGN-008 §5.2, and needs Sam's yes as such.** §5.2 draws the page as
+  DESIGN-008 §5.2, and Sam accepted it as such.** §5.2 draws the page as
   breadcrumbs, the design document as the body, and the relations across the
   bottom, with activity among them. DESIGN-010 §8's "how is it going, at a
   glance" asks for the journey before the reading, so the timeline is placed
