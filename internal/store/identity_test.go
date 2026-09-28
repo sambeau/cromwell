@@ -213,6 +213,27 @@ func TestChecklistBackfillRunsOnlyWithTheTable(t *testing.T) {
 		uuid.New()).Scan(&p3); err != nil || p3 != "CL-003" {
 		t.Errorf("a new checklist got %q (%v); want CL-003 from the column default", p3, err)
 	}
+
+	// With the table made after 0010, as when M5's 0009 is applied second: the
+	// next migration run gives them IDs (SD-20).
+	conn = freshConn(t)
+	if err := Migrate(ctx, conn); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(ctx, `CREATE TABLE checklists (id uuid PRIMARY KEY, name text NOT NULL);
+		INSERT INTO checklists (id, name) VALUES (gen_random_uuid(), 'late')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, conn); err != nil {
+		t.Fatalf("migrate after a late checklists table: %v", err)
+	}
+	var late string
+	if err := conn.QueryRow(ctx, `SELECT public_id FROM checklists`).Scan(&late); err != nil || late != "CL-001" {
+		t.Errorf("a checklist made after 0010 got %q (%v); want CL-001", late, err)
+	}
+	if err := Migrate(ctx, conn); err != nil {
+		t.Fatalf("a further run must do nothing: %v", err)
+	}
 }
 
 // TestRegistryMatchesSequences is SD-2: every prefix in internal/ident has a

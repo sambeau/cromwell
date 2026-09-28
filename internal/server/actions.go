@@ -366,7 +366,7 @@ func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) e
 			// The archive name carries the superseded row's short id: a
 			// document revised twice — or two documents sharing a basename —
 			// must not collide in docs/_superseded/.
-			archived = archiveTarget(predecessor)
+			archived = s.archiveTarget(predecessor)
 			if err := store.UpdateDocumentPath(ctx, tx, predecessor.ID, archived); err != nil {
 				return err
 			}
@@ -413,19 +413,6 @@ func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) e
 		Event: lifecycle.DocApprove, Actor: actor,
 	})
 	return nil
-}
-
-// archiveTarget is where a superseded document's file rests: under
-// docs/_superseded/, its basename suffixed with the row's id tail so that
-// repeated revisions and same-named documents never collide there. The tail,
-// not the head: ids are UUIDv7, whose leading characters are the timestamp
-// and collide for rows created in the same instant (the same reason ShortID
-// reads the tail).
-func archiveTarget(d *store.Document) string {
-	ext := filepath.Ext(d.Path)
-	base := strings.TrimSuffix(filepath.Base(d.Path), ext)
-	s := d.ID.String()
-	return filepath.Join("docs/_superseded", fmt.Sprintf("%s-%s%s", base, s[len(s)-8:], ext))
 }
 
 // takeOverCanonicalPath performs the revision file operations in one

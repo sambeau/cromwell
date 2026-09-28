@@ -81,7 +81,29 @@ func Migrate(ctx context.Context, conn *pgx.Conn) error {
 	if err != nil {
 		return err
 	}
-	return applyMigrations(ctx, conn, applied, ms)
+	if err := applyMigrations(ctx, conn, applied, ms); err != nil {
+		return err
+	}
+	return attachLateTables(ctx, conn)
+}
+
+// attachLateTables runs the steps that must follow a table whichever order its
+// migration and theirs arrived in (SPEC-015 SD-20): checklists (M5's 0009)
+// get IDs from 0010's function even when 0009 was applied second. Each step
+// does nothing once done, and nothing on a database older than 0010.
+func attachLateTables(ctx context.Context, conn *pgx.Conn) error {
+	var has bool
+	if err := conn.QueryRow(ctx,
+		`SELECT to_regprocedure('ident_attach_checklists()') IS NOT NULL`).Scan(&has); err != nil {
+		return err
+	}
+	if !has {
+		return nil
+	}
+	if _, err := conn.Exec(ctx, `SELECT ident_attach_checklists()`); err != nil {
+		return fmt.Errorf("give checklists their IDs: %w", err)
+	}
+	return nil
 }
 
 // appliedVersions reads the set of migrations already applied.

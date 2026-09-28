@@ -98,13 +98,24 @@ func DocumentByIdentity(ctx context.Context, q Querier, publicID string, revisio
 		`SELECT `+docCols+` FROM documents WHERE public_id = $1 AND revision = $2`, publicID, revision))
 }
 
-// CurrentDocumentByPublicID is what an ID names without a revision: its
-// newest live row, or failing that its newest row. While a revision is open
-// that is the successor draft, the document being worked on.
+// CurrentDocumentByPublicID is what an ID names without a revision (SPEC-015
+// SD-18): its approved revision if it has a live one, otherwise its newest
+// live revision, otherwise its newest. While a revision is open, that is the
+// approved document in force, whose page links the open revision.
 func CurrentDocumentByPublicID(ctx context.Context, q Querier, publicID string) (*Document, error) {
 	return scanDoc(q.QueryRow(ctx, `
 		SELECT `+docCols+` FROM documents WHERE public_id = $1
-		ORDER BY (state <> 'superseded') DESC, revision DESC LIMIT 1`, publicID))
+		ORDER BY (state <> 'superseded') DESC, (state = 'approved') DESC, revision DESC LIMIT 1`, publicID))
+}
+
+// CurrentApprovedDocForOwner is the newest approved, unsuperseded document of
+// a type for an owner. The prompts that carry a feature's designs read this,
+// so a newer draft design can't hide an approved one (SPEC-015 FR-3.7).
+func CurrentApprovedDocForOwner(ctx context.Context, q Querier, docType, ownerType string, ownerID uuid.UUID) (*Document, error) {
+	return scanDoc(q.QueryRow(ctx, `
+		SELECT `+docCols+` FROM documents
+		WHERE type = $1 AND owner_type = $2 AND owner_id = $3 AND state = 'approved'
+		ORDER BY approved_at DESC NULLS LAST, created_at DESC LIMIT 1`, docType, ownerType, ownerID))
 }
 
 // LiveSuccessorOf finds a live document that revises the given one.

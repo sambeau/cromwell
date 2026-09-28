@@ -101,6 +101,8 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 	want := []string{
 		// SPEC-008: the planning-tree authoring slice.
 		"attach_document",
+		// SPEC-015: adopt an existing file where it sits, as a draft only.
+		"adopt_document",
 		"create_feature",
 		"create_initiative",
 		"get_feature",
@@ -327,8 +329,10 @@ func TestMCPAuthoringSlice(t *testing.T) {
 	if out["description"] != newDesc {
 		t.Errorf("get_feature description = %v, want the updated prose", out["description"])
 	}
-	if len(out["documents"].([]any)) != 1 {
-		t.Errorf("get_feature should list the attached document; got %v", out["documents"])
+	// Two: the design create_feature started (SPEC-015 FR-6), and the one
+	// attached, which took over as the page's body.
+	if len(out["documents"].([]any)) != 2 {
+		t.Errorf("get_feature should list the starter and the attached document; got %v", out["documents"])
 	}
 	out, _, _ = h.callTool("list_documents", map[string]any{
 		"owner_type": "feature", "owner_path": "auth/login",

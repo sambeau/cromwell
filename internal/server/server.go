@@ -41,6 +41,13 @@ type Server struct {
 	// lastPrune paces the transcript retention sweep to once an hour; only
 	// the heartbeat goroutine touches it (SPEC-012 FR-2.4).
 	lastPrune time.Time
+
+	// lastMoveScan is the HEAD and the missing documents the last search for
+	// moved files looked for, so a still-missing document is searched for
+	// again only once HEAD moves (SPEC-015 FR-4.3). Boot and the heartbeat
+	// both run the search.
+	moveScanMu   sync.Mutex
+	lastMoveScan string
 }
 
 // New validates the compartment, connects the store, and assembles the
@@ -241,6 +248,7 @@ func (s *Server) heartbeat(ctx context.Context) {
 			s.Dispatcher.StallSweep(ctx)
 			s.Dispatcher.RetrySweep(ctx)
 			s.ReconcileAuthoringSweep(ctx)
+			s.findMovedDocuments(ctx)
 			s.GCWorktrees(ctx)
 			s.PruneTranscriptsSweep(ctx, time.Now())
 			s.Dispatcher.Kick()

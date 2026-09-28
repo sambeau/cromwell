@@ -130,29 +130,40 @@ ALTER TABLE tasks
   ALTER COLUMN public_id SET NOT NULL,
   ADD CONSTRAINT tasks_public_id UNIQUE (public_id);
 
--- --- Checklists, if M5's table is here (FR-2.3) ---
+-- --- Checklists, whenever M5's table is here (FR-2.3, SD-20) ---
 --
 -- M5 creates checklists in 0009 and merges first, so on the merged line this
--- runs after it. On a database that has 0010 but not yet 0009 it does
--- nothing, and those checklists will have no ID: recreate such a database.
--- Dynamic SQL, so nothing here is planned against a table that doesn't exist.
+-- runs after it. But the migrator fills gaps: a database that ran this branch
+-- first applies 0010 and then 0009. So the step is a function that does
+-- nothing once done; 0010 calls it, and store.Migrate calls it after every
+-- run, so checklists get their IDs whichever order the two arrived in.
+-- Dynamic SQL, so nothing is planned against a table that doesn't exist.
 
-DO $$
+CREATE FUNCTION ident_attach_checklists() RETURNS void
+LANGUAGE plpgsql AS $$
 BEGIN
-  IF to_regclass('checklists') IS NOT NULL THEN
-    EXECUTE 'ALTER TABLE checklists ADD COLUMN IF NOT EXISTS public_id text';
-    EXECUTE $q$
-      UPDATE checklists c SET public_id = 'CL-' || ident_number(o.rn, 3)
-        FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM checklists) o
-        WHERE c.id = o.id AND c.public_id IS NULL
-    $q$;
-    EXECUTE $q$ SELECT ident_advance('CL', (SELECT count(*) FROM checklists)) $q$;
-    EXECUTE $q$ ALTER TABLE checklists
-      ALTER COLUMN public_id SET DEFAULT mint_ident('CL'),
-      ALTER COLUMN public_id SET NOT NULL $q$;
-    EXECUTE 'ALTER TABLE checklists ADD CONSTRAINT checklists_public_id UNIQUE (public_id)';
+  IF to_regclass('checklists') IS NULL THEN
+    RETURN;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = current_schema() AND table_name = 'checklists'
+               AND column_name = 'public_id') THEN
+    RETURN;
+  END IF;
+  EXECUTE 'ALTER TABLE checklists ADD COLUMN public_id text';
+  EXECUTE $q$
+    UPDATE checklists c SET public_id = 'CL-' || ident_number(o.rn, 3)
+      FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM checklists) o
+      WHERE c.id = o.id
+  $q$;
+  EXECUTE $q$ SELECT ident_advance('CL', (SELECT count(*) FROM checklists)) $q$;
+  EXECUTE $q$ ALTER TABLE checklists
+    ALTER COLUMN public_id SET DEFAULT mint_ident('CL'),
+    ALTER COLUMN public_id SET NOT NULL,
+    ADD CONSTRAINT checklists_public_id UNIQUE (public_id) $q$;
 END $$;
+
+SELECT ident_attach_checklists();
 
 -- --- Documents: an ID and a revision (FR-3.1) ---
 --

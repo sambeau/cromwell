@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"subutai/internal/bus"
+	"subutai/internal/lifecycle"
 	"subutai/internal/store"
 )
 
@@ -38,24 +39,25 @@ func (s *Server) mcpCreateInitiative(r *http.Request, args map[string]any) (any,
 	}
 	description, _ := argString(args, "description")
 
-	ctx := r.Context()
-	var parentID *uuid.UUID
-	parentPath, hasParent := argString(args, "parent_path")
-	if hasParent {
-		parent, err := s.Store.InitiativeBySlugPath(ctx, strings.Split(parentPath, "/"))
-		if err != nil {
-			return nil, fmt.Errorf("there is no initiative at %q, so nothing can be created under it; "+
-				"call get_tree to see what exists", parentPath)
-		}
-		parentID = &parent.ID
+	withDesign, err := argBoolDefault(args, "design_document", true)
+	if err != nil {
+		return nil, err
 	}
 
-	var in *store.Initiative
-	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		var e error
-		in, e = store.CreateInitiative(ctx, tx, parentID, slug, name, description, s.mcpActor())
-		return e
-	})
+	ctx := r.Context()
+	var parentID *uuid.UUID
+	parentRef, hasParent := argString(args, "parent_path")
+	parentPath := ""
+	if hasParent {
+		parent, path, err := s.initiativeByRef(ctx, parentRef)
+		if err != nil {
+			return nil, fmt.Errorf("there is no initiative at %q, so nothing can be created under it; "+
+				"call get_tree to see what exists", parentRef)
+		}
+		parentID, parentPath = &parent.ID, path
+	}
+
+	in, docPath, err := s.createInitiative(ctx, parentID, slug, name, description, s.mcpActor(), withDesign)
 	if err != nil {
 		return nil, initiativeCreateError(err, slug, parentPath)
 	}
@@ -67,10 +69,38 @@ func (s *Server) mcpCreateInitiative(r *http.Request, args map[string]any) (any,
 	// create path publishes no bus event either, and both surfaces refresh
 	// through the SSE hub, so signal the change presentation-only (FR-5.1).
 	s.notifyEntityChanged("initiative", in.ID)
-	return map[string]any{
-		"path": path, "name": in.Name, "description": in.Description,
+	out := map[string]any{
+		"id": in.PublicID, "path": path, "name": in.Name, "description": in.Description,
 		"url": "/ui/i/" + path,
-	}, nil
+	}
+	s.mcpDesignResult(ctx, out, "initiative", in.ID, docPath)
+	return out, nil
+}
+
+// mcpDesignResult reports the starter design a create made (SPEC-015 FR-6),
+// so the chat agent can tell the person where it is.
+func (s *Server) mcpDesignResult(ctx context.Context, out map[string]any, ownerType string, ownerID uuid.UUID, docPath string) {
+	if docPath == "" {
+		return
+	}
+	d, err := store.LiveDocumentByPath(ctx, s.Store.Pool, docPath)
+	if err != nil {
+		return
+	}
+	out["design_document"] = mcpDocEntry(*d)
+}
+
+// argBoolDefault reads an optional true/false argument.
+func argBoolDefault(args map[string]any, key string, def bool) (bool, error) {
+	v, present := args[key]
+	if !present || v == nil {
+		return def, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return def, fmt.Errorf("%s must be true or false", key)
+	}
+	return b, nil
 }
 
 // initiativeCreateError turns a constraint violation into the plain-language
@@ -105,17 +135,17 @@ func (s *Server) mcpCreateFeature(r *http.Request, args map[string]any) (any, er
 	}
 	description, _ := argString(args, "description")
 
+	withDesign, err := argBoolDefault(args, "design_document", true)
+	if err != nil {
+		return nil, err
+	}
+
 	ctx := r.Context()
-	in, err := s.Store.InitiativeBySlugPath(ctx, strings.Split(initPath, "/"))
+	in, initPath, err := s.initiativeByRef(ctx, initPath)
 	if err != nil {
 		return nil, fmt.Errorf("there is no initiative at %q; call get_tree to see what exists", initPath)
 	}
-	var f *store.Feature
-	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		var e error
-		f, e = store.CreateFeature(ctx, tx, in.ID, slug, name, description, s.mcpActor())
-		return e
-	})
+	f, docPath, err := s.createFeature(ctx, in.ID, slug, name, description, s.mcpActor(), withDesign)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return nil, fmt.Errorf("a feature with the slug %q already exists under %s; "+
@@ -126,10 +156,12 @@ func (s *Server) mcpCreateFeature(r *http.Request, args map[string]any) (any, er
 	s.notifyEntityChanged("feature", f.ID)
 	s.Bus.Publish(bus.FeatureCreated{FeatureID: f.ID})
 	path := initPath + "/" + slug
-	return map[string]any{
-		"path": path, "name": f.Name, "description": f.Description,
+	out := map[string]any{
+		"id": f.PublicID, "path": path, "name": f.Name, "description": f.Description,
 		"state": string(f.State), "url": "/ui/f/" + path,
-	}, nil
+	}
+	s.mcpDesignResult(ctx, out, "feature", f.ID, docPath)
+	return out, nil
 }
 
 // mcpUpdateInitiative and mcpUpdateFeature implement FR-2.3 over the additive
@@ -141,7 +173,7 @@ func (s *Server) mcpUpdateInitiative(r *http.Request, args map[string]any) (any,
 		return nil, errors.New("the path of the initiative to update is required, for example \"auth\"")
 	}
 	ctx := r.Context()
-	in, err := s.Store.InitiativeBySlugPath(ctx, strings.Split(path, "/"))
+	in, path, err := s.initiativeByRef(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("there is no initiative at %q; call get_tree to see what exists", path)
 	}
@@ -160,7 +192,7 @@ func (s *Server) mcpUpdateInitiative(r *http.Request, args map[string]any) (any,
 		return nil, err
 	}
 	return map[string]any{
-		"path": path, "name": updated.Name, "description": updated.Description,
+		"id": updated.PublicID, "path": path, "name": updated.Name, "description": updated.Description,
 		"url": "/ui/i/" + path,
 	}, nil
 }
@@ -171,7 +203,7 @@ func (s *Server) mcpUpdateFeature(r *http.Request, args map[string]any) (any, er
 		return nil, errors.New("the path of the feature to update is required, for example \"auth/login\"")
 	}
 	ctx := r.Context()
-	f, err := s.featureByPath(ctx, path)
+	f, path, err := s.featureByRef(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("there is no feature at %q; call get_tree to see what exists", path)
 	}
@@ -194,7 +226,7 @@ func (s *Server) mcpUpdateFeature(r *http.Request, args map[string]any) (any, er
 		return nil, err
 	}
 	return map[string]any{
-		"path": path, "name": updated.Name, "description": updated.Description,
+		"id": updated.PublicID, "path": path, "name": updated.Name, "description": updated.Description,
 		"state": string(updated.State), "url": "/ui/f/" + path,
 	}, nil
 }
@@ -227,10 +259,51 @@ func (s *Server) mcpAttachDocument(r *http.Request, args map[string]any) (any, e
 		return nil, attachError(err, path)
 	}
 	s.notifyEntityChanged("document", doc.ID)
-	return map[string]any{
-		"id": doc.ID.String(), "path": doc.Path, "title": doc.Title,
-		"type": doc.Type, "state": string(doc.State), "url": "/ui/d/" + doc.Path,
-	}, nil
+	out := mcpDocEntry(*doc)
+	out["note"] = "Attached by its path, with no ID. To give it one, call adopt_document with the same path."
+	return out, nil
+}
+
+// mcpAdoptDocument is adopt_document (SPEC-015 FR-5.7): AdoptDocument, the
+// method the web UI's adopt calls, always as a draft. The chat agent may relay
+// a person's verdict but never give one (DEC-006 Amendment 1, DEC-007), so the
+// tool has no state to ask for (SD-11).
+func (s *Server) mcpAdoptDocument(r *http.Request, args map[string]any) (any, error) {
+	path, ok := argString(args, "path")
+	if !ok {
+		return nil, errors.New("the file's path within the repository is required, for example \"docs/design/login.md\"")
+	}
+	docType, ok := argString(args, "doc_type")
+	if !ok {
+		return nil, errors.New("say what kind of document it is: design, research, note, report, spec, dev_plan, policy or decision")
+	}
+	ownerType, ok := argString(args, "owner_type")
+	if !ok {
+		return nil, errors.New("say what owns the document: \"project\", \"initiative\" or \"feature\"")
+	}
+	ctx := r.Context()
+	ownerPath, _ := argString(args, "owner_path")
+	ownerID, err := s.mcpResolveOwner(ctx, ownerType, ownerPath)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.AdoptDocument(ctx, AdoptRequest{
+		Path: path, DocType: docType, OwnerType: ownerType, OwnerID: ownerID,
+		State: lifecycle.DocDraft, Actor: s.mcpActor(), Via: "mcp",
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := mcpDocEntry(*res.Doc)
+	out["committed"] = res.Committed
+	if !res.Committed {
+		out["note"] = "The document has its ID, but the change to the file couldn't be committed (" +
+			res.CommitError + "). Ask the person to commit it."
+	}
+	if res.MadeMain {
+		out["made_main_document"] = true
+	}
+	return out, nil
 }
 
 // attachError explains the two failures a chat agent actually hits: the file is
@@ -257,7 +330,7 @@ func (s *Server) mcpResolveOwner(ctx context.Context, ownerType, ownerPath strin
 		if ownerPath == "" {
 			return nil, errors.New("owner_path is required when the owner is an initiative")
 		}
-		in, err := s.Store.InitiativeBySlugPath(ctx, strings.Split(ownerPath, "/"))
+		in, _, err := s.initiativeByRef(ctx, ownerPath)
 		if err != nil {
 			return nil, fmt.Errorf("there is no initiative at %q; call get_tree to see what exists", ownerPath)
 		}
@@ -266,7 +339,7 @@ func (s *Server) mcpResolveOwner(ctx context.Context, ownerType, ownerPath strin
 		if ownerPath == "" {
 			return nil, errors.New("owner_path is required when the owner is a feature")
 		}
-		f, err := s.featureByPath(ctx, ownerPath)
+		f, _, err := s.featureByRef(ctx, ownerPath)
 		if err != nil {
 			return nil, fmt.Errorf("there is no feature at %q; call get_tree to see what exists", ownerPath)
 		}
@@ -298,7 +371,7 @@ func (s *Server) mcpGetTree(r *http.Request, _ map[string]any) (any, error) {
 
 func (s *Server) mcpTreeNode(ctx context.Context, in store.Initiative, path string) (map[string]any, error) {
 	node := map[string]any{
-		"path": path, "name": in.Name, "description": in.Description, "archived": in.Archived,
+		"id": in.PublicID, "path": path, "name": in.Name, "description": in.Description, "archived": in.Archived,
 	}
 	feats, err := store.FeaturesForInitiative(ctx, s.Store.Pool, in.ID)
 	if err != nil {
@@ -308,7 +381,7 @@ func (s *Server) mcpTreeNode(ctx context.Context, in store.Initiative, path stri
 		fs := make([]any, 0, len(feats))
 		for _, f := range feats {
 			fs = append(fs, map[string]any{
-				"path": path + "/" + f.Slug, "name": f.Name,
+				"id": f.PublicID, "path": path + "/" + f.Slug, "name": f.Name,
 				"description": f.Description, "state": string(f.State),
 			})
 		}
@@ -339,7 +412,7 @@ func (s *Server) mcpGetInitiative(r *http.Request, args map[string]any) (any, er
 		return nil, errors.New("the path of the initiative is required, for example \"auth\"")
 	}
 	ctx := r.Context()
-	in, err := s.Store.InitiativeBySlugPath(ctx, strings.Split(path, "/"))
+	in, path, err := s.initiativeByRef(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("there is no initiative at %q; call get_tree to see what exists", path)
 	}
@@ -363,7 +436,7 @@ func (s *Server) mcpGetFeature(r *http.Request, args map[string]any) (any, error
 		return nil, errors.New("the path of the feature is required, for example \"auth/login\"")
 	}
 	ctx := r.Context()
-	f, err := s.featureByPath(ctx, path)
+	f, path, err := s.featureByRef(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("there is no feature at %q; call get_tree to see what exists", path)
 	}
@@ -372,7 +445,7 @@ func (s *Server) mcpGetFeature(r *http.Request, args map[string]any) (any, error
 		return nil, err
 	}
 	return map[string]any{
-		"path": path, "name": f.Name, "description": f.Description,
+		"id": f.PublicID, "path": path, "name": f.Name, "description": f.Description,
 		"state": string(f.State), "documents": mcpDocList(docs), "url": "/ui/f/" + path,
 	}, nil
 }
@@ -399,11 +472,23 @@ func (s *Server) mcpListDocuments(r *http.Request, args map[string]any) (any, er
 func mcpDocList(docs []store.Document) []any {
 	out := make([]any, 0, len(docs))
 	for _, d := range docs {
-		out = append(out, map[string]any{
-			"id": d.ID.String(), "path": d.Path, "title": d.Title,
-			"type": d.Type, "state": string(d.State), "is_primary": d.IsPrimary,
-			"url": "/ui/d/" + d.Path,
-		})
+		out = append(out, mcpDocEntry(d))
+	}
+	return out
+}
+
+// mcpDocEntry describes one document. "id" is its ID and "revision" which
+// revision this is (SPEC-015 FR-7.4); a document with no ID has neither, and
+// is known by its path. "row_id" is the database's own key.
+func mcpDocEntry(d store.Document) map[string]any {
+	out := map[string]any{
+		"row_id": d.ID.String(), "path": d.Path, "title": d.Title,
+		"type": d.Type, "state": string(d.State), "is_primary": d.IsPrimary,
+		"url": "/ui/d/" + d.Path,
+	}
+	if d.PublicID != "" {
+		out["id"], out["revision"] = d.PublicID, d.Revision
+		out["url"] = "/ui/id/" + d.PublicID
 	}
 	return out
 }

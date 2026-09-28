@@ -579,7 +579,7 @@ func (s *Server) invalidateSpecForRevision(ctx context.Context, af affectedSpec,
 		if err := store.TransitionDocument(ctx, tx, spec, lifecycle.DocSupersede, "lifecycle-engine", payload); err != nil {
 			return err
 		}
-		to := archiveTarget(spec)
+		to := s.archiveTarget(spec)
 		moves = append(moves, archivedMove{spec.Path, to})
 		if err := store.UpdateDocumentPath(ctx, tx, spec.ID, to); err != nil {
 			return err
@@ -591,7 +591,7 @@ func (s *Server) invalidateSpecForRevision(ctx context.Context, af affectedSpec,
 				map[string]any{"cause": "design-revision", "spec": spec.ID.String()}); err != nil {
 				return err
 			}
-			to := archiveTarget(devPlan)
+			to := s.archiveTarget(devPlan)
 			moves = append(moves, archivedMove{devPlan.Path, to})
 			if err := store.UpdateDocumentPath(ctx, tx, devPlan.ID, to); err != nil {
 				return err
@@ -747,19 +747,28 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 	// MarkRevisionInFlight and approval-time takeover run unchanged. A current
 	// document in any other state means the invariant should never have
 	// dispatched; refuse rather than plant a second live spec.
+	//
+	// The document's ID is Subutai's to write too (SPEC-015 FR-3.5): the
+	// draft being filled keeps the one it has, and a new document takes the
+	// next for its feature and type.
 	path := ""
 	register := true
+	publicID, revision := "", 0
 	if cur, err := store.CurrentDocForOwner(ctx, s.Store.Pool, docType, "feature", f.ID); err == nil {
 		if cur.State != lifecycle.DocDraft {
 			return fmt.Errorf("the feature already has a current %s in %s; nothing to author", docType, cur.State)
 		}
 		path = cur.Path
 		register = false
+		publicID, revision = cur.PublicID, cur.Revision
 	} else if err != store.ErrNotFound {
 		return err
 	}
 	if register {
-		if path, err = s.authoredDocPath(ctx, f, docType); err != nil {
+		if publicID, revision, err = store.NextDocumentIdentity(ctx, s.Store.Pool, "feature", &f.ID, docType); err != nil {
+			return err
+		}
+		if path, err = s.authoredDocPath(ctx, f, docType, publicID); err != nil {
 			return err
 		}
 	}
@@ -771,11 +780,14 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
+	if body, err = stampIdentity(body, publicID, revision); err != nil {
+		return fmt.Errorf("the authored %s: %w", docType, err)
+	}
 	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
 		return err
 	}
 	if register {
-		if _, err := s.RegisterDocForOwner(ctx, path, docType, "feature", &f.ID, actor); err != nil {
+		if _, err := s.registerDocWithIdentity(ctx, path, docType, "feature", &f.ID, actor, publicID, revision); err != nil {
 			return err
 		}
 	}
@@ -788,11 +800,21 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 	return err
 }
 
-// authoredDocPath is where a document of a type lives for a feature. Specs and
-// dev-plans sit beside the design they translate, under a docs/ tree keyed by
-// the initiative path, so a person browsing the repository finds a feature's
-// papers together.
-func (s *Server) authoredDocPath(ctx context.Context, f *store.Feature, docType string) (string, error) {
+// authoredDocPath is where a document of a type lives for a feature.
+//
+// A feature made since migration 0010 keeps its papers in its initiative's
+// folder, named by ID: docs/work/INIT-014-auth/FEAT-023-spec.md (SPEC-015
+// SD-16). One that existed before keeps SPEC-009's scheme, below, so its
+// papers stay together: specs and dev-plans sit beside the design they
+// translate, under a docs/ tree keyed by the initiative path.
+func (s *Server) authoredDocPath(ctx context.Context, f *store.Feature, docType, publicID string) (string, error) {
+	if !f.LegacyDocPaths && publicID != "" {
+		home, err := defaultHome(ctx, s.Store.Pool, f.InitiativeID)
+		if err != nil {
+			return "", err
+		}
+		return s.freePath(filepath.Join(home, publicID)), nil
+	}
 	initPath, err := s.initiativePath(ctx, f.InitiativeID)
 	if err != nil {
 		return "", err
@@ -815,11 +837,17 @@ func (s *Server) authoredDocPath(ctx context.Context, f *store.Feature, docType 
 // way, and a repository that cannot be committed to is a problem for a person,
 // not a reason to lose the work.
 func (s *Server) commitDocument(path, message string) {
+	if err := s.commitPath(path, message); err != nil {
+		s.Log.Warn("could not commit document", "path", path, "err", err)
+	}
+}
+
+// commitPath stages and commits one path with subutai as the author,
+// returning why if it can't.
+func (s *Server) commitPath(path, message string) error {
 	if _, err := gitIn(s.RepoRoot, "add", "--", path); err != nil {
-		s.Log.Warn("could not stage authored document", "path", path, "err", err)
-		return
+		return err
 	}
-	if _, err := gitIn(s.RepoRoot, "commit", "-m", message, "--author", "subutai <subutai@localhost>", "--", path); err != nil {
-		s.Log.Warn("could not commit authored document", "path", path, "err", err)
-	}
+	_, err := gitIn(s.RepoRoot, "commit", "-m", message, "--author", "subutai <subutai@localhost>", "--", path)
+	return err
 }

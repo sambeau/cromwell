@@ -60,29 +60,29 @@ func (s *Server) RegisterDocForOwner(ctx context.Context, path, docType, ownerTy
 	if _, err := config.LoadManifest(s.CompartmentRoot, docType); err != nil && docType == "spec" {
 		return nil, err // a type without a template can still be registered, but spec must have one
 	}
+	doc, err := s.registerDocWithIdentity(ctx, path, docType, ownerType, ownerID, actor, "", 0)
+	if err == nil && docType == "design" {
+		// A design attached over an untouched starter becomes the page's body
+		// (SPEC-015 SD-15).
+		s.giveWayToDesign(ctx, doc, actor)
+	}
+	return doc, err
+}
+
+// registerDocWithIdentity registers a file already on disk. With an ID, the
+// file must already carry it in its front matter; the row records it
+// (SPEC-015 FR-3.3). Attach passes none: an attached file is known by its
+// path until it is adopted (SD-12).
+func (s *Server) registerDocWithIdentity(ctx context.Context, path, docType, ownerType string, ownerID *uuid.UUID, actor, publicID string, revision int) (*store.Document, error) {
 	raw, err := s.readDocFile(path)
 	if err != nil {
 		return nil, err
 	}
-	parsed, perr := content.Parse(string(raw))
-	title := path
-	if perr == nil {
-		if t := parsed.FrontMatterString("title"); t != "" {
-			title = t
-		}
-	}
-
 	var doc *store.Document
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		doc, err = store.RegisterDocument(ctx, tx, docType, ownerType, ownerID, path, title, content.Hash(raw), nil, actor)
-		if err != nil {
-			return err
-		}
-		if perr == nil {
-			return store.ReplaceSections(ctx, tx, doc.ID, content.Hash(raw), parsed.Sections)
-		}
-		return nil
+		doc, err = registerInTx(ctx, tx, path, raw, docType, ownerType, ownerID, nil, publicID, revision, actor)
+		return err
 	})
 	return doc, err
 }
@@ -216,6 +216,23 @@ func (s *Server) ReviseDoc(ctx context.Context, path, actor string) (*store.Docu
 		return nil, err
 	}
 
+	// A successor keeps its predecessor's ID at the next revision, written
+	// into the working copy (SPEC-015 FR-3.4). A document with no ID revises
+	// as it always has.
+	revision := 0
+	if doc.PublicID != "" {
+		maxRev, _, err := store.IdentityUse(ctx, s.Store.Pool, doc.PublicID)
+		if err != nil {
+			return nil, err
+		}
+		revision = maxRev + 1
+		stamped, err := content.SetIdentity(string(raw), doc.PublicID, revision)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", doc.Path, err)
+		}
+		raw = []byte(stamped)
+	}
+
 	ext := filepath.Ext(doc.Path)
 	workingPath := strings.TrimSuffix(doc.Path, ext) + ".rev" + ext
 	if err := os.WriteFile(filepath.Join(s.RepoRoot, workingPath), raw, 0o644); err != nil {
@@ -227,7 +244,14 @@ func (s *Server) ReviseDoc(ctx context.Context, path, actor string) (*store.Docu
 		predecessorID := doc.ID
 		successor, err = store.RegisterDocument(ctx, tx, doc.Type, doc.OwnerType, doc.OwnerID,
 			workingPath, doc.Title, content.Hash(raw), &predecessorID, actor)
-		return err
+		if err != nil || doc.PublicID == "" {
+			return err
+		}
+		if err := store.SetDocumentIdentity(ctx, tx, successor.ID, doc.PublicID, revision); err != nil {
+			return identityClash(err, doc.PublicID, revision)
+		}
+		successor.PublicID, successor.Revision = doc.PublicID, revision
+		return nil
 	})
 	if err != nil {
 		_ = os.Remove(filepath.Join(s.RepoRoot, workingPath))
@@ -246,7 +270,15 @@ func (s *Server) OnPostCommit(ctx context.Context) error {
 		return err
 	}
 	commit, _ := s.git("rev-parse", "HEAD")
-	for _, path := range strings.Split(strings.TrimSpace(out), "\n") {
+	paths := strings.Split(strings.TrimSpace(out), "\n")
+	// Moves first, so a document that moved and changed in one commit is
+	// checked for drift at its new path (SPEC-015 FR-4.2).
+	for _, path := range paths {
+		if path != "" {
+			s.followMovedDocument(ctx, path)
+		}
+	}
+	for _, path := range paths {
 		if path == "" {
 			continue
 		}
@@ -259,6 +291,9 @@ func (s *Server) OnPostCommit(ctx context.Context) error {
 // §8): drift from content_hash is handled exactly like a live commit —
 // covering edits made while the server was down.
 func (s *Server) CatchUpScan(ctx context.Context) error {
+	// Documents whose files moved while the server was down are found by
+	// their IDs first (SPEC-015 FR-4.3).
+	s.findMovedDocuments(ctx)
 	rows, err := s.Store.Pool.Query(ctx,
 		`SELECT path FROM documents WHERE state <> 'superseded'`)
 	if err != nil {
@@ -385,8 +420,8 @@ func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, st
 			// fidelity bar (SPEC-009 FR-8) asks the reviewer to account for
 			// every design decision, and a design attached to the feature
 			// itself — not an ancestor initiative — must reach the prompt too.
-			if own, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "design", "feature", f.ID); err == nil &&
-				own.State == lifecycle.DocApproved && own.ID != doc.ID {
+			if own, err := store.CurrentApprovedDocForOwner(ctx, s.Store.Pool, "design", "feature", f.ID); err == nil &&
+				own.ID != doc.ID {
 				if body, rerr := s.readDocFile(own.Path); rerr == nil {
 					in.AncestorDocs = append(in.AncestorDocs, content.AttachedDoc{
 						Path: own.Path, Title: own.Title, Type: own.Type,

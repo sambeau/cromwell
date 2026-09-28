@@ -423,8 +423,10 @@ on the merged line `0010` runs after it. But the migrator fills gaps, so a
 database that ran this branch first would apply `0010`, then `0009`, and its
 checklists would never get IDs. So the checklist step is a function,
 `ident_attach_checklists()`, that does nothing once done. `0010` calls it, and
-so does every run of the migrator afterwards, which the server makes at boot:
-whichever order the two migrations ran in, checklists end up with IDs.
+so does every later run of the migrator. A database can only receive `0009`
+through a run of the migrator (`serve` doesn't migrate; `init` and the test
+harness do), and that same run gives the checklists their IDs, whichever order
+the two migrations arrived in.
 (Choice 15.) `entity.html` and the MCP
 tool-set test are shared with M5, so changes there stay small: new markup goes
 in its own partial file, `identity.html`, and the test gains one name.
