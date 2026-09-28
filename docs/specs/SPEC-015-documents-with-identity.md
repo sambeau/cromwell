@@ -3,9 +3,10 @@
 **Status:** **Draft — for Sam's approval.** Authored by Claude. The author
 can't be the approval gate, so the decision is Sam's. Sam has said they will
 approve the spec and the build together. An independent review is recorded in
-[REVIEW-015](../reviews/REVIEW-015-documents-with-identity.md), and §7 says
-how each finding was dealt with. Nine choices need Sam's explicit yes (§5,
-DoD 8).
+[REVIEW-015](../reviews/REVIEW-015-documents-with-identity.md). It found eight
+material and fourteen smaller problems in the first draft; all are dealt with
+in this revision, and §7 says how, finding by finding. Fifteen choices need
+Sam's explicit yes (§5, DoD 8).
 **Date:** 2026-09-28
 **Roadmap milestone:** M8 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md)
@@ -39,7 +40,12 @@ Two words are kept apart throughout:
 - **ID** means the minted, human-readable identifier: `INIT-014`, `FEAT-023`,
   `FEAT-023-spec`, `DEC-005`.
 - **row id** means the UUID primary key the database has always had. Row ids
-  don't change, and URLs that use them keep working.
+  don't change.
+
+Pages are addressed as before: initiatives and features by slug path,
+documents by file path, and milestones, roadmaps and tasks by row id. The
+stable link to anything with an ID is `/ui/id/<ID>` (SD-18), and a document's
+old path redirects after a move (FR-4.5).
 
 ## 0. Framing
 
@@ -155,7 +161,9 @@ ID, `-T`, and a two-digit number from the feature's own counter:
 `FEAT-023-T03`. The counter is a new column, `features.task_seq`. `CreateTask`
 increments it and writes the task's ID in the same statement. Abandoned tasks
 keep their numbers, and a re-decomposition continues the count, so a number is
-never given to two different tasks.
+never given to two different tasks. Past 99 the number grows (`FEAT-023-T100`).
+Bumping the counter touches the feature's row, so its `updated_at` moves when
+tasks are created; nothing reads that column for display, and this is accepted.
 
 **SD-5 — Backfill in creation order.** Migration `0010` numbers existing rows
 by `created_at`, then row id. Roadmaps have no `created_at`, so they are
@@ -168,7 +176,10 @@ in the file-name form of the type (`dev_plan` becomes `dev-plan`):
 `FEAT-023-spec`, `INIT-014-design`, `FEAT-023-dev-plan`.
 
 - **A second live document** of the same owner and type takes `-2`, then `-3`:
-  `INIT-014-design-2`.
+  `INIT-014-design-2`. This is for the types where several make sense: design,
+  research, report, note and policy. A feature has one current spec and one
+  current plan, and the code reads "the current spec" as the newest live one,
+  so adopt refuses a second live spec or plan (SD-11). (Choice 11.)
 - **An ID with no live document** is reused by the next document of that owner
   and type, at the next revision. This is the cascade's case: when a design
   revision supersedes an idea feature's spec outright and a fresh one is
@@ -178,6 +189,9 @@ in the file-name form of the type (`dev_plan` becomes `dev-plan`):
 - **A project-level document** uses `PROJECT` as its owner part:
   `PROJECT-design`, `PROJECT-note-2`. The project has no ID of its own, and
   DESIGN-010 doesn't give it one. (Choice 1.)
+- **A shared ID is a line of revisions.** Several rows share an ID only as
+  successive revisions: a successor made by Revise, or a fresh document after
+  every earlier one was superseded. Unrelated documents never share one.
 - **A decision** takes `DEC-nnn` from the decision sequence, with no owner or
   type part, because decisions are cited on their own (DESIGN-010 §7, §11).
   `decision` becomes a document type in migration `0010`. A decision belongs
@@ -189,6 +203,12 @@ attached without adoption, has no ID (SD-12). `(public_id, revision)` is
 unique. The ID is not unique on its own: while a revision is open, the
 approved predecessor and its successor draft share it.
 
+Minting a document ID reads what the owner already has and then inserts, so
+two registrations at once could pick the same ID. Adopt and starter designs
+take a transaction-scoped advisory lock on the owner and type while they
+choose; anywhere else, the unique index refuses the loser with "FEAT-023-spec
+revision 1 is already registered; try again".
+
 **SD-8 — Front matter.** Subutai writes two keys, `id:` and `revision:`, and
 nothing else. It edits the front matter as text, not by re-serialising the
 YAML, so comments, key order, quoting and everything below the front matter
@@ -198,6 +218,17 @@ are kept byte for byte:
 - otherwise the two lines are inserted directly after the opening `---`;
 - a file with no front matter gets a new block of just those two lines, then a
   blank line, then the file as it was. (DEC-001 to DEC-007 have none.)
+
+A file has front matter when it starts, after an optional UTF-8 byte-order
+mark, with a `---` line ending in LF or CRLF, and a later line is exactly
+`---` (a CR before its LF allowed). The first such line closes the block; a
+`---` further down the body is a thematic break, not a fence. Edits keep the
+file's line endings. Only a top-level `id:` or `revision:` line is replaced;
+an indented one belongs to another key and is left alone. A block that opens
+and never closes is refused with a sentence rather than guessed at. These
+rules are the identity editor's own: they recognise CRLF and BOM files that
+`config.SplitFrontMatter` does not, so such a file never gets a second block.
+Its title and sections are indexed as they are today.
 
 **SD-9 — Archives are named by ID.** When a document with an ID is superseded
 from now on, its file is archived as `docs/_superseded/<ID>.r<n>.md`, where
@@ -220,23 +251,44 @@ safe:
 3. **The database is the record.** The front matter is how a moved file is
    found. Editing the `id:` of a file at its registered path changes nothing.
 
-Moves made while the server was down are found by the boot catch-up scan
-(FR-4.3). A document with no `id:` behaves exactly as today: it is known by its
-path, and moving it leaves its row pointing at the old path.
+Only Markdown files a commit touches are read. Moves made while the server was
+down, and moves that arrive without a `post-commit` hook firing (a pull, a
+merge or a rebase), are found by the check in FR-4.3, which runs at boot and on
+every heartbeat. Superseded rows are followed too, so a moved archive stays
+found. A copy is recorded once: by one `document.copy_ignored` audit row for
+that path.
+
+A document with no `id:` behaves exactly as today: it is known by its path,
+and moving it leaves its row pointing at the old path.
 
 **SD-11 — Adopt.** *Adopt* gives a file an ID, a type, a lifecycle state and
 an owner, writes the ID into its front matter, and commits that change with
 the tool's git author. It works on two kinds of file:
 
 - **An unregistered file.** A person chooses its type and owner, and whether
-  it is a `draft` or already `approved`. Adopting a file as approved is that
-  person's approval, recorded as theirs, and it has the same consequences as
-  approving it any other way: a spec adopted as approved can let its feature
-  pass G1. **Over MCP, adopt registers drafts only** (choice 2), because the
-  chat agent may relay a verdict but never give one (DEC-006 Amendment 1,
-  DEC-007).
+  it is a `draft` or already `approved`.
 - **A registered document with no ID.** Adopt gives it an ID and changes
-  nothing else: not its type, owner or state.
+  nothing else: not its type, owner or state. Its revision is 1: an earlier,
+  superseded revision without an ID keeps its old archive name.
+
+**Adopting as approved** records a verdict a person already gave outside
+Subutai, so it is the adopting person's approval and is recorded as theirs,
+as a `document.human_verdict` row like a direct approval's. It is allowed only
+for a **design** and for the types with no template (**decision, research,
+report, note, policy**), and only in the web UI. A spec or a plan is adopted
+as a draft and goes through Submit and review like any other, because
+approving one can release a feature through G1 and its plan is decomposed
+into tasks. (Choice 10.) Nothing is validated on an approved adoption: the
+file is a record of something already decided, and a brownfield design won't
+have the template's headings. Approving a design by adoption has an
+approval's consequences, through the same event: for a sent feature it can
+release spec writing.
+
+**Over MCP, adopt registers drafts only** (choice 2), because the chat agent
+may relay a verdict but never give one (DEC-006 Amendment 1, DEC-007). A
+draft of a type with no template can't be submitted, so the document page
+offers a person **This was already approved** on such a draft (FR-5.8): the
+same act as adopting it as approved, after the fact. (Choice 13.)
 
 Adopt refuses, with a sentence saying why:
 
@@ -245,10 +297,33 @@ Adopt refuses, with a sentence saying why:
 - a document already carrying an ID;
 - a document in `reviewing`, because changing its content would make the
   review in flight stale (SPEC-011 FR-3.5);
-- a document with an open successor, or a successor whose predecessor has no
-  ID, so a revision chain is never split between two IDs;
+- a document while a revision of it is open (it has a live successor, or it is
+  a successor whose predecessor is still live), so the two can't end up with
+  different IDs;
+- a spec or plan draft whose author agent is at work on it, as Submit does
+  (SPEC-011 FR-3.6);
+- a second live spec or plan for a feature (SD-6);
 - a file whose own front matter names an ID that doesn't fit the chosen owner
-  and type, or one already registered elsewhere.
+  and type, or one another document already has (choice 14). The sentence
+  says to correct or remove the file's `id:` line. A project that uses its own
+  `id:` key has to rename it first.
+
+Adopt reads nothing else from the file's front matter: a `state:` or
+`status:` key doesn't choose the lifecycle state. A file with no `title:` is
+titled by its first level-1 heading, then by its path.
+
+**Writing the identity lines is the one change Subutai makes to an approved
+document or an accepted decision.** DESIGN-003 L-2 makes approved documents
+immutable, and DESIGN-010 §11 says an accepted decision is never edited.
+Adoption is the exception DESIGN-010 §7 ("touching only its front matter")
+and research §7 provide for: only Subutai writes the lines, never the caller;
+the stored hash is re-recorded in the same transaction, so no integrity
+checkpoint is raised; the change is audited as `document.adopted`; and it is
+committed on its own. It changes nothing a reader or an agent relies on. A
+feature building against an approved spec is unaffected: its worktrees read
+the spec's content, not its front matter. The chat agent may give an ID to a
+registered approved document, because the act is mechanical, audited and
+changes no verdict. (Choice 12.)
 
 **SD-12 — Attach stays the escape hatch.** Attach registers a file by its path,
 exactly as today. It writes nothing and gives no ID; the document page then
@@ -257,10 +332,16 @@ offers *Give it an ID*, which is adopt. Documents Subutai writes itself
 always get an ID. (Choice 4.)
 
 **SD-13 — Detach takes the ID out of the file.** Detaching a draft that has an
-ID also removes the `id:` and `revision:` lines from its file, and leaves that
-change uncommitted, like the detach itself. Otherwise the file would go on
-claiming an ID that now belongs to nobody, or later to a different document.
-The notice says so. (Choice 5.)
+ID also removes the `id:` and `revision:` lines from its file. Otherwise the
+file would go on claiming an ID that now belongs to nobody, or later to a
+different document. If the file had no other uncommitted changes, Subutai
+commits the removal, so the checkout stays clean; otherwise the removal is
+left uncommitted with the person's own changes. The notice says which. This
+amends SPEC-011 FR-9.3, which left the file untouched. (Choice 5.)
+
+A new document never writes over a detached file: an author then writes beside
+it as `FEAT-023-spec.2.md`, not `FEAT-023-spec-2.md`, because `-2` in a name
+reads as a second document's ID.
 
 **SD-14 — The default home.** Documents Subutai creates for an initiative, or
 for a feature under it, go in one flat folder per initiative:
@@ -281,8 +362,20 @@ ticked by default in the UI and `design_document: false` over MCP.
 
 *Why an opt-out:* G0 lets a feature build from its parent initiative's design.
 A feature meant to do that, or a placeholder feature added to a milestone,
-doesn't need an empty design of its own. An empty draft would also become the
-page's body in place of a design the person is about to attach.
+doesn't need an empty design of its own.
+
+The starter isn't marked as the main document. An **untouched starter** (still
+a draft, and its file unchanged since Subutai wrote it) gives way: when a
+person attaches or adopts another design for the same owner, that design is
+marked as the main document, so the page shows it rather than the empty
+template, and the notice says so. The starter stays attached, for the person
+to detach. (Choice 11.)
+
+A second, empty draft design mustn't hide an approved one from the agents
+either. The reads that put a feature's designs into a spec author's or
+reviewer's prompt take the newest *approved* design, not the newest design
+filtered by state, so they agree with G0, which asks whether any approved
+design exists (REVIEW-015 R15-2).
 
 The HTTP API and the CLI create no document, as before. The CLI is being
 retired (DEC-003), and scripts that call the API and then attach their own
@@ -296,16 +389,19 @@ so its papers stay together. The migration marks the existing features with a
 new column, `features.legacy_doc_paths`. Either way the authored document gets
 an ID in its front matter.
 
-**SD-17 — Showing IDs.** The ID leads wherever the thing is named for a
-person: page titles ("FEAT-023 Login form — Subutai"), the page header,
-breadcrumbs, child lists, document lists, the documents page, the work list,
-and MCP results. It is shown as a small monospace label before the name, so the
-name still reads first to the eye, and the ID is there to cite. A document
-with no ID shows none.
+**SD-17 — Showing IDs.** The ID goes before the name wherever the thing is
+named for a person: page titles ("FEAT-023 Login form — Subutai"), the page
+header, breadcrumbs, child lists, document lists, the documents page, the work
+list, and MCP results. On a page it is a small, muted monospace label, so it
+is there to cite without competing with the name. A document with no ID shows
+none.
 
 **SD-18 — `/ui/id/<ID>`** redirects to the page for that ID. It accepts any
 entity ID, a task ID, a decision number, or a document ID, optionally with a
-revision (`FEAT-023-spec.r1`). Lower-case is accepted. An unknown ID gets the
+revision (`FEAT-023-spec.r1`). Lower-case is accepted there, because the route
+only ever means an ID. A document ID with no revision names its approved
+revision if it has a live one, otherwise its newest live revision, otherwise
+its newest; the open revision is linked from that page, as today. An unknown ID gets the
 not-found page with a sentence naming it. A checklist ID gets the not-found
 page until M5's pages exist on this branch (SD-19).
 
@@ -316,11 +412,20 @@ M5 merges:
 - the milestone and roadmap MCP tools *accept* `MS-` and `RM-` IDs (their
   lookups live in `http_phase3.go`), but their results don't *show* them;
 - the relay tools take a path, as now;
-- checklists get IDs in the database, but no page shows them.
+- checklists get IDs in the database, but no page shows them;
+- the milestone and roadmap lists on project and initiative pages, which
+  `plan.html` renders, show no IDs (the milestone and roadmap *pages* do).
 
 Each is a short follow-up after the merge, listed in the handoff.
 
-**SD-20 — Coordination.** Migration `0010` only. `entity.html` and the MCP
+**SD-20 — Coordination.** Migration `0010` only. M5's `0009` merges first, so
+on the merged line `0010` runs after it. But the migrator fills gaps, so a
+database that ran this branch first would apply `0010`, then `0009`, and its
+checklists would never get IDs. So the checklist step is a function,
+`ident_attach_checklists()`, that does nothing once done. `0010` calls it, and
+so does every run of the migrator afterwards, which the server makes at boot:
+whichever order the two migrations ran in, checklists end up with IDs.
+(Choice 15.) `entity.html` and the MCP
 tool-set test are shared with M5, so changes there stay small: new markup goes
 in its own partial file, `identity.html`, and the test gains one name.
 
@@ -335,8 +440,8 @@ in its own partial file, `identity.html`, and the test gains one name.
   `public_id text NOT NULL UNIQUE DEFAULT mint_ident('<PREFIX>')`.
 - **FR-1.3** `tasks` gains `public_id text UNIQUE`, and `features` gains
   `task_seq integer NOT NULL DEFAULT 0`. `CreateTask` sets the task's ID from
-  its feature's ID and counter in one statement (SD-4). It is `NOT NULL` after
-  the backfill.
+  its feature's ID and counter in one statement (SD-4). `tasks.public_id` is
+  `NOT NULL` after the backfill.
 - **FR-1.4** The store's entity types carry `PublicID`, and every read that
   builds a page or an MCP result selects it.
 - **FR-1.5** `internal/ident` holds the registry, `Format(prefix, n)`, and a
@@ -354,9 +459,11 @@ else; a feature's third task is `FEAT-00n-T03`; the registry test passes.
   sequence continues from the highest number used.
 - **FR-2.2** Existing tasks are numbered per feature, in `created_at`,
   `position`, row-id order, and each feature's `task_seq` is set to its count.
-- **FR-2.3** Checklists: a `DO` block checks `to_regclass('checklists')`. If
-  the table exists, it gains `public_id` with the `CL` default and existing
-  checklists are numbered by row id. If it doesn't, nothing happens.
+- **FR-2.3** Checklists: `ident_attach_checklists()` checks
+  `to_regclass('checklists')`. If the table exists and has no `public_id`, it
+  gains one with the `CL` default and existing checklists are numbered by row
+  id. Otherwise nothing happens. `0010` calls it, and `store.Migrate` calls it
+  after every run (SD-20).
 - **FR-2.4** Existing features get `legacy_doc_paths = true` (SD-16); new ones
   default to `false`.
 - **FR-2.5** Existing documents get no ID. Their files aren't touched (SD-12).
@@ -365,7 +472,8 @@ else; a feature's third task is `FEAT-00n-T03`; the registry test passes.
 *Acceptance:* a test database with rows made before `0010` (applied up to
 `0008`, rows inserted, then `0010` applied) gets IDs in creation order, with
 per-feature task numbers, and the next create continues the sequence. The
-checklist block runs cleanly both with and without the table.
+checklist step runs cleanly without the table; with a table made before
+`0010`; and with one made after it, as when `0009` arrives second.
 
 ### FR-3: Document IDs and revisions
 
@@ -386,6 +494,8 @@ checklist block runs cleanly both with and without the table.
 - **FR-3.6** Archiving follows SD-9 on every path that supersedes a document:
   approval of a successor, the cascade's mechanical path, and a spec revision
   taking its plan with it.
+- **FR-3.7** The prompt reads of a feature's designs take the newest approved
+  design of each owner (SD-15).
 
 *Acceptance:* a feature's spec is `FEAT-00n-spec` revision 1; Revise, submit
 and approve makes the successor revision 2 at the canonical path and archives
@@ -396,62 +506,81 @@ revises and archives exactly as before.
 
 ### FR-4: Identity lives in front matter
 
-- **FR-4.1** On every post-commit notification, for each path the commit
-  touched that exists, Subutai reads the front matter. If it carries an `id:`
+- **FR-4.1** On every post-commit notification, for each Markdown path the
+  commit touched that exists, Subutai reads the front matter. If it carries an `id:`
   and `revision:` that belong to a registered document at another path, it
   applies SD-10: update the path, or record the copy, or leave it.
 - **FR-4.2** A move is recorded as `document.moved` (from, to), and the owner's
   page is told to refresh. The drift check then runs on the new path, so a move
   that also edits an approved document raises the integrity checkpoint, as any
   edit to an approved document does (DESIGN-003 §2). A move alone doesn't.
-- **FR-4.3** The boot catch-up scan first looks for registered documents with
-  an ID whose file is missing, and if there are any, reads the front matter of
-  every tracked Markdown file once to find them.
+- **FR-4.3** At boot and on every heartbeat, Subutai looks for documents with
+  an ID whose file is missing. That is one query and one `stat` per document
+  when nothing is missing. If any are, it reads the front matter of the
+  Markdown files git tracks, as they are in the working tree, once, to find
+  them. A document still missing is looked for again only when `HEAD` has
+  changed, so a deleted file doesn't cost a scan every heartbeat.
 - **FR-4.4** A document with no ID is never matched by content or name. It
   keeps today's path identity (SD-10).
+- **FR-4.5** The document page for a path with no document, where a document
+  moved away from that path, redirects to its new path, so old links survive a
+  move.
+- **FR-4.6** A document page whose file no longer carries its registered ID
+  says so, in a sentence, because its next move won't be followed.
 
 *Acceptance:* `git mv` of a registered draft and commit: same row, new path,
 one `document.moved` row, no second document. The same for a rename in the
-same folder, for an approved document (no integrity checkpoint), and for a
-move made while the server was stopped. A copy leaves the original in place
-and adds nothing. A document without an ID, moved, is not followed.
+same folder, for an approved document (no integrity checkpoint), for a move
+made while the server was stopped, and for one that arrived with no hook
+(found by the heartbeat's check). A copy leaves the original in place and adds
+nothing but one audit row. A document without an ID, moved, is not followed.
+The old path's page redirects.
 
 ### FR-5: Adopt in place
 
 - **FR-5.1** A service method, `AdoptDocument`, used by the UI and by MCP,
   implements SD-11 in one transaction: register or update the row, write the
   front matter, index it, and audit `document.adopted` with the ID, type, owner,
-  state and actor. The file is committed as `subutai: adopt <path> as <ID>`
-  after the transaction commits, so the post-commit hook sees no drift.
+  state and actor. The file is written inside the transaction and put back as
+  it was if the transaction fails. It is committed as
+  `subutai: adopt <path> as <ID>` after the transaction commits, so the
+  post-commit hook sees no drift. If that commit fails, the document keeps its
+  ID and the result says the change is left for the person to commit.
 - **FR-5.2** **Owner and type.** The owner is the page it was adopted from, or
   over MCP an owner path or ID. The type is one of the document types; a
   `decision` must belong to the project or an initiative.
-- **FR-5.3** **State.** `draft` or `approved` in the UI; `draft` only over MCP
-  (SD-11). Adopting as approved stamps `approved_at`, is audited as the
-  person's approval, and has the follow-ups an approval has, through the same
-  event.
+- **FR-5.3** **State.** `draft`, or `approved` for a design or a type with no
+  template, in the UI; `draft` only over MCP (SD-11). Adopting as approved
+  stamps `approved_at`, writes a `document.human_verdict` row, and has the
+  follow-ups an approval has, through the same event.
 - **FR-5.4** **An ID the file already carries** is kept if it is the one this
   owner and type could take (SD-6), and not already registered. For a
   decision, a well-formed `DEC-nnn` is kept, from the front matter or, failing
   that, the start of the file name (`DEC-005-the-orchestration-boundary.md`).
   An `id:` in the front matter that doesn't fit is refused; a file name that
-  doesn't fit is ignored and an ID is minted.
+  doesn't fit is ignored and an ID is minted. The revision is 1, or one more
+  than the kept ID has had; the file's own `revision:` isn't trusted.
 - **FR-5.5** Keeping a `DEC-nnn` moves the decision sequence past it, so the
   next decision minted is higher than any adopted.
 - **FR-5.6** **In the UI:** the project, initiative and feature pages offer
   **Adopt a file…** beside Attach, with the file's path, its type and its
   state. A registered document with no ID offers **Give it an ID** on its page.
 - **FR-5.7** **Over MCP:** `adopt_document(path, doc_type, owner_type,
-  owner)`, returning the ID, revision, path and page URL. Its description says
-  it is how to bring an existing file under Subutai, and that it only
+  owner_path)`, returning the ID, revision, path and page URL. Its description
+  says it is how to bring an existing file under Subutai, and that it only
   registers drafts.
+- **FR-5.8** **This was already approved.** On the document page, a draft of a
+  type with no template that has an ID offers a person this button. It is the
+  approved adoption of SD-11 after the fact: a `document.human_verdict` row,
+  `approved_at`, and the approval event. It is not offered over MCP.
 
 *Acceptance:* adopting a committed Markdown file as a draft design of a
 feature gives `FEAT-00n-design`, one commit by `subutai`, and a diff of
 exactly the front-matter lines. Copies of this repository's DEC-001 to DEC-007
-adopt as `DEC-001` to `DEC-007`, and the next decision is `DEC-008`. Each
-refusal in SD-11 has a test. MCP refuses nothing but drafts, because it has no
-state parameter.
+adopt as `DEC-001` to `DEC-007`, titled by their headings, and the next
+decision is `DEC-008`. A document revised before `0010`, whose predecessor
+has no ID, adopts at revision 1. Each refusal in SD-11 has a test. Over MCP a
+file can only be adopted as a draft, because the tool has no state parameter.
 
 ### FR-6: Creating work creates its documents
 
@@ -459,10 +588,12 @@ state parameter.
   creates its design document in the same transaction as the entity: the path
   is `docs/work/<INIT-ID>-<slug>/<ID>-design.md` (the feature's initiative's
   folder, for a feature); the ID is `<ID>-design`, revision 1.
-- **FR-6.2** The body is the project's `design` template with the title set to
-  the entity's name and `owner:` set to its path; the other placeholders stay
+- **FR-6.2** The body is the project's `design` template, read through the
+  project folder in use (`.subutai/`, or `.cromwell/` under the M7 rules). Its
+  front-matter `title:` and its `{{what is being designed}}` heading are set
+  to the entity's name, and `owner:` to its path; the other placeholders stay
   for the person to fill in. A project with no `design` template gets a
-  minimal file: front matter, a title, and the three required headings.
+  minimal file: front matter, a heading, and the three required headings.
 - **FR-6.3** The file is written, registered and indexed before the
   transaction commits, and committed to git after it, with the tool's author.
   If the transaction fails, the file is removed. If an unregistered file
@@ -470,12 +601,15 @@ state parameter.
 - **FR-6.4** The opt-out (SD-15): a ticked *Start a design document* box in
   both create dialogs; `design_document` (default true) on `create_initiative`
   and `create_feature`.
+- **FR-6.6** Attaching or adopting a design over an untouched starter marks the
+  new design as the main document (SD-15).
 - **FR-6.5** Authored specs and plans follow SD-16.
 
 *Acceptance:* creating an initiative from the project page leaves a committed
 `INIT-00n-design.md` in its folder, attached and marked draft; the notice says
 so. With the box unticked, no file. The MCP tools do the same, and report the
-document's ID and path.
+document's ID and path. Attaching a real design afterwards makes it the page's
+body.
 
 ### FR-7: Showing IDs
 
@@ -491,7 +625,11 @@ document's ID and path.
   `create_initiative.parent_path`, `create_feature.initiative_path`,
   `update_*.path`, `get_*.path`, and the `owner_path` of `attach_document`,
   `list_documents` and `adopt_document`. The milestone and roadmap lookups
-  shared by the API and MCP also take `MS-` and `RM-` IDs (SD-19).
+  shared by the API and MCP also take `MS-` and `RM-` IDs (SD-19). Over MCP an
+  ID is recognised only when written in capitals, as it is shown; slugs are
+  lower-case, so an initiative slugged `init-001` is never mistaken for one.
+  In a document result, `id` is the document's ID and `row_id` the row id that
+  `id` used to carry.
 
 *Acceptance:* render tests find the ID in each title and list; `/ui/id/…`
 redirects for each kind; `get_feature(path: "FEAT-001")` returns the feature.
@@ -532,21 +670,41 @@ redirects for each kind; `get_feature(path: "FEAT-001")` returns the feature.
 6. The roadmap's §11 marks M8 done with a pointer to the handoff, and nothing
    else there changes.
 7. Committed in logical steps to this session's own branch, and pushed.
-8. **Nine choices need Sam's explicit yes.** Each is the recommendation:
+8. **Fifteen choices need Sam's explicit yes.** Each is the recommendation.
+   The first nine were in the first draft; the review asked for the last six
+   to be listed too.
    1. project-level documents are `PROJECT-<type>` (SD-6);
    2. over MCP, adopt registers drafts only (SD-11);
    3. adopt refuses a file with uncommitted changes, so its commit holds only
       Subutai's lines (SD-11);
    4. Attach stays path-only, with *Give it an ID* offered afterwards, and
       documents Subutai writes always get an ID (SD-12);
-   5. Detach removes the ID from the file (SD-13);
-   6. starter designs are on by default, with an opt-out in the UI and over
-      MCP (SD-15);
+   5. Detach removes the ID from the file, committing that when the file was
+      otherwise clean (SD-13);
+   6. starter designs are on by default, for features as well as initiatives,
+      with an opt-out in the UI and over MCP (SD-15). The alternative the
+      review raised is to start a feature's design only when its initiative
+      has no approved one;
    7. the HTTP API and CLI create no starter document (SD-15);
    8. existing features keep SPEC-009's paths for their authored documents;
       new features use the default home (SD-16);
    9. the default folder is derived, not stored, so moving it means new
-      documents start a fresh one (SD-14).
+      documents start a fresh one (SD-14);
+   10. adopting as approved is for designs and the types with no template,
+       in the UI only, and isn't validated; specs and plans are adopted as
+       drafts (SD-11);
+   11. a second live spec or plan is refused; other types may have `-2`; an
+       untouched starter design gives way to a design attached or adopted
+       after it (SD-6, SD-15);
+   12. writing the two identity lines is the one sanctioned change to an
+       approved document or accepted decision, and the chat agent may make it
+       through `adopt_document` (SD-11);
+   13. a person can record an adopted draft of a type with no template as
+       already approved, from its page, not over MCP (SD-11, FR-5.8);
+   14. a file whose front matter names an ID that doesn't fit is refused,
+       rather than having its `id:` replaced (SD-11);
+   15. the checklist step runs on every migration, so `0009` and `0010` can
+       arrive in either order (SD-20).
 
 ## 6. Open questions carried forward
 
@@ -560,7 +718,44 @@ redirects for each kind; `get_feature(path: "FEAT-001")` returns the feature.
   ignored (SD-10, rule 3). A later milestone could show the mismatch on the
   document page.
 - **The M5 follow-ups** of SD-19.
+- **More hooks.** `post-merge` and `post-rewrite` hooks would follow a pulled
+  move at once rather than at the next heartbeat. They change what `init`
+  installs and what `serve` refreshes (the M7 hook rules), so they are left
+  for a milestone that touches those.
+- **Refusing a second spec in Attach.** Adopt refuses a second live spec or
+  plan (SD-6). Attach, which predates this spec, still allows one. It should
+  refuse too; the change is small but alters Attach, so it is left for Sam to
+  ask for.
+- **Relaying "already approved".** If the chat agent should be able to relay a
+  person's "that was already approved" for an adopted draft, it needs a line
+  in DEC-006 Amendment 1's relay list (REVIEW-015 R15-5).
 
 ## 7. Changes after review
 
-*To be completed after REVIEW-015.*
+[REVIEW-015](../reviews/REVIEW-015-documents-with-identity.md) checked the
+first draft (`6e9e092`). Each finding and what changed:
+
+| Finding | What changed |
+|---|---|
+| **R15-1** Adopting as approved skipped every check | Allowed only for designs and untemplated types, in the UI; specs and plans adopt as drafts and go through review. It writes `document.human_verdict`. Not validated, and why (SD-11, FR-5.3, choice 10). |
+| **R15-2** A second live document breaks "current document" reads | `-2` is for design, research, report, note and policy; adopt refuses a second live spec or plan (SD-6). The design prompt reads take the newest approved design (SD-15, FR-3.7). An untouched starter gives way to a later design (SD-15, FR-6.6, choice 11). Attach's own check is an open question (§6). |
+| **R15-3** Identity lines in approved documents | Stated as the one sanctioned change, with the reasons and the mechanism; MCP may make it (SD-11, choice 12). |
+| **R15-4** `0009` after `0010` | The checklist step is an idempotent function called by `0010` and by every migration run (SD-20, FR-2.3, choice 15). |
+| **R15-5** Untemplated drafts can never be approved | *This was already approved* on the document page, for a person (SD-11, FR-5.8, choice 13); a relay is an open question (§6). |
+| **R15-6** Documents revised before M8 could never be adopted | Refused only while a revision is open; a closed chain's head adopts at revision 1 (SD-11). |
+| **R15-7** Moves that arrive by pull or merge | The missing-file check runs on every heartbeat (FR-4.3); more hooks are an open question (§6). |
+| **R15-8** CRLF and BOM files | The editor's recognition rules are stated and tested (SD-8). |
+| R15-9 Minting race | Advisory lock in adopt and starter designs; the refusal sentence elsewhere (SD-7). |
+| R15-10 A foreign `id:` | Refused with a sentence saying what to do (SD-11, choice 14). |
+| R15-11 Adopt's failure paths | File restored if the transaction fails; a failed commit is reported; an author at work refuses; front matter can't choose the state (SD-11, FR-5.1). |
+| R15-12 Detach amends SPEC-011; numbered names | Stated; the removal is committed when the file was clean; numbered files are `.2.md` (SD-13). |
+| R15-13 Document URLs break on a move | The old path redirects (FR-4.5); the note on prose corrected. |
+| R15-14 Scan scope | Markdown only; working tree; re-scan only when `HEAD` moves; archives followed; "once" is an audit row (SD-10, FR-4.1, FR-4.3). |
+| R15-15 `owner` vs `owner_path`; IDs vs slugs | `owner_path`; IDs recognised in capitals over MCP (FR-5.7, FR-7.5). |
+| R15-16 Lists in `plan.html` | Added to SD-19. |
+| R15-17 Starter details | Not primary; both titles; read through the project folder in use (SD-15, FR-6.2). |
+| R15-18 Adopted files titled by path | First level-1 heading (SD-11). |
+| R15-19 Which row a shared ID means | Approved first (SD-18); a shared ID is a line of revisions, and adopt sets the revision (SD-6, FR-5.4). |
+| R15-20 Tasks past 99; `updated_at` | Stated (SD-4). |
+| R15-21 A removed `id:` line | The document page says so (FR-4.6). |
+| R15-22 Prose | Fixed as suggested. |
