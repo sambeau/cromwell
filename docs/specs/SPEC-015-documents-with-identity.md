@@ -1,6 +1,6 @@
 # SPEC-015: Documents with identity
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. The author
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its fifteen choices (DoD 8). It was drafted for Sam's approval as follows. Authored by Claude. The author
 can't be the approval gate, so the decision is Sam's. Sam has said they will
 approve the spec and the build together. An independent review is recorded in
 [REVIEW-015](../reviews/REVIEW-015-documents-with-identity.md). It found eight

@@ -782,7 +782,11 @@ These are small, independent jobs for any idle session:
   secrets included, as accepted. Redaction is the agreed follow-up.
 
 **Approvals, 2026-09-28:** Sam approved SPEC-010, SPEC-011 and SPEC-012 with
-their builds, and accepted every recommended choice in them. Sam then approved
+their builds, and accepted every recommended choice in them.
+Then SPEC-013 (the rename), SPEC-014 (checklists) and SPEC-015 (document
+identity) were approved the same way. SPEC-015's choice 12 lets the identity
+lines be written into an approved document, the one sanctioned exception to
+DESIGN-003 L-2. Sam then approved
 SPEC-013 (M7, the rename) with its build, and accepted its four recommended
 choices.
 
