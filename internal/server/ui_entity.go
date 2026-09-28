@@ -236,7 +236,7 @@ func (s *Server) documentCards(docs []store.Document, primaryID uuid.UUID) []doc
 	for _, d := range docs {
 		out = append(out, docCard{
 			PublicID: d.PublicID, Revision: d.Revision,
-			ID:       d.ID, Title: d.Title, Type: d.Type, State: string(d.State),
+			ID: d.ID, Title: d.Title, Type: d.Type, State: string(d.State),
 			URL: "/ui/d/" + d.Path, IsPrimary: d.ID == primaryID,
 		})
 	}
@@ -263,7 +263,7 @@ func (s *Server) bodyFor(ctx context.Context, ownerType string, ownerID *uuid.UU
 	}
 	return renderMarkdown(body), &docCard{
 		PublicID: doc.PublicID, Revision: doc.Revision,
-		ID:       doc.ID, Title: doc.Title, Type: doc.Type, State: string(doc.State),
+		ID: doc.ID, Title: doc.Title, Type: doc.Type, State: string(doc.State),
 		URL: "/ui/d/" + doc.Path, IsPrimary: true,
 	}, true
 }

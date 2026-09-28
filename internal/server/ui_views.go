@@ -196,8 +196,8 @@ type workView struct {
 type entityWork struct {
 	PublicID string // "INIT-014", "FEAT-023" (SPEC-015 SD-17)
 	Name     string
-	URL  string
-	Size sizing.Rollup
+	URL      string
+	Size     sizing.Rollup
 }
 
 func (s *Server) workView(r *http.Request) (workView, error) {
