@@ -1,0 +1,143 @@
+{{/* Send to development (SPEC-011 FR-4): the feature page's send card, and the
+     send screen. Sending is a web UI act only — this form is the one route
+     that writes the sent mark (DEC-006 decision 2). Everything the screen
+     shows is there so a person can judge *when*, before anything is spent. */}}
+
+{{/* ---------- The rail card on a feature page ---------- */}}
+
+{{define "send-card"}}
+{{with .Send}}{{if .Show}}
+<div class="rail-card">
+  <div class="rail-card-body">
+    {{if .Sent}}
+    <div class="rail-field">
+      <span class="rail-field-label">Sent to development</span>
+      <span class="rail-field-value">By {{.SentBy}}, {{ago .SentAt}} ago.</span>
+      {{if .Hold}}<p class="t-meta">Its specification is held for a person after review.</p>{{end}}
+    </div>
+    {{if .CanWithdraw}}
+    <form method="post" action="/ui/send/withdraw" class="u-mt-2">
+      <input type="hidden" name="id" value="{{$.ID}}">
+      <button class="btn btn--sm btn--block" type="submit">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Withdraw the send</button>
+      <p class="t-meta u-mt-2">Nothing has started yet, so the send can still be taken back.</p>
+    </form>
+    {{end}}
+    {{else if .CanSend}}
+    <p class="t-meta">Nothing runs on this feature until someone sends it. Sending sets the agents writing its specification and plan, which uses agent time and tokens.</p>
+    {{else}}
+    <div class="action">
+      <button class="btn btn--block" type="button" disabled aria-describedby="why-send">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Send to development</button>
+      <p class="action-reason" id="why-send">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg>
+        <span>{{.Reason}}</span></p>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}{{end}}
+{{end}}
+
+{{/* ---------- The send screen ---------- */}}
+
+{{define "page-send"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-run"/></svg></span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Title}}</h1>
+      <div class="page-head-meta"><span class="t-meta">Sending starts agents on this work. Check what will run, and when it will fit, before you commit.</span></div>
+    </div>
+  </div>
+</div>
+
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
+
+<form method="post" action="/ui/send" class="u-mt-4">
+  <input type="hidden" name="owner_kind" value="{{.OwnerKind}}">
+  <input type="hidden" name="owner_id" value="{{.OwnerID}}">
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg> Agent slots</h2>
+    </div>
+    <div class="panel-body">
+      <p id="send-slots">{{.Free}} of {{.Workers}} agent slots are free now ({{.Running}} running). Work that doesn't fit waits in the queue and starts as slots free up.</p>
+      <p class="t-meta u-mt-2" id="send-forecast">
+        {{if .TotalKnown}}Rough forecast for everything that can be sent: about {{tokens .Total}} tokens, from the median of this project's past runs of each step.
+        {{else}}No forecast yet for every step: a step is forecast once this project has run it at least three times.{{end}}
+      </p>
+    </div>
+  </section>
+
+  {{range .Features}}
+  <section class="panel u-mt-4 send-feature">
+    <div class="panel-head">
+      <h2 class="panel-title">
+        <label class="u-row">
+          <input type="checkbox" name="feature" value="{{.ID}}" {{if .CanSend}}checked{{else}}disabled{{end}}>
+          <svg class="icon icon-md icon-entity" data-entity="feature" aria-hidden="true"><use href="#i-feature"/></svg>
+          <a href="{{.URL}}">{{.Name}}</a>
+        </label>
+      </h2>
+    </div>
+    <div class="panel-body">
+      {{if not .CanSend}}
+      <p class="action-reason"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{.Reason}}</span></p>
+      {{else}}
+      {{if .Description}}<p class="t-meta">{{.Description}}</p>{{end}}
+      <p class="u-mt-2"><b>Who reviews the specification:</b> {{.Reviewer}}</p>
+      <table class="table u-mt-2">
+        <thead><tr><th scope="col">Step</th><th scope="col">Who does it</th><th scope="col">Status</th><th scope="col">Forecast</th></tr></thead>
+        <tbody>
+        {{range .Steps}}
+        <tr>
+          <td>{{.Name}}{{if .Note}}<p class="t-meta">{{.Note}}</p>{{end}}</td>
+          <td>{{if .Who}}{{.Who}}{{else}}<span class="t-meta">not assigned</span>{{end}}</td>
+          <td>{{if .Done}}{{.DoneNote}}{{else}}will run{{end}}</td>
+          <td>{{if .Done}}—{{else if .Forecasts}}about {{tokens .Forecast}}{{else if eq .Who "you"}}—{{else}}no forecast yet{{end}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+      {{if .Estimate}}<p class="t-meta u-mt-2">{{.Estimate}} That is what building it will take, which starts only when someone presses Start building.</p>{{end}}
+      {{end}}
+    </div>
+  </section>
+  {{else}}
+  <section class="panel u-mt-4"><div class="panel-body">
+    <p>There is nothing here to send: every feature is being built or is finished.</p>
+  </div></section>
+  {{end}}
+
+  {{if .AnySendable}}
+  <section class="panel u-mt-4">
+    <div class="panel-body">
+      <div class="field">
+        <label class="field-label">
+          <input type="checkbox" name="hold" value="1" {{if .HoldDefault}}checked{{end}} {{if .HoldForced}}disabled{{end}}>
+          Hold each specification for me after its review
+        </label>
+        {{if .HoldForced}}
+        <input type="hidden" name="hold" value="1">
+        <p class="field-hint">Agent review is switched off for this project, so every specification waits for a person. No setting lets a specification through unreviewed.</p>
+        {{else}}
+        <p class="field-hint">Off by default. A held specification waits after the agent's review until you approve it, raise an issue, or let the reviewer decide. The hold is fixed when you send; the project's agent-review setting is read as the work runs.</p>
+        {{end}}
+      </div>
+      <div class="action-row u-mt-4">
+        <a class="btn" href="{{.BackURL}}">Cancel</a>
+        <button class="btn btn--primary" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Send to development</button>
+      </div>
+    </div>
+  </section>
+  {{end}}
+</form>
+{{end}}
+{{template "pagebottom" .}}{{end}}

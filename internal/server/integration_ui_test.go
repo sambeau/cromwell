@@ -119,14 +119,13 @@ func TestUIBrowseAndDrive(t *testing.T) {
 	mustContain(t, "crumb initiative", featPage, `href="/ui/i/auth"`)
 	// FR-8.2: the milestone it is a member of shows as a click-through.
 	mustContain(t, "member of milestone", featPage, "v1")
-	// FR-2.2: the start action is disabled with a plain-words reason (the spec
-	// is not approved, so the feature is still an idea).
-	mustContain(t, "gated start", featPage, "disabled")
-	// The reason names both halves of the contract. Neither is approved in
-	// this fixture, and a reason that named only the spec would leave a
-	// reader with an approved spec stuck (see TestFeatureStartReason...).
-	mustContain(t, "gate reason", featPage, "approved specification")
-	mustContain(t, "gate reason names the dev-plan", featPage, "dev-plan")
+	// FR-2.2, as SPEC-011 FR-4.1 changes it: a feature nobody has sent shows
+	// Send to development, disabled with G0's own sentence (no design is
+	// approved here), rather than a Start building card for a step that
+	// isn't next. featureStartReason is covered by TestFeatureStartReason.
+	mustContain(t, "gated send", featPage, "disabled")
+	mustContain(t, "send reason in G0's words", featPage, "Neither this feature&#39;s design nor its initiative&#39;s design is approved yet")
+	mustNotContain(t, "no start card before a send", featPage, "Start building</button>")
 
 	// FR-3.1: the feature has a spec but no design document, so the body is the
 	// clear empty state that offers to attach one — not a blank panel.

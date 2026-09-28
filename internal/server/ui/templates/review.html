@@ -1,0 +1,185 @@
+{{/* The document page's actions (SPEC-011 FR-5.5, FR-6, FR-9): Submit, Revise
+     and Detach for any document, and for a specification or dev-plan the
+     acts a person has under DEC-006 Amendment 1 — approve directly, send
+     back, raise an issue, ask for an agent review, and let the reviewer decide
+     on a held spec. Each posts to a service method the chat relay tools also
+     call; the page adds no authority of its own. */}}
+
+{{define "doc-actions"}}
+{{$d := .Document}}
+{{with .Actions}}
+
+{{if .Pending}}
+<div class="banner banner--warning u-mt-4" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg>
+  <div>{{.Pending}} <a href="/ui/inbox">Open the Inbox</a>.</div>
+</div>
+{{end}}
+
+{{if .AuthorAtWork}}
+<div class="banner banner--info u-mt-4" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg>
+  <div>Its author is revising this document now. It will be submitted for review when the revision is done.</div>
+</div>
+{{end}}
+
+{{if and .AgentReviewed .Held}}
+<section class="panel u-mt-4" id="held">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-question"/></svg> This specification is waiting for you</h2>
+  </div>
+  <div class="panel-body">
+    {{if .AgentOff}}
+    <p class="t-meta">Agent review is switched off for this project, so every specification waits for a person. Approve it, or raise an issue on it. You can also ask for a one-off agent review.</p>
+    {{else if .HeldByAgent}}
+    <p class="t-meta">The spec reviewer approved it, and it is held for you. Approve it yourself, raise an issue, or let the reviewer decide, and the reviewer's approval stands.</p>
+    {{else}}
+    <p class="t-meta">It is held for you, and no agent reviewer has approved it yet.</p>
+    {{end}}
+    {{if .CanRelease}}
+    <form method="post" action="/ui/document/release" class="u-mt-4">
+      <input type="hidden" name="doc_id" value="{{$d.ID}}">
+      <button class="btn btn--primary" type="submit">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>Let the reviewer decide</button>
+    </form>
+    {{else if and .HeldByAgent .ReleaseWhy}}
+    <p class="action-reason u-mt-2"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{.ReleaseWhy}}</span></p>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+<section class="panel u-mt-4" id="doc-actions">
+  <div class="panel-body">
+    <div class="action-row">
+      {{if .CanSubmit}}
+      <form method="post" action="/ui/document/submit">
+        <input type="hidden" name="doc_id" value="{{$d.ID}}">
+        <button class="btn btn--primary" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>Submit for review</button>
+      </form>
+      {{end}}
+      {{if and .AgentReviewed .CanApprove}}
+      <form method="post" action="/ui/document/approve">
+        <input type="hidden" name="doc_id" value="{{$d.ID}}">
+        <button class="btn" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>Approve it myself</button>
+      </form>
+      <button class="btn" type="button" data-open-dialog="dlg-send-back">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-request-changes"/></svg>Send it back</button>
+      {{end}}
+      {{if .CanRequestReview}}
+      <form method="post" action="/ui/document/request-review">
+        <input type="hidden" name="doc_id" value="{{$d.ID}}">
+        <button class="btn" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-agent"/></svg>Ask for an agent review</button>
+      </form>
+      {{end}}
+      {{if .CanRaiseIssue}}
+      <button class="btn" type="button" data-open-dialog="dlg-issue">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-alert"/></svg>Raise an issue</button>
+      {{end}}
+      {{if .CanRevise}}
+      <form method="post" action="/ui/document/revise">
+        <input type="hidden" name="doc_id" value="{{$d.ID}}">
+        <button class="btn" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Revise</button>
+      </form>
+      {{end}}
+      {{if .SuccessorURL}}
+      <a class="btn" href="{{.SuccessorURL}}">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>Open the revision in progress</a>
+      {{end}}
+      {{if .CanDetach}}
+      <button class="btn btn--danger" type="button" data-open-dialog="dlg-detach">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Detach</button>
+      {{end}}
+    </div>
+    {{if .ReviewRunning}}<p class="t-meta u-mt-2">An agent review of this document is queued or running.</p>{{end}}
+    {{if .IssueWhy}}<p class="t-meta u-mt-2">{{.IssueWhy}}</p>{{end}}
+    {{if .OpenIssueCount}}<p class="t-meta u-mt-2">{{.OpenIssueCount}} issue{{if gt .OpenIssueCount 1}}s{{end}} raised by a person {{if gt .OpenIssueCount 1}}are{{else}}is{{end}} still open. The reviewer can't approve until each is answered.</p>{{end}}
+  </div>
+</section>
+
+{{if .CanRaiseIssue}}
+<dialog class="modal" id="dlg-issue" aria-labelledby="t-issue">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-issue"><svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg> Raise an issue</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/document/issue">
+    <div class="modal-body">
+      <div class="form">
+        <div class="field">
+          <label class="field-label" for="issue-body">What is wrong?</label>
+          <textarea class="textarea" id="issue-body" name="issue" rows="4" required></textarea>
+          <p class="field-hint">An issue must be dealt with: the reviewer can't approve until it has said how it was addressed, or why it doesn't apply. On a feature that has been sent, it goes to the author straight away.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="issue-section">Which section? <span class="opt">optional</span></label>
+          <input class="input" id="issue-section" name="section" type="text">
+        </div>
+      </div>
+      <input type="hidden" name="doc_id" value="{{$d.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Raise the issue</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{if and .AgentReviewed .CanSendBack}}
+<dialog class="modal" id="dlg-send-back" aria-labelledby="t-send-back">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-send-back"><svg class="icon icon-md" aria-hidden="true"><use href="#i-request-changes"/></svg> Send it back</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/document/send-back">
+    <div class="modal-body">
+      <div class="form">
+        <div class="field">
+          <label class="field-label" for="sb-reason">Why is it going back?</label>
+          <textarea class="textarea" id="sb-reason" name="reason" rows="4" required></textarea>
+          <p class="field-hint">Your reason is recorded as an issue, which the reviewer must see answered before it can approve.</p>
+        </div>
+      </div>
+      <input type="hidden" name="doc_id" value="{{$d.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Send it back</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{if .CanDetach}}
+<dialog class="modal" id="dlg-detach" aria-labelledby="t-detach">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-detach"><svg class="icon icon-md" aria-hidden="true"><use href="#i-close"/></svg> Detach this draft</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/document/detach">
+    <div class="modal-body">
+      <p>Detaching removes the document from Cromwell: its registration, its comments and its place on the page. The file stays in the repository, untouched.</p>
+      {{if .OpenIssueCount}}<p class="u-mt-2"><b>It carries {{.OpenIssueCount}} open issue{{if gt .OpenIssueCount 1}}s{{end}}.</b> Their words are kept on the audit trail.</p>{{end}}
+      <div class="field u-mt-4">
+        <label class="field-label"><input type="checkbox" name="confirm" value="1" required> Detach it</label>
+      </div>
+      <input type="hidden" name="doc_id" value="{{$d.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--danger" type="submit">Detach the draft</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{end}}
+{{end}}

@@ -6,6 +6,8 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"testing"
 )
 
 // legacyDesignReviewer turns the test project into one made before SPEC-011:
@@ -32,5 +34,12 @@ func (h *harness) legacyDesignReviewer() {
 	}
 	if err := os.WriteFile(manifest, append([]byte("reviewer_role: design-reviewer\n"), data...), 0o644); err != nil {
 		h.t.Fatal(err)
+	}
+}
+
+func mustNotContain(t *testing.T, what, body, unwanted string) {
+	t.Helper()
+	if strings.Contains(body, unwanted) {
+		t.Errorf("%s: did not expect %q in rendered output", what, unwanted)
 	}
 }

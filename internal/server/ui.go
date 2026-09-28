@@ -623,6 +623,20 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/document/primary", s.handleDocumentPrimary)
 	mux.HandleFunc("POST /ui/document/review", s.handleEntityDocumentReview)
 	mux.HandleFunc("POST /ui/feature/start", s.handleEntityFeatureStart)
+	// Send to development (SPEC-011 FR-4): the send screen, the send itself
+	// — the only route that writes the sent mark — and Withdraw.
+	mux.HandleFunc("GET /ui/send", s.handleUISend)
+	mux.HandleFunc("POST /ui/send", s.handleUISendPost)
+	mux.HandleFunc("POST /ui/send/withdraw", s.handleUISendWithdraw)
+	// The document page's actions (SPEC-011 FR-5.5, FR-6, FR-9).
+	mux.HandleFunc("POST /ui/document/submit", s.handleDocSubmit)
+	mux.HandleFunc("POST /ui/document/revise", s.handleDocRevise)
+	mux.HandleFunc("POST /ui/document/detach", s.handleDocDetach)
+	mux.HandleFunc("POST /ui/document/issue", s.handleDocIssue)
+	mux.HandleFunc("POST /ui/document/approve", s.handleDocApprove)
+	mux.HandleFunc("POST /ui/document/send-back", s.handleDocSendBack)
+	mux.HandleFunc("POST /ui/document/request-review", s.handleDocRequestReview)
+	mux.HandleFunc("POST /ui/document/release", s.handleDocRelease)
 	mux.HandleFunc("POST /ui/feature/abandon", s.handleEntityFeatureAbandon)
 	mux.HandleFunc("POST /ui/feature/new", s.handleEntityFeatureCreate)
 	mux.HandleFunc("POST /ui/initiative/new", s.handleEntityInitiativeCreate)
