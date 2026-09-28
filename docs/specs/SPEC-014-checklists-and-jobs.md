@@ -478,6 +478,13 @@ Two supporting claims:
   exists, or isn't on that checklist, is answered on the checklist's page,
   brought up to date, with: "That job is no longer on this checklist, so
   nothing was changed. The page has been brought up to date."
+- **FR-4.7 The address bar.** Every page body is `hx-boost`ed, so after a
+  form post HTMX shows the post's route (such as `/ui/job/tick`) as the
+  page's address, and an editor that reloads after a change (SPEC-010 FR-6.4)
+  then lands on `/ui`. A page rendered in answer to a boosted post — the
+  checklist page, the milestone page, and the project, initiative and feature
+  pages — sends `HX-Push-Url` with its own address. This was found in the
+  walkthrough and fixes the same path for SPEC-010's milestones and roadmaps.
   *AC for FR-4:* ticking and unticking from the page change the job and write
   `job.ticked` and `job.unticked` rows by the UI actor with `via: ui`; a note
   given with a tick replaces the job's note; ticking a ticked job and
@@ -485,8 +492,9 @@ Two supporting claims:
   ticked each job, and a relayed tick shows the quote; ticking a removed job
   gets the brought-up-to-date sentence; adding the checklist to a milestone
   from its page puts it in the milestone and taking it out records the
-  reason; an unknown id is a 404 (`TestUIChecklists`,
-  `TestChecklistPagesRender`).
+  reason; an unknown id is a 404; a boosted post that creates a checklist
+  or ticks a job answers with `HX-Push-Url` set to the page it rendered
+  (`TestUIChecklists`, `TestChecklistPagesRender`).
 
 ### FR-5: The checklist editor
 
@@ -730,6 +738,7 @@ editing it.
 | FR-5.2 | The explanation beside **Mark as shipped** counts items, and says anything not done yet is recorded as not shipped. |
 | FR-5.3 | The notice after shipping counts items, and says how many are recorded as not shipped. |
 | FR-5.4 | `milestone.unlocked` keeps the snapshot's checklists as `snapshot_checklists`. |
+| FR-6.4 | Closing an editor after a change reloads the page the person was on, because pages rendered for a boosted post send `HX-Push-Url` (FR-4.7). |
 | FR-7.3, FR-7.4 | `add_milestone_member` and `remove_milestone_member` take `member_type` `checklist`. |
 | FR-7.8 | `get_milestone` lists checklist members with their id. |
 | FR-7.9 | The advertised tool set is thirty-three. |

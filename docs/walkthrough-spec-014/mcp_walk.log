@@ -1,0 +1,50 @@
+instructions: Subutai's planning surface. You can create and shape initiatives, features, titles, descriptions and document attachments, and plan with milestones and roadmaps: create them, fill them, order them, and mark a milestone as shipped when the person says it has gone out. You can keep checklists of jobs only a person can do, and put them in milestones. You can also carry a person's decisions on documents — a verdict, an issue, a request for an agent review, or letting the reviewer decide on a held specification — and their word that a job is done (relay_tick_job), always quoting their words; you hold no verdict of your own. You cannot send work to development, start building, override a gate or answer the Inbox — a person does those from the command centre.
+
+33 tools: add_job, add_milestone_member, attach_document, create_checklist, create_feature, create_initiative, create_milestone, create_roadmap, get_checklist, get_feature, get_initiative, get_milestone, get_roadmap, get_tree, list_checklists, list_documents, list_milestones, list_roadmaps, mark_milestone_shipped, move_job, place_roadmap_entry, relay_issue, relay_release_hold, relay_review_request, relay_tick_job, relay_verdict, remove_job, remove_milestone_member, remove_roadmap_entry, rename_job, reopen_milestone, update_feature, update_initiative
+
+→ create_checklist name="Store listing" owner_path="auth" description="What the app store needs before sign-in can ship." jobs=["Write the store description", "Take the screenshots"]
+  1. [ ] Write the store description
+  2. [ ] Take the screenshots
+
+→ add_job checklist="Store listing" title="Choose the age rating" position=2
+  1. [ ] Write the store description
+  2. [ ] Choose the age rating
+  3. [ ] Take the screenshots
+
+→ create_milestone name="Sign-in GA" owner_path="auth"
+
+→ add_milestone_member milestone="Sign-in GA" member_type="feature" member="auth/login"
+
+→ add_milestone_member milestone="Sign-in GA" member_type="checklist" member="Store listing"
+  checklist Store listing was added. Items: 1 of 2 done
+
+→ relay_tick_job checklist="Store listing" job="Write the store description" ticked=true
+  refused: the person's words are required in quote: a relay carries what they said, and without it there is nothing to relay. If they haven't told you to do this, don't
+
+→ relay_tick_job checklist="Store listing" job="Write the store description" ticked=true note="Approved by marketing." quote="The store description is written and marketing signed it off"
+  recorded the person's word: Write the store description is ticked; checklist 1 of 3 ticked
+
+→ relay_tick_job checklist="Store listing" job="Choose the age rating" ticked=true quote="We went with 4+"
+
+→ relay_tick_job checklist="Store listing" job="Choose the age rating" ticked=false quote="Hold on, legal want 12+ because of the chat feature"
+  recorded the person's word: Choose the age rating is unticked
+
+→ relay_tick_job checklist="Store listing" job="Choose the age rating" ticked=true note="12+, on legal's advice." quote="Age rating is done, it's 12+"
+  recorded the person's word: Choose the age rating is ticked
+
+→ rename_job checklist="Store listing" job="Choose the age rating" title="Take the screenshots"
+  refused: that job is ticked, so its title can't change: the tick is for the job as it was. You can still change its note
+
+→ remove_job checklist="Store listing" job="Take the screenshots"
+  refused: removing that job would leave the checklist done without anyone ticking it, so you can't do it from here. If the person has done it, relay that with relay_tick_job and their words. If it isn't needed after all, the person can remove it on the checklist's page
+
+→ get_milestone milestone="Sign-in GA"
+  items: 1 of 2 done
+  - feature Login form: done
+  - checklist Store listing: not done
+  shipping: {"could_mark_shipped_now": true, "how": "Mark it as shipped with mark_milestone_shipped when the person says the release has gone out. It can be undone with reopen_milestone."}
+
+→ get_checklist checklist="Store listing"
+  1. [x] Write the store description — ticked by chat-agent via mcp, quoting “The store description is written and marketing signed it off”
+  2. [x] Choose the age rating — ticked by chat-agent via mcp, quoting “Age rating is done, it's 12+”
+  3. [ ] Take the screenshots

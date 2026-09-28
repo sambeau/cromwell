@@ -1,0 +1,6 @@
+shot ./21-relayed-tick-on-the-page.png
+GA before shipping: 1 of 2 items done | 0 of 0 estimated tokens done (0%)
+shot ./22-ship-with-a-job-open.png
+notice: This milestone is marked as shipped. Its record holds the 2 items it covers, 1 of them done, and later work won't change it. The one not done is recorded as not shipped. You can reopen it if this was a mistake.
+shot ./23-shipped-with-a-job-open.png
+not_shipped: [{"id": "01a0e8ee-5fd6-7ead-b856-badba5e9dd43", "jobs": 3, "name": "Store listing", "type": "checklist", "ticked": 2}]
