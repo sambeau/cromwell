@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -512,7 +513,14 @@ func (s *Server) handleHumanDocumentDecision(w http.ResponseWriter, r *http.Requ
 		}
 		// Approving a design records what we want and starts nothing (DEC-006
 		// decision 1), so the notice says what does start the work.
-		s.renderDocumentPage(w, r, path, "The document was approved. Nothing starts until someone sends its features to development.", "")
+		notice := "The document was approved. Nothing starts until someone sends its features to development."
+		switch doc.Type {
+		case "decision":
+			notice = fmt.Sprintf("%s is accepted. Agents working on its branch of the project are told its ruling from their next dispatch.", doc.PublicID)
+		case "conventions":
+			notice = "The conventions are accepted. Every agent is told them from its next dispatch."
+		}
+		s.renderDocumentPage(w, r, path, notice, "")
 		return
 	}
 	reason := strings.TrimSpace(r.FormValue("reason"))

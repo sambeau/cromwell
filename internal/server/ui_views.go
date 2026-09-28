@@ -128,6 +128,11 @@ func (s *Server) documentView(r *http.Request) (*docPageData, error) {
 
 func (s *Server) documentViewByPath(ctx context.Context, path, notice, errMsg string) (*docPageData, error) {
 	doc, err := store.LiveDocumentByPath(ctx, s.Store.Pool, path)
+	if err == store.ErrNotFound {
+		// A decision superseded by another stays where it is, as a record,
+		// and keeps its page (SPEC-018 SD-6).
+		doc, err = store.SupersededDecisionAtPath(ctx, s.Store.Pool, path)
+	}
 	if err != nil {
 		return nil, err
 	}

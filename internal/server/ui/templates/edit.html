@@ -11,11 +11,13 @@
   <div>
     {{if eq $d.State "superseded"}}
     <b>A superseded document is a record, so it isn't edited.</b>Its file is kept as it was when it was replaced.
+    {{else if and (eq $d.Type "decision") (eq $d.State "approved") (not .Actions.SuccessorURL)}}
+    <b>An accepted decision is never edited.</b>Append a dated amendment, or supersede it with a new decision, with the buttons below.
     {{else}}
     <b>Edit this document here, or in your own editor.</b>It is a plain Markdown file in git either way, and this page follows the file.
     {{end}}
   </div>
-  {{if ne $d.State "superseded"}}
+  {{if and (ne $d.State "superseded") (not (and (eq $d.Type "decision") (eq $d.State "approved") (not .Actions.SuccessorURL)))}}
   <div class="banner-end">
     {{if .Actions.SuccessorURL}}
     <a class="btn btn--sm" href="/ui/edit/{{$d.Path}}">

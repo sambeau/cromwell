@@ -217,3 +217,13 @@ func DocumentStateForUpdate(ctx context.Context, tx pgx.Tx, id uuid.UUID) (strin
 	err := tx.QueryRow(ctx, `SELECT state FROM documents WHERE id = $1 FOR UPDATE`, id).Scan(&st)
 	return st, err
 }
+
+// SupersededDecisionAtPath is a decision superseded by another one that still
+// sits at its own path (SPEC-018 SD-6): a record, which keeps its page.
+func SupersededDecisionAtPath(ctx context.Context, q Querier, path string) (*Document, error) {
+	return scanDoc(q.QueryRow(ctx, `
+		SELECT `+docCols+` FROM documents d
+		WHERE d.path = $1 AND d.type = 'decision' AND d.state = 'superseded'
+		  AND EXISTS (SELECT 1 FROM decision_supersessions x WHERE x.superseded_id = d.id)
+		ORDER BY d.revision DESC LIMIT 1`, path))
+}

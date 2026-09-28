@@ -276,6 +276,14 @@ func TestSupersession(t *testing.T) {
 		t.Errorf("a file named for the superseded ID should be refused: %v", err)
 	}
 
+	// It keeps its page, as a record, and its ID leads there.
+	if code, page := h.getUI("/ui/d/" + a); code != 200 || !strings.Contains(page, "so agents are no longer told it") {
+		t.Errorf("the superseded decision's page: %d", code)
+	}
+	if code, loc := h.redirectOf("/ui/id/DEC-001"); code/100 != 3 || loc != "/ui/d/"+a {
+		t.Errorf("/ui/id/DEC-001 should lead to its page: %d %s", code, loc)
+	}
+
 	// The viewer shows each pointing at the other.
 	_, page := h.getUI("/ui/decisions?state=all")
 	mustContain(t, "DEC-002 supersedes DEC-001", page, `<tr data-decision="DEC-002">`)
@@ -376,6 +384,24 @@ func TestValidationKeepsTheRulingShort(t *testing.T) {
 	// Through the page, the same sentence.
 	_, page := h.postValues("/ui/document/submit", url.Values{"doc_id": {h.docAt(p).ID.String()}})
 	mustContain(t, "the page's refusal", page, "The ruling is 200 words")
+	if strings.Contains(page, "..") {
+		t.Error("the refusal ends its sentences once")
+	}
+	// A decision started from the template is submitted, never recorded as
+	// already approved; an adopted one may be (SD-3).
+	if strings.Contains(page, "This was already approved") {
+		t.Error("a template decision shouldn't offer This was already approved")
+	}
+	h.writeCommitted("docs/decisions/DEC-040-old.md", "# DEC-040: An old ruling\n")
+	if _, err := h.srv.AdoptDocument(ctx, AdoptRequest{Path: "docs/decisions/DEC-040-old.md", DocType: "decision",
+		OwnerType: "project", State: lifecycle.DocDraft, Actor: "sam", Via: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	_, page = h.getUI("/ui/d/docs/decisions/DEC-040-old.md")
+	mustContain(t, "an adopted decision draft", page, "This was already approved")
+	if _, err := h.srv.RecordAlreadyApproved(ctx, h.docAt("docs/decisions/DEC-040-old.md").ID, "sam"); err != nil {
+		t.Errorf("record an adopted decision as accepted: %v", err)
+	}
 
 	q := h.newDecision("Two-line reason", "project")
 	h.fillDecision(q, "Short.", "x")

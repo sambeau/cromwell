@@ -584,7 +584,7 @@ func (s *Server) handleDocSubmit(w http.ResponseWriter, r *http.Request) {
 		var b strings.Builder
 		b.WriteString("The document doesn't pass validation yet, so it stays a draft. ")
 		for _, is := range report.Issues {
-			b.WriteString(is.Detail)
+			b.WriteString(strings.TrimSuffix(is.Detail, "."))
 			b.WriteString(". ")
 		}
 		s.afterDocAct(w, r, doc, "", errors.New(strings.TrimSpace(b.String())))

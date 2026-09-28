@@ -40,6 +40,7 @@
           <select class="select" id="ad-type" name="doc_type">
             <option value="design">Design — the thinking behind this work</option>
             {{if ne .Kind "feature"}}<option value="decision">Decision</option>{{end}}
+            {{if eq .Kind "project"}}<option value="conventions">Project conventions — told to every agent</option>{{end}}
             <option value="research">Research</option>
             <option value="note">Note</option>
             <option value="report">Report</option>
@@ -94,7 +95,11 @@
         <button class="btn" type="submit">
           <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>This was already approved</button>
       </form>
+      {{if eq .Document.Type "decision"}}
+      <p class="t-meta">This decision came into Subutai as a file of its own, without the template's headings, so it can't be submitted as a new decision. If it was accepted before it came in, say so here; it is recorded as your acceptance.</p>
+      {{else}}
       <p class="t-meta">Documents of this kind have no template, so they aren't submitted for review. If this one was approved before it came into Subutai, say so here; it is recorded as your approval.</p>
+      {{end}}
       {{end}}
     </div>
   </div>

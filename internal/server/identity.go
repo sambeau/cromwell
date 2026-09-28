@@ -540,8 +540,23 @@ func (s *Server) RecordAlreadyApproved(ctx context.Context, docID uuid.UUID, act
 
 // canRecordAlreadyApproved is when FR-5.8's button is offered.
 func (s *Server) canRecordAlreadyApproved(d *store.Document) bool {
-	return d.State == lifecycle.DocDraft && d.PublicID != "" && d.SupersedesID == nil &&
-		(!s.hasTemplate(d.Type) || d.Type == "decision")
+	if d.State != lifecycle.DocDraft || d.PublicID == "" || d.SupersedesID != nil {
+		return false
+	}
+	if d.Type == "decision" {
+		// An adopted decision, which won't have the template's headings;
+		// one started from the template is submitted (SPEC-018 SD-3).
+		return s.wasAdopted(d.ID)
+	}
+	return !s.hasTemplate(d.Type)
+}
+
+// wasAdopted reports whether a document came into Subutai by adoption.
+func (s *Server) wasAdopted(docID uuid.UUID) bool {
+	var n int
+	_ = s.Store.Pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events
+		WHERE kind = 'document.adopted' AND ref_type = 'document' AND ref_id = $1`, docID).Scan(&n)
+	return n > 0
 }
 
 // lockIdentity serialises choosing a document ID for one owner and type

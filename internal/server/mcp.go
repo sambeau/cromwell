@@ -169,7 +169,7 @@ func (s *Server) mcpTools() []mcpTool {
 				"decide. A decision file named like DEC-005-….md keeps its number.",
 			Schema: objectSchema(map[string]any{
 				"path":       stringProp("The file's path within the repository, for example \"docs/design/login.md\"."),
-				"doc_type":   stringProp("The kind of document: design, research, note, report, spec, dev_plan, policy or decision."),
+				"doc_type":   stringProp("The kind of document: design, research, note, report, spec, dev_plan, policy, decision or conventions."),
 				"owner_type": stringProp("Which kind of thing owns it: \"project\", \"initiative\" or \"feature\". A decision belongs to the project or an initiative."),
 				"owner_path": stringProp("The path of the owning initiative or feature, or its ID, such as \"FEAT-012\". Omit when the owner is the project."),
 			}, "path", "doc_type", "owner_type"),
