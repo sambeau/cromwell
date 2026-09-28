@@ -191,7 +191,9 @@ func stateLabel(v any) string {
 	case "open":
 		return "Open"
 	case "locked":
-		return "Locked"
+		// A locked milestone is one marked as shipped (SPEC-010 FR-5); the
+		// stored state keeps its old name, people see what it means.
+		return "Shipped"
 	case "queued":
 		return "Queued"
 	case "running":
@@ -367,7 +369,9 @@ func eventLabel(v any) string {
 	case "milestone.created":
 		return "created a milestone"
 	case "milestone.locked":
-		return "locked a milestone"
+		return "marked a milestone as shipped"
+	case "milestone.unlocked":
+		return "reopened a shipped milestone"
 	case "milestone.member_added":
 		return "added something to a milestone"
 	case "milestone.member_removed":
@@ -650,6 +654,7 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/milestone/member/add", s.handleMilestoneMemberAdd)
 	mux.HandleFunc("POST /ui/milestone/member/remove", s.handleMilestoneMemberRemove)
 	mux.HandleFunc("POST /ui/milestone/lock", s.handleMilestoneLock)
+	mux.HandleFunc("POST /ui/milestone/unlock", s.handleMilestoneUnlock)
 	mux.HandleFunc("POST /ui/roadmap/entry/place", s.handleRoadmapEntryPlace)
 	mux.HandleFunc("POST /ui/roadmap/entry/remove", s.handleRoadmapEntryRemove)
 

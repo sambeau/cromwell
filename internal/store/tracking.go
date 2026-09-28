@@ -430,6 +430,49 @@ func LockMilestone(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, actor 
 	return g, nil
 }
 
+// UnlockMilestone reopens a locked (shipped) milestone: it discards the
+// snapshot, makes the membership live again and flips the state back to open,
+// in the caller's transaction (SPEC-010 FR-5.4, Sam 2026-09-28). Locking is a
+// record-keeping act, not part of the development pipeline, so a mistaken lock
+// must be fixable. Nothing is lost: the audit row carries the features the
+// snapshot held and the reason, so the history still shows it shipped and was
+// reopened.
+func UnlockMilestone(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, reason, actor string) error {
+	m, err := GetMilestone(ctx, tx, milestoneID)
+	if err != nil {
+		return err
+	}
+	if m.State != lifecycle.MilestoneLocked {
+		return ErrMilestoneNotLocked
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT leaf_id FROM milestone_snapshots WHERE milestone_id = $1 ORDER BY leaf_id`, milestoneID)
+	if err != nil {
+		return err
+	}
+	leaves, err := scanIDs(rows)
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM milestone_snapshots WHERE milestone_id = $1`, milestoneID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE milestones SET state = 'open', locked_at = NULL WHERE id = $1`, milestoneID); err != nil {
+		return err
+	}
+	snapshot := make([]string, len(leaves))
+	for i, id := range leaves {
+		snapshot[i] = id.String()
+	}
+	return Audit(ctx, tx, actor, "milestone.unlocked", "milestone", &milestoneID,
+		map[string]any{"reason": reason, "locked_at": m.LockedAt, "snapshot": snapshot})
+}
+
+// ErrMilestoneNotLocked is returned when reopening a milestone that is open.
+var ErrMilestoneNotLocked = errors.New("the milestone is not marked as shipped, so there is nothing to reopen")
+
 // --- Roadmaps (FR-6) ---
 
 type Roadmap struct {

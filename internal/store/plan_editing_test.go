@@ -10,8 +10,81 @@ import (
 )
 
 // The store half of SPEC-010: owner-scoped creation, dense roadmap ordering,
-// taking a milestone off a roadmap, the nesting-cycle guard, and the
-// milestone-side picker's candidate read.
+// taking a milestone off a roadmap, the nesting-cycle guard, the
+// milestone-side picker's candidate read, and reopening a shipped milestone.
+
+// TestUnlockMilestone covers FR-5.4: reopening a locked (shipped) milestone
+// discards its snapshot, makes it live and editable again, records the old
+// snapshot and the reason on the audit trail, and lets it be locked again.
+func TestUnlockMilestone(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	_, fA, fB := seedTree(t, s)
+	if _, err := s.Pool.Exec(ctx, `UPDATE features SET state = 'done' WHERE id = $1`, fA); err != nil {
+		t.Fatal(err)
+	}
+	var m uuid.UUID
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		ms, err := CreateMilestone(ctx, tx, "project", nil, "v1", "", nil, "sam")
+		if err != nil {
+			return err
+		}
+		m = ms.ID
+		if err := AddMember(ctx, tx, m, "feature", fA, "sam"); err != nil {
+			return err
+		}
+		_, err = LockMilestone(ctx, tx, m, "sam")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock := func() error {
+		return s.WithTx(ctx, func(tx pgx.Tx) error { return UnlockMilestone(ctx, tx, m, "wrong release", "sam") })
+	}
+	if err := unlock(); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := GetMilestone(ctx, s.Pool, m)
+	if got.State != "open" || got.LockedAt != nil {
+		t.Errorf("after reopening: state %s, locked_at %v", got.State, got.LockedAt)
+	}
+	var snap int
+	_ = s.Pool.QueryRow(ctx, `SELECT count(*) FROM milestone_snapshots WHERE milestone_id = $1`, m).Scan(&snap)
+	if snap != 0 {
+		t.Errorf("snapshot rows = %d, want 0", snap)
+	}
+	var reason, leaf string
+	if err := s.Pool.QueryRow(ctx, `
+		SELECT payload->>'reason', payload->'snapshot'->>0 FROM audit_events
+		WHERE kind = 'milestone.unlocked' AND ref_id = $1`, m).Scan(&reason, &leaf); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "wrong release" || leaf != fA.String() {
+		t.Errorf("audit kept reason %q and leaf %s; want the reason and %s", reason, leaf, fA)
+	}
+	// Live again: it can change, and lock again without a snapshot clash.
+	err = s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := AddMember(ctx, tx, m, "feature", fB, "sam"); err != nil {
+			return err
+		}
+		_, err := LockMilestone(ctx, tx, m, "sam")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("change and lock again: %v", err)
+	}
+	if p, _ := SnapshotProgress(ctx, s.Pool, m); p.Total != 2 {
+		t.Errorf("new snapshot holds %d features, want 2", p.Total)
+	}
+	// Reopening an open milestone is refused.
+	if err := unlock(); err != nil {
+		t.Fatal(err)
+	}
+	if err := unlock(); !errors.Is(err, ErrMilestoneNotLocked) {
+		t.Errorf("reopening an open milestone: %v", err)
+	}
+}
 
 func TestOwnerScopedCreation(t *testing.T) {
 	s := testStore(t)

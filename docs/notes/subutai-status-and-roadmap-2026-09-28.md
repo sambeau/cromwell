@@ -641,7 +641,7 @@ stops. The cascade smoke (§7) runs in the same session.
 
 *Done when:* a person can build a two-milestone roadmap for an initiative
 entirely in the browser, and the chat agent can do the same. **Done:** see the
-[M4 handoff](handoff-M4-2026-09-28.md); SPEC-010 awaits Sam's approval.
+[M4 handoff](handoff-M4-2026-09-28.md); SPEC-010 approved by Sam.
 
 **M5 — Checklists and jobs** · S · needs M4 · lane 2
 *Goal: human chores count towards milestones.*

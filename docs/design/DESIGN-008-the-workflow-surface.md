@@ -301,6 +301,23 @@ also keeps every picker short:
 (All editing is Stage B; in Stage A these are read-only, and the owner column
 simply lets the relationships *display*.)
 
+> **Note, 2026-09-28 (Sam, accepted with
+> [SPEC-010](../specs/SPEC-010-milestones-and-roadmaps-editing.md) SD-6 and
+> SD-10).** The build differs from this section in three ways, all accepted:
+>
+> - **Removal from both ends.** A member can also be taken out of a milestone
+>   from its own page, in its "Add to a milestone…" dialog. The list there is
+>   the milestones it is directly in, which is short, so the reason for
+>   keeping removal on the milestone side doesn't apply.
+> - **Edit from the milestone's and roadmap's own pages**, as well as from the
+>   owner's page, which stays the main place to edit.
+> - **A roadmap may include milestones owned elsewhere.** The reasoning that
+>   frees membership from ownership (D-12) applies to roadmaps too: a team
+>   can show a release it depends on without copying the milestone.
+>
+> Locking a milestone is now called **marking it as shipped**, and it can be
+> undone (SPEC-010 SD-11).
+
 ### 5.1b The display is two lists — the same two lists Markdown has
 
 This is the shape of the original idea and it should stay visible in the build.

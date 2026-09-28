@@ -110,8 +110,7 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"update_feature",
 		"update_initiative",
 		// SPEC-010: milestones and roadmaps, as planning authoring under
-		// DEC-004 (SD-5). Each is named here on purpose; there is no lock tool
-		// (SD-4), and lock_milestone is in the must-not-exist list below.
+		// DEC-004 Amendment 1 (SD-5). Each is named here on purpose.
 		"add_milestone_member",
 		"create_milestone",
 		"create_roadmap",
@@ -122,6 +121,11 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"place_roadmap_entry",
 		"remove_milestone_member",
 		"remove_roadmap_entry",
+		// Marking a milestone as shipped and reopening it: permitted by DEC-004
+		// Amendment 1 because G4 is a record-keeping check, and both can be
+		// undone (SD-4, SD-11). Added deliberately, as DEC-005 asks.
+		"mark_milestone_shipped",
+		"reopen_milestone",
 		// SPEC-011 FR-8: the relay tools of DEC-006 Amendment 1 decision 8,
 		// each carrying a person's quoted decision. Tick-a-job joins with M5.
 		"relay_issue",
@@ -139,9 +143,6 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 	for _, forbidden := range []string{
 		"start_feature", "transition_feature", "override_gate", "spawn_agent",
 		"dispatch_review", "respond_checkpoint", "archive_initiative", "set_estimate",
-		// SPEC-010 SD-4: locking a milestone is a gated, one-way lifecycle act
-		// and stays a person's act in the web UI.
-		"lock_milestone",
 		// SPEC-011 FR-8.3: sending, withdrawing and starting building commit
 		// resources, and checkpoints are answered in the web UI.
 		"send_to_development", "withdraw_send", "start_building", "answer_checkpoint",

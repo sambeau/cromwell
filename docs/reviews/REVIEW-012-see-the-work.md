@@ -2,7 +2,7 @@
 
 **Status:** Complete. The author has dealt with every finding (§6, and
 [SPEC-012 §7](../specs/SPEC-012-see-the-work.md#7-changes-after-review));
-awaiting Sam's decision
+approved by Sam, 2026-09-28 (§5)
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author. Approval is
 Sam's, recorded in §5.
@@ -666,7 +666,7 @@ the spec lists (DoD 6):
 **Recommended for approval once R12-1 to R12-4 are fixed.** The reviewer does
 not approve.
 
-_Decision (Sam): pending._
+_Decision (Sam, 2026-09-28): **approved**, with the build, and with all nine choices in SPEC-012 DoD 6 as recommended, including the four this review raised._
 
 ## 6. Author's response (2026-09-28)
 
