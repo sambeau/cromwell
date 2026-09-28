@@ -1,54 +1,75 @@
 # Subutai: where we are, and the road to done
 
-**Date:** 2026-09-28
+**Date:** 2026-09-28 (revision 2, same day)
 **Author:** Claude, from a review of the repository as it stands at `2ce24b3`
 **For:** Sam, and anyone picking the project back up
 **Status:** Status report and proposed roadmap. The roadmap is a proposal, not a
 decision.
+
+**What changed in revision 2**, after Sam's comments:
+
+- Orchestration now starts **after the design, when a human presses a button**.
+  It no longer starts after a chat-written spec. §6 sets out DEC-006 and
+  DEC-007 in detail.
+- The revision cascade is **kept**. It is explained in plain terms in §7.
+- Milestones, roadmaps and checklists get their own section (§8). They move up
+  the roadmap, to the first build work.
+- Work runs faster, as background cloud sessions, with decisions answered as
+  they arrive (§10).
 
 ---
 
 ## Executive summary
 
 **Subutai is Cromwell, second edition.** It is the planning, workflow and
-orchestration system this repository has been building, with the same engine and
-a clearer workflow, a new name, and a set of new capabilities. It is a revision,
-not a rewrite.
+orchestration system this repository has been building. The engine stays the
+same, and the workflow is clearer, with a new name and some new capabilities.
+It is a revision, not a rewrite.
 
 **The engine is built and it works.** Between 21 July and 1 August the project
-went from nothing to a working system: about 17,000 lines of Go, 155 tests, a
-web command centre, an MCP facet for chat agents, and a pipeline that has taken
-real features from approved documents to merged code against a live AI
-provider. The code builds, `go vet` is clean, and the non-database tests pass
-today.
+went from nothing to a working system:
+
+- about 17,000 lines of Go and 155 tests;
+- a web command centre;
+- an MCP facet for chat agents;
+- a pipeline that has taken real features from approved documents to merged
+  code against a live AI provider.
+
+Today the full test suite, database tests included, passes under the race
+detector in this cloud environment.
 
 **Subutai itself is designed but not decided, and nothing Subutai-specific is
-built.** The Subutai design, [DESIGN-010](../design/DESIGN-010-subutai.md), is
-Draft 1 and unapproved. The two decisions it depends on (DEC-006 and DEC-007)
-are not written. There is no Subutai specification, and none of the design's
-nine headline changes exist in code.
+built.**
+
+- The Subutai design, [DESIGN-010](../design/DESIGN-010-subutai.md), is Draft 1
+  and unapproved.
+- The two decisions it depends on, DEC-006 and DEC-007, are not written.
 
 **The work stopped at a decision point, not a build point.** The last commits
-(31 July to 1 August) are all design and research. The project paused so the
-design could be settled, and it hasn't been settled since. **The bottleneck is
-decisions, not code**, and the plan below is built around that.
+are all design and research. The project paused so the design could be settled,
+and it hasn't been settled since. **The bottleneck is decisions, not code.**
 
-**One thing makes restarting urgent rather than optional.** The most recent
-code puts the start of orchestration at *design approval*. An approved design
-automatically sets agents writing the spec. Subutai moves that point to the
-*spec*: people write the spec in chat, and orchestration starts when they press
-**Submit to development**. So the newest code points the opposite way to the
-design. The longer that stands, the harder the codebase is to reason about.
+**Sam's steer settles the biggest open question, and in the cheapest way.**
+Agents write the spec from an approved design, and a human decides when that
+starts. That keeps almost all of the most recent code, SPEC-009 Stage 1, which
+already writes specs from approved designs. What changes is the trigger. Today
+approving a design sets the agents off automatically. Instead, approval becomes
+a record, and a person presses **Send to development** when time, agents and
+token budget allow.
 
-**The path to done is thirteen small milestones in four phases.** Each one has
-a single goal, a plain test for "done", and is sized to fit a short sprint
-alongside other work. The first two need only Sam's decisions and no code, and
-they unblock almost everything else. A parallel track of small, independent
-jobs is there for spare hours.
+**Milestones, roadmaps and checklists are half built.** The data model and the
+server behind milestones and roadmaps are done and tested. But the web UI can
+only *show* them. Creating, filling, ordering and locking them needs the
+command line or the API. Checklists and jobs aren't built at all. The roadmap
+now puts all of this first, because it needs no decisions and it is what a
+human uses to plan and follow the project.
 
-**The proposed finish line:** DESIGN-010 is approved, every change it lists is
-shipped, and one real Tickly feature has gone through Subutai from idea to
-merged code.
+**The path to done is sixteen small milestones in four phases.** Each has one
+goal and a plain test for "done". The finish line is:
+
+- DESIGN-010 is approved;
+- every change it lists is shipped;
+- one real Tickly feature has gone through Subutai from idea to merged code.
 
 ---
 
@@ -59,12 +80,14 @@ merged code.
 3. [What is built](#3-what-is-built)
 4. [What is not built](#4-what-is-not-built)
 5. [Loose ends from the last push](#5-loose-ends-from-the-last-push)
-6. [Readiness: what can start now, what needs a decision](#6-readiness-what-can-start-now-what-needs-a-decision)
-7. [Honest risks](#7-honest-risks)
-8. [The roadmap](#8-the-roadmap)
-9. [How to keep it moving](#9-how-to-keep-it-moving)
-10. [Decisions waiting on Sam](#10-decisions-waiting-on-sam)
-11. [Sources](#11-sources)
+6. [DEC-006 and DEC-007 in detail](#6-dec-006-and-dec-007-in-detail)
+7. [The cascade smoke, explained](#7-the-cascade-smoke-explained)
+8. [Milestones, roadmaps and checklists](#8-milestones-roadmaps-and-checklists)
+9. [Honest risks](#9-honest-risks)
+10. [How to keep it moving](#10-how-to-keep-it-moving)
+11. [The roadmap](#11-the-roadmap)
+12. [Decisions waiting on Sam](#12-decisions-waiting-on-sam)
+13. [Sources](#13-sources)
 
 ---
 
@@ -72,456 +95,682 @@ merged code.
 
 Subutai is a planning, workflow and orchestration system for small teams
 building large software projects with AI agents. It takes work from a rough idea
-to shipped, verified software, and it keeps an honest record of what happened
-along the way.
+to shipped, verified software, and it keeps an honest record of what happened.
 
-It exists because of a lesson from its predecessor, kanbanzai, which used an AI
-agent as the orchestrator. Under enough load that agent drifted. It did the work
-itself instead of delegating, or delegated and forgot to follow up, and the
-records claimed things were done that weren't. Subutai's founding rule is that
-**the orchestrator is ordinary, deterministic code**. It can't lose track, and
-it can't be talked out of a rule.
+It exists because of a lesson from its predecessor. Kanbanzai used an AI agent
+as its orchestrator, and under enough load that agent drifted. It did the work
+itself instead of delegating, or delegated and then forgot to follow up. The
+records then claimed things were done that weren't. So Subutai's founding rule
+is that **the orchestrator is ordinary, deterministic code**. It can't lose
+track, and it can't be talked out of a rule.
 
 Subutai splits the work into two worlds:
 
 - **Planning is a conversation.** Humans and a strong chat AI (on a
-  subscription plan) work out what to build and write the design and the spec
-  together, at whatever pace the thinking needs.
-- **Development is governed.** Once the spec is handed over, the orchestrator
-  runs a fixed pipeline of API agents: spec review, development planning, plan
-  review, estimation, implementation, code review, and verification against
-  the definition of done.
-
-The **spec is the handover**. Everything before it is flexible, and everything
-after it follows the rules.
+  subscription plan) work out what to build and write the design together.
+- **Development is governed.** When a human sends an approved design to
+  development, the orchestrator runs API agents through a fixed pipeline:
+  - writing the spec, then reviewing it;
+  - development planning, then reviewing the plan;
+  - estimation;
+  - implementation, then code review;
+  - verification against the definition of done.
 
 ## 2. The design in brief
 
-DESIGN-010 describes the target. In summary:
-
-| Area | What the design says |
+| Area | What the design says (with revision 2's steer) |
 |---|---|
-| **Two human gates** | *Submit to development* hands over the spec and starts intake. *Start* begins implementation. Humans are otherwise only interrupted by exceptions (checkpoints). |
-| **Intake** | Validation → spec review (the "border guard") → development plan → plan review → estimation, then stop and wait for *Start*. |
-| **Working ahead in chat** | Intake steps check state instead of always running. A dev-plan written in chat, or a review asked for early, is simply skipped at submit time. |
-| **Executors** | Anyone may *do* a stage (a dispatched agent, the chat AI, or a human) through claim → work → submit. **Nobody may judge their own work**, and verification is always done by the dispatched verifier. |
+| **Two human gates** | **Send to development** starts the agents on an approved design. **Start building** begins implementation once the plan and estimate are ready. Otherwise humans only hear about exceptions, through checkpoints. |
+| **Development planning** | Spec writing → spec review → [optional human spec approval] → dev-plan → plan review → estimate, then stop and wait for *Start building*. |
+| **Working ahead in chat** | The planning steps check what already exists. A spec or plan written in chat is used as it is, and that step is skipped. |
+| **Executors** | Anyone may *do* a stage: a dispatched agent, the chat AI, or a human. **Nobody may judge their own work.** Verification always runs. |
 | **Vocabulary** | Work: Project, Initiative, Feature, Task, Bug, Spike, Job, Checklist. Tracking: Deliverable, Milestone (unordered), Roadmap (ordered milestones). |
-| **Documents** | System-minted IDs (`INIT-014`, `FEAT-023`, `BUG-007`, `DEC-006`), identity in front matter, creating an entity creates its starter document, and a simple Markdown editor in the browser with *Save* and *Save & commit*. |
-| **Observability** | Full transcripts of every agent dispatch, a feature timeline of major moments, review-health numbers, and attribution on everything. |
-| **Bugs** | Feature-shaped, with a human triage step at the front. Agents can file them, and minor review findings become bug reports. |
-| **Spikes** | A question with a token budget. It produces a findings document and has no merge path at all. |
-| **Decisions** | `DEC-nnn` documents, never edited once accepted, and pushed automatically into agents' context. |
-| **Deliberately not** | No AI orchestrator, no self-approval, no skippable verification, no knowledge base, no rich text, no multi-project installs. |
-
-A later research note, [Subutai and GitHub](../research/subutai-and-github.md),
-tested the design against Tickly, the first real project Subutai is meant to
-manage. It proposes seven more changes. The biggest are these:
-
-- **Documents are adopted where they sit.** Identity lives in front matter, and
-  location is free. As drafted, DESIGN-010 §6 would move every existing document.
-- **GitHub keeps the code, and Subutai keeps the intent.** Subutai projects a
-  simple issue for each task and watches for merged pull requests. Nothing is
-  synchronised both ways.
-- **Verification happens at the feature level, after merge.** So it never
-  blocks a developer's pull request.
-
-These changes are not yet folded into DESIGN-010.
+| **Documents** | System-minted IDs (`INIT-014`, `FEAT-023`), identity in front matter, starter documents created with each entity, and a browser editor. |
+| **Observability** | Full agent transcripts, a feature timeline, review-health numbers, and attribution on everything. |
+| **Bugs · Spikes · Decisions** | Bugs are feature-shaped, with human triage. Spikes are budgeted questions with no merge path. Decisions are pushed into agents' prompts. |
+| **GitHub** (later research) | Partition, don't synchronise. Subutai owns intent and GitHub owns code. Documents are adopted where they sit, and verification runs after merge. **This is not yet folded into the design.** |
 
 ## 3. What is built
-
-Everything below is Cromwell as it stands. It all carries over into Subutai.
 
 | Built | Evidence |
 |---|---|
 | Deterministic orchestrator: events, rules engine, dispatcher, heartbeat | `internal/rules`, `internal/dispatch`, `internal/bus` |
-| Document lifecycle with validation, agent reviews, severity-gated review loops, evidence-checked verification | SPEC-001, SPEC-002; commits `a116faa`, `0718edc` |
-| Features, dev-plans, task decomposition, gates G0 to G3 | SPEC-002, SPEC-009; `internal/lifecycle` |
-| Tool host: jailed per-feature worktrees, hash-anchored edits, whitelisted commands, merge to `main` | SPEC-002, DESIGN-006; `internal/toolhost` |
-| Token sizing, estimates with confidence, calibration from actuals | SPEC-003; `internal/sizing` |
-| Milestones (with frozen snapshots) and roadmaps | SPEC-006; migration 0004 |
-| Web command centre (Go templates and htmx): dashboard, inbox, work, documents, initiative, feature, task, milestone and roadmap pages, approve and send-back on documents | SPEC-004, SPEC-006, SPEC-007 |
-| MCP facet with nine planning tools (create and update initiatives and features, attach documents, read the tree). **No approve, submit or start tool, deliberately.** | SPEC-008; `internal/server/mcp.go` |
-| Authoring chain: design approval sets off automatic spec and dev-plan writing, the revision cascade, freshness, and the heartbeat safety net | SPEC-009 Stage 1, code-complete 30 July |
-| Audit log and token and cost ledger, by construction | Phase 1 onward |
-| A research corpus of eleven reference documents | `docs/research/` |
+| Document lifecycle with validation, agent reviews, severity-gated review loops and evidence-checked verification | SPEC-001, SPEC-002 |
+| Features, dev-plans, task decomposition, and gates G0 to G5 | `internal/lifecycle/gates.go` |
+| Tool host: jailed per-feature worktrees, hash-anchored edits, whitelisted commands, merge to `main` | SPEC-002, DESIGN-006 |
+| Token sizing, estimates with confidence, and calibration from actuals | SPEC-003, `internal/sizing` |
+| **Milestones and roadmaps: data, server, API, CLI, and read-only pages** | SPEC-003, SPEC-006; see §8 |
+| Web command centre (Go templates and htmx) | SPEC-004, SPEC-006, SPEC-007 |
+| MCP facet: nine planning tools, and deliberately no approve, submit or start tool | SPEC-008 |
+| **Authoring chain**: agents write and review the spec and dev-plan from an approved design; the revision cascade; the heartbeat safety net | SPEC-009 Stage 1 |
+| Audit log and token ledger, by construction | Phase 1 onward |
 
-**Proven live** against a real provider: the phase 1 and phase 2 loops, the
-planning slice, and SPEC-009's main claim. An approved design produced a spec,
-a reviewed dev-plan and three tasks for 15,976 tokens, then stopped at gate 2
-([walkthrough](../walkthrough-spec-009-stage1.md)).
+**Proven live:**
+- The phase 1 and phase 2 loops.
+- The planning slice.
+- SPEC-009's main claim: an approved design produced a spec, a reviewed
+  dev-plan and three tasks, for 15,976 tokens, then stopped at gate 2
+  ([walkthrough](../walkthrough-spec-009-stage1.md)).
 
-**Health today:** `go build ./...` and `go vet ./...` pass. `go test -short
-./...` passes every package. The 64 Postgres integration tests skip without a
-database and need the local Supabase stack to run.
+**Health today:** `go vet` is clean. `go test -race ./...` passes in full
+against a local PostgreSQL 16 in this cloud container.
 
 ## 4. What is not built
 
-Measured against DESIGN-010 §12, the list of what Subutai changes:
-
-| # | Subutai change | State in code |
-|---|---|---|
-| 1 | The name | **Not started.** The module, binary, `.cromwell/` folder and `CROMWELL_*` variables are all still Cromwell. |
-| 2 | Move the seam to *Submit to development* | **Not started, and the code points the other way.** Design approval triggers spec authoring (`internal/rules/rules.go`, `internal/server/authoring.go`). The `spec-author` role is still in the starter pack. There is no Submit action. |
-| 3 | Spec reviewer as border guard; retire the design reviewer | **Partial.** A spec reviewer exists and already checks fidelity to the design, but it isn't the first step of an intake. The design reviewer is still shipped. |
-| 4 | Executors (claim and submit by chat or human) | **Not started.** Tasks have no executor field, and there is no claim path outside the dispatcher. |
-| 5 | Pre-completion (intake skips finished steps) | **Mostly free.** Gates already read document state, and authoring only runs when a document is missing. It needs the Submit screen to show it. |
-| 6 | Document IDs, front-matter identity, create-with-entity, browser editor | **Not started.** A document's identity is its path. Documents can only be attached, not created. The UI says documents are "written in your own editor". |
-| 7 | Transcripts, timeline, review health, attribution | **Minimal.** Tool calls, tokens, role and model are stored. Full conversations are kept in memory only and then lost. Pages show only the last ten audit events. |
-| 8 | Bugs, spikes and decisions as first-class things | **Not started.** There is a reserved `defect` value and nothing else. |
-| — | Checklists and jobs | **Not started.** Enum values only, marked deferred. |
-| — | GitHub partition, adopt-in-place, importer (from the GitHub research) | **Not started, and not yet in the design.** |
+| Subutai change | State in code |
+|---|---|
+| The name | **Not started.** |
+| A human button that starts development | **Not started.** Today approving a design starts spec writing automatically, if the project has turned authoring on. |
+| Optional human approval of specs | **Not started.** Specs are approved by an agent only. |
+| Milestone and roadmap editing in the UI; checklists and jobs | **Not started.** See §8. |
+| Executors (claim and submit by chat or a human) | **Not started.** |
+| Document IDs, front-matter identity, create-with-entity, browser editor | **Not started.** |
+| Transcripts, timeline, review health | **Minimal.** Tool calls and tokens are stored. Conversations are held in memory and then lost. |
+| Bugs, spikes, decisions as first-class things | **Not started.** |
+| GitHub partition, importer, adopt-in-place | **Not started, and not yet designed.** |
 
 ## 5. Loose ends from the last push
 
-Small items left open when work paused. Each one needs a ruling or a short
-session.
+- **The cascade smoke (SPEC-009 DoD 3) never ran.** Revision 1 of this report
+  said to waive it. **That was wrong under Sam's steer.** Keep it and run it
+  (§7).
+- **The SPEC-007 and SPEC-008 live smokes are waiting on Sam's confirmation.**
+- **Documents are awkward to manage from the UI.**
+  - A mis-attached document can't be detached.
+  - A draft can't be submitted from the document page.
+- **The README is well out of date.** It stops at phase 2 and doesn't mention
+  Subutai.
+- **The smoke project lived in `/tmp`** and needs rebuilding.
+- **The cloud environment has no setup step for Postgres.** It worked by hand
+  today, so a setup script or a SessionStart hook should do it automatically.
+- **The research backlog is still open:**
+  - the implementer's search tool;
+  - role vocabulary;
+  - conventions pushed into prompts;
+  - review metrics;
+  - a token-based runaway cap;
+  - the prompt-cache ordering defect;
+  - estimate ranges.
 
-- **SPEC-009 DoD 3, the revision-cascade smoke, never ran.** It tests
-  re-authoring a spec after a design changes. Under Subutai specs aren't
-  re-authored by agents, so the test as written is moot. **Recommend: waive it
-  formally**, and design the cascade's Subutai form (flag the spec as stale and
-  ask a human) as part of moving the seam.
-- **SPEC-007 and SPEC-008 live smokes are waiting on Sam's confirmation.**
-- **There is no way to detach a document that was attached by mistake.** During
-  the last smoke it had to be removed by hand in the database.
-- **You can't submit a draft document from the web UI.** The last smoke had to
-  use the API directly.
-- **The README is well out of date.** It says phases 1 and 2 are complete and
-  phase 3 is next, but phases 3 and 4 and SPEC-006 to SPEC-009 have shipped
-  since. It doesn't mention Subutai.
-- **The smoke-test project lived in `/tmp`** and is almost certainly gone. The
-  local database setup needs checking on a fresh checkout.
-- **Research backlog, still open** (from the
-  [conformance audit](research-conformance-audit-2026-07-29.md) and the
-  research notes):
-  - The implementer still has no search tool (C-6a).
-  - The surviving roles lack vocabulary and named anti-patterns (C-3/C-4). Only
-    the roles Subutai retires have them.
-  - Project conventions aren't surfaced into prompts (C-6).
-  - There are no review metrics (C-7) and no retrospectives (C-9).
-  - The runaway cap is in dollars on a token system.
-  - A dispatch-prompt ordering defect defeats the prompt cache.
-  - Estimates are single numbers where the research recommends ranges.
+## 6. DEC-006 and DEC-007 in detail
 
-## 6. Readiness: what can start now, what needs a decision
+Both are **proposals for Sam to accept, change or reject**. Each one below is
+written the way the decision record would read.
 
-| Ready to build now (design is clear enough) | Ready for a spec once one ruling is made | Needs design work first |
-|---|---|---|
-| Agent transcripts, and a viewer for them | Moving the seam (needs DEC-006) | Executors and claim/submit (needs DEC-007, which revises DEC-005) |
-| Feature timeline | Document IDs and front-matter identity (needs the ID scheme settled) | GitHub partition: projection, importer, inbound bugs |
-| Review-health metrics | Create-with-entity and adopt-in-place | Spikes (what happens when the budget trips) |
-| Detach, and Submit/Revise on the document page | Browser editor (needs *Save* vs *Save & commit* as the default) | Checklists and jobs (in the vocabulary, but no design section) |
-| Implementer search tool, prompt-cache ordering fix, a token-denominated cap | Decisions as documents with prompt surfacing (needs the size cap) | Per-user identity (see risk 5) |
-| The rename (mechanical, once decided) | Bugs (needs the triage surface chosen) | |
+### DEC-006: Humans decide when development starts
 
-## 7. Honest risks
+**The question.** When does the orchestrator take over, and who says so?
 
-1. **The code and the design disagree about where orchestration starts.** This
-   is the main reason to restart with the seam decision. Until it's made, every
-   change to the authoring chain might be building on something that will be
-   removed.
+**Where this has been.**
+- *SPEC-009 as built:* approving a design sets the agents off at once.
+- *31 July discussion:* the chat AI writes the spec, and orchestration starts
+  when the spec is submitted.
+- *Sam's steer, 28 September:* agents write the spec, and a human starts it.
 
+Sam's steer takes the best of both. The strong design conversation stays in
+chat. Spec writing, which a good design makes mechanical, goes to cheaper API
+agents. And nothing spends agent time or tokens until a person chooses.
+
+**The decision, as proposed:**
+
+1. **Approving a design is a record, not a trigger.** It says "this is what we
+   want". It starts nothing, so it can be done safely in the UI or by telling
+   the chat agent. The chat agent relays it and the audit trail records "via
+   chat".
+
+2. **A human starts development by pressing *Send to development*.**
+   - It appears on a feature whose design is approved. That design can be its
+     own or its parent initiative's.
+   - It also appears on an initiative, to send several of its features at once.
+   - It is a web UI button only. The chat agent has no tool that can press it.
+     This keeps DEC-005's rule that crossing into development is a human act.
+
+3. **The button exists because resources are limited.** Before confirming, the
+   send screen shows:
+   - which features are going;
+   - the roles and models that will run;
+   - a rough token forecast;
+   - how many agent slots are free (the project's worker limit, 4 by default).
+
+   The person can send now, or queue work to start as slots free up.
+
+4. **What runs after the button.**
+   - The agents write the spec.
+   - An agent reviews it against the design.
+   - The agents write the development plan, and an agent reviews it.
+   - The estimator sizes the work.
+   - Everything stops at **Start building**, the second human gate, which is
+     unchanged.
+   - Any step whose document already exists is skipped. So a spec written in
+     chat for a tricky feature is simply used.
+
+5. **Human spec review is optional.**
+   - A project setting decides whether specs also wait for a human to approve
+     them, after the agent review. The proposed default is **off**, because a
+     good design normally makes a tight spec.
+   - The send screen can switch it on for a single feature.
+   - The agent spec review stays on by default. It is cheap (about 2,900
+     tokens in the last live run, against about 4,900 to write the spec). It is
+     also the only check between the design and everything built from it. A
+     project can switch it off if Sam prefers.
+
+6. **When an approved design is revised, the specs written from it are
+   revised too** (the cascade, §7). Features already sent to development are
+   rewritten automatically. Features not yet sent are left alone until
+   someone sends them.
+
+**What this changes in the code.** This is a small change, because most of
+SPEC-009 Stage 1 stays:
+
+- **Kept:**
+  - the spec-writing and plan-writing agents;
+  - the spec-ready gate (G0);
+  - the fidelity check;
+  - the cascade;
+  - the heartbeat safety net.
+- **Changed:**
+  - A feature gains a "sent to development" mark.
+  - The spec-writing rule waits for that mark as well as an approved design.
+  - Approving a design no longer triggers anything on its own.
+  - The heartbeat only fills gaps in features that were sent.
+- **Added:**
+  - the button and its send screen;
+  - the optional human spec approval;
+  - a narrow MCP tool so the chat agent can relay a design approval.
+
+**What it supersedes.** Nothing that was accepted. DESIGN-010 §5 and §12
+(items 2 and 3) are still Draft 1, and they get rewritten to match. The
+discussion response's §2a recommendation (chat writes the spec) is withdrawn.
+
+**Small choices inside it** (defaults proposed; see §12):
+- the button names;
+- the human spec approval default;
+- whether the agent spec review can be switched off;
+- whether cascade rewrites wait for a new send.
+
+### DEC-007: Who does the work is flexible; who judges it is not
+
+**The question.** May the chat AI, or a human, do a stage's work themselves,
+for example implement a tricky task, rather than leaving it to a dispatched
+agent?
+
+**Why it comes up.** When a feature is small but hard, the tempting move is to
+open a chat window and say "just fix it". If that work happens outside Subutai,
+it gets no review, no record and no verification. Giving it a proper lane
+inside the system is safer than a rule people will quietly break.
+
+**The decision, as proposed:**
+
+1. **Every piece of work has an executor**, and the executor is recorded. It
+   can be a dispatched agent (with its role and model), the chat AI, or a
+   human.
+2. **There is only one way in and one way out.**
+   - To take a task, you **claim** it. That gives you the working copy and the
+     contract.
+   - To hand it back, you **submit** it.
+   - The state machine refuses anything out of order, exactly as it does for
+     agents.
+3. **Nobody judges their own work.**
+   - The chat AI never gets a tool that approves, reviews, verifies or
+     overrides anything.
+   - A task done in chat still gets an independent code review by a
+     dispatched agent.
+   - A spec written in chat still gets the agent spec review, or an explicit
+     human verdict.
+4. **Verification always runs, and always by the dispatched verifier.** It
+   checks every acceptance criterion with evidence. No human or AI can skip it
+   or do it in chat.
+5. **Claims expire.** A claimed task with no activity raises a "still working
+   on this?" checkpoint. This is the same safety net agents already have for
+   abandoned work.
+6. **Work outside a claim gets noticed.** A commit that touches an active
+   feature's files without a claimed task raises a checkpoint.
+7. **Chat work is marked as unmeasured.** Subscription tokens are invisible to
+   the ledger, so the estimates must not treat that work as free.
+8. **Pull-request review counts** (from the GitHub research). When a human
+   does a task and a colleague reviews the pull request, that review is the
+   independent one. Subutai records it rather than asking an agent for a second
+   opinion.
+
+**What it supersedes.** DEC-005's first prohibition, which says the chat facet
+may not "implement, review, verify or otherwise perform pipeline work". The
+reasoning: kanbanzai failed because the *state* lived in the same drifting AI
+context as the work, not because an AI did work. In Subutai the state is held by
+code, so the real rule can be enforced directly.
+
+**The honest costs:**
+- **Tool limits can't be enforced on a chat agent.** It has the whole
+  filesystem, where a dispatched agent has only its tools. The skill, the
+  tools' own guidance, the human in the conversation and the unclaimed-commit
+  checkpoint reduce this risk but don't remove it.
+- **A feature done entirely in chat has had one mind through the whole chain.**
+  So reviews should default to a stronger model when the executor was the chat
+  AI.
+- **A human approving a spec they co-wrote is close to self-judging.** It is
+  allowed as a recorded human choice, and the attribution makes it visible.
+
+**How it relates to DEC-006.** They don't overlap. DEC-006 decides *when*
+development starts, and only a human can start it. DEC-007 decides *who may do
+the work* once it has started.
+
+**When it's needed.** Not until the executors milestone (M13). DEC-006 is
+needed first.
+
+## 7. The cascade smoke, explained
+
+**"Smoke" means a live test run.** A smoke is a run on a real project against a
+real AI provider, with a person watching. It's different from the automated
+tests, which use a scripted fake AI. Each Cromwell spec lists the live runs its
+definition of done needs. SPEC-009 needs two:
+
+- **DoD 2, done on 31 July:** approve a design and watch specs, plans and tasks
+  appear.
+- **DoD 3, never run:** the cascade.
+
+**"Cascade" means the revision cascade.** It is what happens when an approved
+design changes *after* agents have already written specs from it. Without it,
+those specs would silently describe the old design.
+
+The cascade works like this:
+
+1. The revised design is approved.
+2. Subutai finds every spec written from it.
+3. **If only one spec is affected**, that spec is retired straight away,
+   together with its development plan. There's nothing to ask about.
+4. **If several are affected**, one inbox question lists them. For each, you
+   answer *keep* (the change doesn't affect it) or *redo*.
+5. Each redone spec is rewritten by the spec agent against the new design. It
+   is reviewed as normal, and a new plan follows. Existing tasks are
+   reconciled, not duplicated.
+6. If a feature is already being built, the existing "revised while in
+   progress" question is asked as well.
+
+**Should we keep it? Yes.** Revision 1 of this report suggested waiving the
+live test, because it assumed specs would be written in chat, where nothing
+would rewrite them. Under Sam's steer, agents write specs from designs, so the
+cascade is exactly what stops a revised design leaving stale specs behind.
+
+- The code is built.
+- The automated test `TestDesignRevisionCascade` passes.
+- Only the live run is missing.
+
+**One small change goes with DEC-006.** Features already sent to development
+are rewritten automatically. Features not yet sent are left until someone sends
+them, so nothing spends tokens without a person's say-so.
+
+**Recommendation:** run the cascade smoke once DEC-006's button is in (M3), so
+it tests the flow as it will ship.
+
+## 8. Milestones, roadmaps and checklists
+
+These are how people plan and follow the project, so they need to be solid
+early.
+
+### What they are
+
+- **A milestone** is an unordered set of things that ship together: features,
+  whole initiatives, other milestones and, later, checklists. Together these
+  are called *deliverables*.
+  - Membership is live. A new feature under an included initiative joins
+    automatically.
+  - While open, a milestone shows progress two ways: *X of Y deliverables
+    done*, and *how much of the estimated token work is done*.
+  - **Locking** freezes it. The system takes a permanent snapshot of what
+    actually shipped. It can only lock once at least one deliverable is done
+    (gate G4), and it can never be unlocked.
+- **A roadmap** is an ordered list of milestones. The order means whatever the
+  planner wants, such as sequence or priority. Each entry shows its milestone's
+  progress.
+- **A checklist** is a list of **jobs**: things a *human* has to do, such as
+  sign up for an account, find an API key or choose an icon. Each job is ticked
+  by hand. A checklist can be a milestone deliverable, so a release can't be
+  called done while the human chores are still open.
+- **Ownership.** Milestones and roadmaps belong to the project or to an
+  initiative, so planning sits at the level it's about. What they *contain* can
+  come from anywhere in the tree.
+
+### What's built today
+
+| Piece | State |
+|---|---|
+| Milestone and roadmap data, including snapshots and owners | **Built** (migrations 0004, 0005) |
+| Server logic: create, add and remove members, lock (G4), order roadmaps | **Built and tested**, all audited |
+| API and command line | **Built.** `cromwell milestone …` and `cromwell roadmap …` |
+| Web pages for a milestone and a roadmap, with two-way progress | **Built, read-only** |
+| Milestones and roadmaps listed on the project and initiative pages | **Built, read-only** |
+| **Creating or editing a milestone or roadmap in the web UI** | **Not built.** It was deliberately left to the workflow surface's "Stage B", which was never specced |
+| **Chat tools for milestones and roadmaps** | **Not built.** The chat project manager can't create or fill them |
+| **Checklists and jobs** | **Not built.** The schema reserves the member type and nothing more |
+| The size roll-up tree and the filterable work list | **Not built.** Also Stage B |
+
+So today a person can *see* milestones and roadmaps in the UI, but has to use
+the command line to create or change one. The command line is itself scheduled
+for retirement (DEC-003). For the part of Subutai that humans plan with, that's
+the most visible gap.
+
+### Where they sit in the plan
+
+Revision 1 of this report put checklists late, bundled with spikes. Revision 2
+moves all of this to the front:
+
+- **M4 — Milestones and roadmaps you can edit.** Create, fill, reorder and
+  lock them from the web UI (from the owner's page, and "add to milestone" from
+  any feature or initiative). Add matching chat tools so the chat project
+  manager can do the same.
+- **M5 — Checklists and jobs.** Human to-do lists that count towards
+  milestones, ticked in the UI or by telling the chat agent. Ticking is
+  recorded as a human act "via chat".
+- **M6 — See the work.** The feature timeline and transcripts, which tell you
+  how each deliverable is actually progressing.
+
+**None of these three need a decision from Sam before starting.** The
+[Stage B entry criteria](spec-007-stage-b-entry-criteria.md) already list what
+has to be settled, and every server method already exists. They can run as
+background sessions while DEC-006 is being decided.
+
+**DESIGN-010 needs one more section** on planning and tracking. Today it only
+lists these terms in its vocabulary table. That section goes into M2.
+
+## 9. Honest risks
+
+1. **The code and the design disagree until DEC-006 is made.** Now that the
+   direction is clear, this is small, but it should be written down before
+   anyone changes the authoring chain.
 2. **The revision could turn into a rewrite.** DESIGN-010 plus the GitHub note
-   come to roughly sixteen changes. The discussion response warned against the
-   pause "growing into a rewrite", and the roadmap guards against it with a
-   clear cut line (§8) and one slice at a time.
+   add up to about sixteen changes. A clear v1 cut line and small milestones
+   guard against this.
+3. **DESIGN-010 needs a Draft 2** that matches DEC-006. It also has to resolve
+   three conflicts with the GitHub research:
+   - per-initiative folders, versus adopting documents where they already sit;
+   - per-task code review, versus human pull-request review;
+   - verification per task, versus after merge.
+4. **Subutai is single-user, but it's for small teams.** Per-user identity
+   isn't designed. It matters before a second person uses it.
+5. **Chat work leaves holes in the token ledger.** Estimation must respect the
+   "unmeasured" mark.
+6. **Parallel background work can collide.** Two sessions touching the same
+   files make merge pain. The plan pairs up only milestones that touch
+   different parts of the code.
 
-3. **DESIGN-010 has a few internal contradictions** that will cause trouble at
-   spec time if they aren't fixed first:
-   - §5 lets you approve a design "by telling the chat agent", but §5b and §11
-     say the chat AI never gets a tool that can approve anything. After the
-     seam moves, approving a design is harmless, so a narrow `approve_design`
-     relay is probably fine. It needs to be said explicitly.
-   - §6 puts documents in per-initiative folders, while the GitHub research
-     says documents must be adopted where they already sit.
-   - §5 has code review on every task, while the GitHub research has human pull
-     request review standing in for it when a human did the work.
-   - Checklists and jobs are in the vocabulary but have no section of their
-     own.
+## 10. How to keep it moving
 
-4. **Knowledge fades over a pause.** Eight weeks have passed. The handoff notes
-   are good, which helps, but the local environment and the smoke project need
-   rebuilding before any live test.
+The project moved fast when it had Sam's attention: fifty commits in twelve
+days. It stopped completely when that attention went elsewhere. Building by
+agents is fast. The scarce resource is Sam's decisions and reviews, so the plan
+keeps those small and puts them first.
 
-5. **Subutai is single-user, but it's for small teams.** DESIGN-010 assumes
-   "you as the author" on commits and a human verdict recorded as such. The
-   system has one operator identity. Per-user identity hasn't been designed,
-   and it matters before a second person uses it.
+**Work in the background, in the cloud.**
 
-6. **Chat-executed work leaves holes in the token ledger.** The design accepts
-   this and marks such work as unmeasured. Estimation needs to respect that
-   flag, or its calibration will slowly get worse.
+- **Each build milestone runs as its own cloud session.** It writes the spec,
+  builds, runs the full test suite, and opens a pull request. The full suite,
+  database tests included, ran green in this cloud container today.
+- **Add a setup step so every session starts Postgres automatically**, before
+  handing work off to background sessions.
+- **Run two lanes at once when they touch different code.** One lane is
+  decisions and the authoring chain. The other is planning surfaces and
+  observability.
 
-## 8. The roadmap
+**Keep Sam's part quick and asynchronous.**
 
-### How it's shaped
+- **Decisions arrive as short, answerable questions**, each with a
+  recommendation. Answer when they arrive; there's no need to wait for a weekly
+  slot.
+- **Each milestone ends in one pull request and one handoff note.** Reviewing a
+  milestone means reading the note, trying the feature, and merging.
+- **Live smokes are the only thing that needs Sam present.** Batch them, one
+  session per few milestones.
 
-- **Thirteen milestones in four phases.** Each has one goal, a plain test for
-  "done", and what it depends on.
-- **Sizes are in sprints.** A sprint here means one short, focused block of
-  work, roughly one to three AI-assisted build sessions plus Sam's review. That
-  is **S** (one sprint), **M** (two) or **L** (three, and split before starting).
-  Past pace suggests this is realistic: SPEC-009 Stage 1 was built in about two
-  days.
-- **Decision milestones cost Sam's reading time, not build time.** They are
-  the cheapest milestones and they unblock the most.
-- **Spec before code, every time.** Each build milestone starts with a short
-  spec and its consistency review, as the project already does.
-- **Phase C and phase D can be reordered** once phase B is done. Phase A must
-  come first.
+**Protect the shape.**
+
+- New ideas go "after v1" unless they block the Tickly pilot.
+- Tick milestones off in this document as they finish.
+
+**What that means for speed.** Revision 1 assumed about one sprint a
+fortnight. With background sessions and prompt answers, a small milestone can
+realistically turn around in a few days, and two lanes can run at once. Here
+are the scenarios:
+
+| Pace | "Subutai usable" (end of phase B) | Subutai v1 (Tickly pilot) |
+|---|---|---|
+| Decisions within a day or two, two lanes | about 2 months | about 4 months |
+| Decisions weekly, one lane | about 4 months | about 7 months |
+| Revision 1's pace (one sprint a fortnight) | about 8 months | about 13 months |
+
+These are estimates, not promises. Sam's review time sets the pace far more
+than build time does.
+
+## 11. The roadmap
+
+**Sixteen milestones in four phases.** Sizes are in sprints:
+
+- **S** is one sprint;
+- **M** is two sprints;
+- **L** is three or more, and is split before starting.
+
+A sprint is a short focused block: one to three background build sessions, plus
+Sam's review. **Lane** says which of the two parallel lanes a milestone belongs
+to.
 
 ### Phase A: restart and decide
 
-**M0 — Restart** · S · no dependencies
+**M0 — Restart** · S
 *Goal: make the project safe to pick up again.*
-- Confirm the full test suite (with the database) is green on a fresh checkout,
-  and rebuild the smoke project.
-- Close the SPEC-007 and SPEC-008 smokes, and formally waive SPEC-009 DoD 3
-  (§5).
-- Update the README status and link this report.
+- Add a cloud setup step that starts Postgres. The suite already passes by
+  hand.
+- Rebuild the smoke project.
+- Close the SPEC-007 and SPEC-008 smokes.
+- Update the README.
 
-*Done when:* `go test -race ./...` is green against the local database, the
-README is honest, and the open smokes are closed.
+*Done when:* a fresh cloud session can run the full suite unaided, and the
+README is honest.
 
-**M1 — Decide the seam (DEC-006)** · S · decision only
-*Goal: settle where orchestration starts.*
-- Write and accept DEC-006:
-  - Orchestration begins at *Submit to development*.
-  - Specs are written in chat.
-  - Spec review is the first step of intake.
-  - Design approval is a record, not a trigger, and may be relayed from chat.
-- Rule on DESIGN-010's §5/§5b contradiction as part of this.
+**M1 — Decide DEC-006** · S · decision
+*Goal: settle when development starts, and who starts it.*
+- Accept, change or reject §6's DEC-006, including its small choices.
 
-*Done when:* DEC-006 is accepted. This single decision unblocks M3, M4 and M8.
+*Done when:* DEC-006 is accepted. This unblocks M3.
 
-**M2 — Finish the design (DESIGN-010 draft 2, DEC-007)** · M · decisions only
-*Goal: an approved Subutai design with a clear cut line.*
-- Fold in the GitHub research: adopt-in-place, feature-level verification after
-  merge, and the optional forge projection.
-- Fix the contradictions in §7.
-- Answer the §13 open questions. Each already has a recommended default in the
-  discussion response.
-- Mark what is v1 and what comes later.
-- Write DEC-007 (the judgement boundary: *who does the work is flexible; who
-  judges it is not*). It partly supersedes DEC-005.
+**M2 — Design Draft 2, approved** · M · decision
+*Goal: an approved Subutai design with a clear v1 cut line.*
+- Rewrite DESIGN-010 §5 and §12 to match DEC-006.
+- Add a planning-and-tracking section.
+- Fold in the GitHub research.
+- Answer the §13 open questions.
+- Write DEC-007.
 
 *Done when:* DESIGN-010 is approved and DEC-007 is accepted.
 
 ### Phase B: the Subutai core
 
-**M3 — Move the seam** · M · needs M1
-*Goal: orchestration starts when a human submits the spec.*
-- Retire the design-approval trigger, the `spec-author` role, orchestrated
-  `write-spec`, and the design reviewer.
-- Add **Submit to development** (web UI first).
-- Intake runs validation, spec review, dev-plan, plan review and estimation,
-  then stops at gate 2.
-- Add document-page Submit, Revise and Detach.
-- Rework the revision cascade to flag a stale spec rather than rewrite it.
+**M3 — Send to development** · M · needs M1 · lane 1
+*Goal: a human decides when agents start work on a design.*
+- Approving a design no longer triggers anything.
+- Add the *Send to development* button on features and initiatives, with the
+  send screen: features, models, token forecast and free slots.
+- Spec writing waits for the button.
+- Add optional human spec approval.
+- Add a chat relay for design approval.
+- Add Submit, Revise and Detach on the document page.
 
-*Done when:* a live smoke shows that submitting a spec produces a reviewed plan,
-tasks and an estimate, then stops and waits for *Start*.
+*Done when:* a live run shows that approving a design starts nothing, and that
+pressing *Send* produces a reviewed spec, plan, tasks and an estimate, then
+stops. The cascade smoke (§7) runs in the same session.
 
-**M4 — Rename to Subutai** · S · needs M1
-*Goal: one name everywhere, changed once.*
-- Change the module, binary, config folder (reading the old `.cromwell/` for
-  one release), environment variables and UI copy, in one deliberate commit.
+**M4 — Milestones and roadmaps you can edit** · M · no dependencies · lane 2
+*Goal: plan the project from the web UI and from chat.*
+- Create a milestone or roadmap from a project or initiative page.
+- Add and remove members from either end.
+- Reorder roadmap entries.
+- Lock a milestone, showing why when G4 refuses.
+- Add chat tools for the same actions.
 
-*Done when:* `subutai init` and `subutai serve` work, and the suite is green.
+*Done when:* a person can build a two-milestone roadmap for an initiative
+entirely in the browser, and the chat agent can do the same.
 
-**M5 — See the work** · M · no dependencies (can start now)
+**M5 — Checklists and jobs** · S · needs M4 · lane 2
+*Goal: human chores count towards milestones.*
+- Add checklists and jobs with a table and pages.
+- Tick jobs in the UI, or relay them from chat, with the tick audited.
+- A checklist can be a milestone deliverable.
+- Progress and the lock gate count jobs.
+
+*Done when:* a milestone won't show as done, and won't lock as complete, while
+one of its jobs is unticked.
+
+**M6 — See the work** · M · no dependencies · lane 2
 *Goal: answer "how is it going?" and "what exactly happened?".*
-- Store every dispatch's full transcript and add a viewer.
-- Add a per-feature timeline of major moments, linking down to transcripts.
-- Add review-health numbers per reviewer (C-7).
-- Split into M5a (transcripts), M5b (timeline) and M5c (metrics) if time is
-  short.
+- Store and show a full transcript for every agent dispatch.
+- Add a per-feature timeline of major moments.
+- Add review-health numbers.
 
-*Done when:* for any feature, you can see its journey in one line of major
-moments, and click through to what each agent was told, did and concluded.
+*Done when:* from a feature's timeline you can click through to what any agent
+was told, did and concluded.
 
-**M6 — Documents with identity** · M · needs M2
-*Goal: every document has a system ID, and creating work creates its
-documents.*
-- Mint IDs from database sequences.
-- Write the ID into front matter, and track moves by ID rather than path.
-- Creating an initiative or feature creates its starter document from the
-  template.
-- Add an "adopt existing document" action.
-- Make per-initiative folders the default for new documents only.
+**M7 — Rename to Subutai** · S · needs M1 · either lane, run alone
+*Goal: one name everywhere, changed once.*
+- Change the module, binary, config folder (still reading `.cromwell/` for one
+  release), environment variables and UI copy.
+- Do it in one commit, when no other session is open.
 
-*Done when:* a new feature arrives with its spec file already in place and
-attached, and moving that file on disk doesn't detach it.
+*Done when:* `subutai serve` works and the suite is green.
 
-**M7 — Edit in the browser** · S · needs M6
-*Goal: fix and polish documents without leaving the UI.*
-- Build a Markdown editor with preview, *Save* and *Save & commit*.
-- Refuse to overwrite a file that changed on disk, and show the difference.
-- Warn before editing a document that is under review or feeding work in
-  progress.
+**M8 — Documents with identity** · M · needs M2 · lane 1
+*Goal: every document has an ID, and creating work creates its documents.*
+- Mint IDs from the database and store them in front matter.
+- Create a starter document with each new entity.
+- Adopt existing documents where they sit.
 
-*Done when:* a document edited in the browser and one edited in vim can't
-silently overwrite each other.
+*Done when:* moving a file on disk doesn't detach it.
 
-**M8 — Chat as a proper seat at the table** · M · needs M3
-*Goal: the chat AI can prepare work, and humans can rule on any document.*
-- Add MCP tools to submit documents and to request an early review.
+**M9 — Edit in the browser** · S · needs M8 · lane 1
+*Goal: fix documents without leaving the UI.*
+- A Markdown editor with preview, *Save*, and *Save & commit*.
+- Refuse to overwrite a file that changed on disk.
+- Warn when editing a document that has work in flight.
+
+*Done when:* browser edits and vim edits can't silently overwrite each other.
+
+**M10 — Chat as a proper seat** · S · needs M3 · lane 1
+*Goal: the chat AI prepares work, and humans can rule on any document.*
+- Add chat tools to submit a document and to ask for an early review.
 - Allow a human verdict on any document type.
-- Add the Submit screen: each intake step with its role, model and "already
-  done" status, and per-run model overrides.
-- Write a chat-side skill for writing specs, built from the retired
-  `write-spec`.
+- The send screen shows which steps are already done.
 
-*Done when:* a feature whose spec and plan were prepared in chat flows straight
-through to gate 2, with every artifact showing who produced it.
+*Done when:* a feature whose spec was written in chat skips spec writing and
+flows to *Start building*, and every document shows who wrote it.
 
-**Phase B finish line: "Subutai usable".** From here the product team can plan
-in chat, hand over a spec with one button, and watch the work through to done.
+**The "Subutai usable" line.** The product team can plan milestones and
+roadmaps, design in chat, send work to development when resources allow, and
+follow it through to done.
 
 ### Phase C: complete the model
 
-**M9 — Executors** · M · needs M2, M8
-*Goal: chat and humans can do any stage's work through the front door.*
-- Record an executor on every task.
-- Add MCP `claim_task` and `submit_task`, and a chat-side `work-a-task` skill.
-- Extend the heartbeat to stale claims, and flag commits to an active feature
-  made without a claim.
-- Make verification never chat-executable.
-- Mark chat token use as unmeasured.
-
-*Done when:* a task done in chat gets the same independent code review and
-verification as a dispatched one, and the UI shows who did it.
-
-**M10 — Decisions** · S · needs M6
+**M11 — Decisions** · S · needs M8
 *Goal: the project remembers why, and agents are told.*
-- Add a `decision` document type with `DEC-nnn` IDs and a viewer.
-- Push approved decisions on a feature's branch of the tree into dispatch
-  prompts, with a hard size cap. This is the same mechanism as project
-  conventions (C-6), so build both together.
+- `DEC-nnn` documents with a viewer.
+- Relevant decisions and conventions pushed into prompts, with a size cap.
 
-*Done when:* a dispatched agent's transcript shows the relevant decisions in
-its prompt.
+*Done when:* an agent's transcript shows the relevant decisions in its prompt.
 
-**M11 — Bugs** · M · needs M6
-*Goal: anyone can report a bug, and humans decide which ones get fixed.*
-- Add a bug entity with a report template and a human triage step.
-- Give reviewers and verifiers a `report_bug` tool, and turn minor review
-  findings into bug reports.
-- Add a UI form and an MCP route.
+**M12 — Bugs** · M · needs M8
+*Goal: anyone reports, humans decide.*
+- Human triage.
+- Agents can file bugs, and minor review findings become bug reports.
 - Accepted bugs travel the normal pipeline.
 
-*Done when:* an agent-filed bug is triaged by a human, fixed by the pipeline
-and verified as no longer reproducing.
+*Done when:* an agent-filed bug is triaged, fixed and verified.
 
-**M12 — Spikes, checklists and jobs** · M · needs M2, M6
-*Goal: finish the vocabulary.*
-- Spikes: a token budget, a findings document, a worktree that is thrown away,
-  and no merge path.
-- Checklists of human jobs that count towards milestones.
+**M13 — Executors** · M · needs M2, M10
+*Goal: chat and humans can do work through the front door.*
+- Claim and submit, with the executor recorded.
+- Stale claims and unclaimed commits are flagged.
+- Verification is never done in chat.
 
-*Done when:* a spike runs out its budget and asks a human, and a milestone
-won't complete while a checklist has an unticked job.
+*Done when:* a task done in chat gets the same review and verification as an
+agent's.
+
+**M14 — Spikes** · S · needs M8
+*Goal: a budgeted question that can't ship code.*
+- A token budget.
+- A findings document.
+- A throwaway worktree, and no merge path.
+
+*Done when:* a spike hits its budget and stops, and nothing can merge its code.
 
 ### Phase D: real-world adoption
 
-**M13 — GitHub and the Tickly pilot** · L, split into three · needs M6, M11
-*Goal: Subutai runs a real project alongside GitHub, without the developers
-noticing.*
-- **M13a:** an importer with a per-project label map and a dry run, and
-  adopt-in-place registration of Tickly's existing documents.
-- **M13b:** the forge projection. Each task gets a GitHub issue, merged pull
-  requests are observed, developer-filed bugs arrive for triage, and
-  verification runs after merge.
-- **M13c:** the pilot. One real Tickly feature goes from idea to merged code
-  through Subutai, with a walkthrough written up.
+**M15 — GitHub and the Tickly pilot** · L, split into three · needs M8, M12
+- **M15a — Import and adopt:** an importer with a label map and a dry run, and
+  registering Tickly's documents where they sit.
+- **M15b — GitHub projection:** an issue for each task, merged pull requests
+  observed, developer-filed bugs arriving for triage, and verification after
+  merge.
+- **M15c — The pilot:** one real Tickly feature from idea to merged code,
+  written up.
 
-*Done when:* the pilot walkthrough is recorded. **This is the finish line for
-Subutai v1.**
+*Done when:* the pilot walkthrough is recorded. **This is Subutai v1.**
 
 ### At a glance
 
 ```
-Phase A  M0 Restart ─┬─ M1 Seam decision ── M2 Design approved
-                     │
-Phase B              ├─ M5 See the work (can start any time)
-                     ├─ M3 Move the seam ── M8 Chat seat
-                     ├─ M4 Rename
-                     └─ M6 Documents ── M7 Editor
-                                          ── "Subutai usable"
-Phase C  M9 Executors · M10 Decisions · M11 Bugs · M12 Spikes & checklists
-Phase D  M13a Import ── M13b GitHub projection ── M13c Tickly pilot = v1
+Phase A   M0 Restart ── M1 DEC-006 ── M2 Design approved
+                  │
+Phase B   lane 1: M3 Send to development ── M10 Chat seat     M8 Documents ── M9 Editor
+          lane 2: M4 Milestones & roadmaps ── M5 Checklists    M6 See the work
+          alone:  M7 Rename
+                                              ══ "Subutai usable"
+Phase C   M11 Decisions · M12 Bugs · M13 Executors · M14 Spikes
+Phase D   M15a Import ── M15b GitHub ── M15c Tickly pilot  ══ v1
 ```
 
-Adding up the sizes gives roughly **25 to 26 sprints**, with M13's three parts
-taking four to five sprints between them. At one sprint a fortnight that's about
-a year. At one a week, about six months. The "Subutai usable" point at the end
-of phase B is about 14 sprints in. Phase A is four sprints, and most of that is
-Sam's reading time.
+**Suggested first moves, in parallel:**
+- Sam reads §6 and answers DEC-006 (M1).
+- A background session does M0, then starts M4.
 
 ### The spare-hours track
 
-These are small, independent jobs that need no decision. Pick one up whenever
-an hour or two frees up, but never at the expense of the current milestone.
+These are small, independent jobs for any idle session:
 
-- Give the implementer a search tool (C-6a).
-- Fix the dispatch-prompt ordering so the prompt cache works
-  ([prefix-cache note](../research/prefix-cache-discipline.md)).
-- Replace the dollar runaway cap with a per-task token cap and a round limit.
-- Forecast from past throughput instead of per-task guesses (token-estimation
-  R2). The data already exists.
-- Add vocabulary and anti-patterns to the surviving roles (C-3/C-4).
-- Add effort expectations to dispatch prompts (C-8).
+- the implementer's search tool;
+- the prompt-cache ordering fix;
+- a per-task token cap in place of the dollar cap;
+- forecasting from past throughput;
+- vocabulary and anti-patterns for the surviving roles;
+- effort expectations in prompts.
 
-## 9. How to keep it moving
+## 12. Decisions waiting on Sam
 
-The project moved fast when Sam's attention was on it: fifty commits in twelve
-days. It stopped completely when that attention went elsewhere. The build side
-is fast, and the scarce resource is Sam's decisions and reviews. So the plan
-protects those.
-
-1. **One milestone at a time.** Finish it, write the handoff note, then choose
-   the next one. Only the spare-hours track runs alongside.
-2. **Keep a queue of decisions for Sam** at the top of this document (§10), each
-   written so it can be answered in a few minutes, with a recommended answer.
-   Most of Subutai's open questions already have one.
-3. **A small, fixed weekly slot.** Thirty minutes to clear the decision queue
-   and approve whatever is waiting keeps the build side unblocked, even in a
-   busy week.
-4. **Every build session ends with a handoff note**, as the project already
-   does. That's what made this report possible after eight weeks away.
-5. **Protect the cut line.** New ideas go into "after v1" unless they block the
-   pilot.
-6. **Keep this document current.** Tick milestones off here as they finish, so
-   the next person to return finds an up-to-date picture.
-
-## 10. Decisions waiting on Sam
-
-In the order they unblock work. Each has a recommendation from the existing
-documents.
+In the order they unblock work:
 
 | # | Decision | Recommendation | Unblocks |
 |---|---|---|---|
-| 1 | DEC-006: orchestration starts at *Submit to development*, specs are written in chat, and spec review is the first step of intake | Accept, as written up in the discussion response §2a to §2b | M3, M4, M8 |
-| 2 | May the chat agent relay a human's design approval? | Yes, narrowly, once design approval no longer triggers anything, and audited as "via chat" | M3, M8 |
-| 3 | Waive SPEC-009 DoD 3 (the cascade smoke)? | Yes, it tests a flow Subutai removes | M0 |
-| 4 | ID and folder scheme | `INIT-`/`FEAT-`/`BUG-`/`DEC-`/`SPK-` IDs, identity in front matter, per-initiative folders as the default for new documents only | M6 |
-| 5 | DEC-007: the judgement boundary (executors) | Accept, as written up in the discussion response §2c | M9 |
-| 6 | Editor default: *Save* or *Save & commit* | *Save & commit* as the main button, *Save* as the secondary one | M7 |
-| 7 | Bug triage surface | A dedicated triage queue, with a count in the inbox | M11 |
-| 8 | Spike budget: checkpoint or hard stop; default or per spike | Hard stop with a project-wide default, overridable per spike | M12 |
-| 9 | Stronger reviewer models for chat-executed work? | Yes, as a configured default, not built into the architecture | M9 |
-| 10 | Per-user identity: in v1 or after? | Before the Tickly pilot if a second person will use it | M13 |
+| 1 | DEC-006 as in §6 | Accept | M3 |
+| 2 | Button names | *Send to development* (gate 1) and *Start building* (gate 2) | M3 |
+| 3 | Human spec approval: default on or off? | Off, switchable per project and per send | M3 |
+| 4 | Can the agent spec review be switched off? | Allow it per project, but default it on. It's cheap insurance | M3 |
+| 5 | After a design revision, rewrite specs automatically? | Yes, for features already sent. Otherwise wait for a send | M3 |
+| 6 | May chat relay design approval and tick jobs? | Yes, audited as "via chat". Neither is a judgement of agent work | M3, M5 |
+| 7 | Milestone and roadmap editing: modal or page? | Modal from the owner's page, as DESIGN-008 already says | M4 |
+| 8 | Do jobs carry a note, owner or due date? | A note and who ticked it, for now. Owner and date later | M5 |
+| 9 | ID and folder scheme | Prefixed IDs, identity in front matter, folders only as the default for new documents | M8 |
+| 10 | DEC-007 as in §6 | Accept, before M13 | M13 |
+| 11 | Editor's main button | *Save & commit* | M9 |
+| 12 | Bug triage surface | A dedicated queue, with a count in the inbox | M12 |
+| 13 | Spike budget behaviour | Hard stop, with a project default | M14 |
+| 14 | Per-user identity in v1? | Yes, before the pilot if a second person joins | M15 |
 
-## 11. Sources
+## 13. Sources
 
 - [Subutai discussion document](../vision/Cromwell%20R2%20Vision%20Subutai.md)
 - [DESIGN-010: Subutai](../design/DESIGN-010-subutai.md) (Draft 1)
 - [Response to the Subutai discussion](subutai-discussion-response-2026-07-31.md)
 - [Subutai and GitHub](../research/subutai-and-github.md)
+- [SPEC-009: the authoring chain](../specs/SPEC-009-the-authoring-chain.md): FR-4 (the invariants), FR-9 (the cascade), DoD
 - [Handoff: SPEC-009 Stage 1 code-complete](handoff-2026-07-30-stage1-complete.md)
 - [Walkthrough: SPEC-009 Stage 1 live](../walkthrough-spec-009-stage1.md)
-- [Research conformance audit](research-conformance-audit-2026-07-29.md)
+- [DESIGN-008: the workflow surface](../design/DESIGN-008-the-workflow-surface.md): §5.1b, §9, D-9 to D-12
+- [Workflow surface Stage B entry criteria](spec-007-stage-b-entry-criteria.md)
 - [DEC-005: the orchestration boundary](../decisions/DEC-005-the-orchestration-boundary.md)
-- [Token estimation research](../research/token-estimation.md)
-- The code itself at `2ce24b3`. Build, vet and short tests were run on
-  2026-09-28.
+- [Research conformance audit](research-conformance-audit-2026-07-29.md)
+- The code at `2ce24b3`. `go test -race ./...` was run in full against
+  PostgreSQL 16 on 2026-09-28.
