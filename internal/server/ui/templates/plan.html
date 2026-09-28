@@ -306,7 +306,7 @@
       <summary class="btn btn--danger"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>Lock this milestone…</summary>
       <div class="banner banner--warning u-mt-4">
         <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg>
-        <div><b>Locking is permanent.</b>It takes a snapshot of the {{.LeafCount}} features this milestone comes down to ({{.LeafDone}} of them done so far) and freezes what it contains. It can't be unlocked.</div>
+        <div><b>Locking is permanent.</b>It takes a snapshot of the {{if eq .LeafCount 1}}one feature this milestone comes down to, which is done,{{else}}{{.LeafCount}} features this milestone comes down to ({{.LeafDone}} of them done so far){{end}} and freezes what it contains. It can't be unlocked.</div>
       </div>
       <form class="u-mt-4" method="post" action="/ui/milestone/lock"
             hx-post="/ui/milestone/lock" hx-target="#milestone-editor" hx-swap="outerHTML">

@@ -618,9 +618,12 @@ func (s *Server) handleMilestoneLock(w http.ResponseWriter, r *http.Request) {
 		s.respondMilestone(w, r, milestoneID, "", planError(err))
 		return
 	}
-	s.respondMilestone(w, r, milestoneID, fmt.Sprintf(
-		"This milestone is now locked. Its snapshot holds %d features, %d of them done, and what it contains can no longer change.",
-		prog.Total, prog.Done), "")
+	held := fmt.Sprintf("%d features, %d of them done", prog.Total, prog.Done)
+	if prog.Total == 1 {
+		held = "its one feature, which is done"
+	}
+	s.respondMilestone(w, r, milestoneID,
+		"This milestone is now locked. Its snapshot holds "+held+", and what it contains can no longer change.", "")
 }
 
 // --- Roadmap order (FR-4) ---
