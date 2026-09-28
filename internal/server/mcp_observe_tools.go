@@ -46,8 +46,8 @@ func (s *Server) mcpObserveTools() []mcpTool {
 				"turn. Long text is cut, and says so; the run's page, at the url given, has everything. Use it " +
 				"to answer \"why did the reviewer say that?\". It changes nothing.",
 			Schema: objectSchema(map[string]any{
-				"run_id":  stringProp("The run's id, as get_timeline gives it."),
-				"attempt": map[string]any{"type": "integer", "description": "Optional. Which attempt to read, from 1; the latest if left out."},
+				"run_id":               stringProp("The run's id, as get_timeline gives it."),
+				"attempt":              map[string]any{"type": "integer", "description": "Optional. Which attempt to read, from 1; the latest if left out."},
 				"include_tool_results": boolProp("Optional, false unless you say otherwise. Whether to include what each tool call returned, cut short. Tool results can hold what a tool read, such as a file with a secret in it, so ask for them only when you need them."),
 			}, "run_id"),
 			Handler: s.mcpGetAgentRun,

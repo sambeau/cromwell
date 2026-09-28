@@ -34,10 +34,10 @@ type checklistCard struct {
 	ID       uuid.UUID
 	PublicID string // "CL-002" (SPEC-017 FR-3.3)
 	Name     string
-	URL    string
-	Jobs   int
-	Ticked int
-	Done   bool
+	URL      string
+	Jobs     int
+	Ticked   int
+	Done     bool
 }
 
 // Status is the card's count in words, shared by every place a checklist is
