@@ -259,7 +259,18 @@ func verdictSentence(v store.Verdict) string {
 	if v.Inferred {
 		out += " (from the audit trail)"
 	}
-	return out + "."
+	return endSentence(out)
+}
+
+// endSentence closes a sentence with a full stop, unless it already ends in
+// a quotation that closes with its own.
+func endSentence(s string) string {
+	for _, end := range []string{".”", "!”", "?”"} {
+		if strings.HasSuffix(s, end) {
+			return s
+		}
+	}
+	return s + "."
 }
 
 // ---- The views ----

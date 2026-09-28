@@ -311,7 +311,7 @@ func TestVerdictsRecordWhoAndHow(t *testing.T) {
 		t.Errorf("submit_for_review with agent review off says %q", done)
 	}
 	res := h.mustTool("relay_verdict", map[string]any{"path": path, "verdict": "approve", "quote": "Yes, alpha's spec is right."})
-	if got := sentence(res, "last_verdict"); got != "Approved by a person, relayed by the chat agent: “Yes, alpha's spec is right.”." {
+	if got := sentence(res, "last_verdict"); got != "Approved by a person, relayed by the chat agent: “Yes, alpha's spec is right.”" {
 		t.Errorf("relayed approval reads %q", got)
 	}
 	vs := h.verdictsOf(h.docID(path))

@@ -80,7 +80,7 @@ func TestWriterAndVerdictSentences(t *testing.T) {
 		{store.Verdict{Verdict: "approve", Kind: "agent", Actor: "spec-reviewer", Model: "m2", Held: true}, "Approved by the spec reviewer (m2), and held for a person."},
 		{store.Verdict{Verdict: "approve", Kind: "agent", Actor: "spec-reviewer", Model: "m2", ReleasedBy: "sam", ReleasedVia: "ui"},
 			"Approved by the spec reviewer (m2); sam let the reviewer decide."},
-		{store.Verdict{Verdict: "send_back", Kind: "person", Actor: "chat-agent", Via: "mcp", Quote: "No."}, "Sent back by a person, relayed by the chat agent: “No.”."},
+		{store.Verdict{Verdict: "send_back", Kind: "person", Actor: "chat-agent", Via: "mcp", Quote: "No."}, "Sent back by a person, relayed by the chat agent: “No.”"},
 		{store.Verdict{Verdict: "approve", Kind: "person", Actor: "sam", Via: "ui"}, "Approved by sam."},
 		{store.Verdict{Verdict: "approve", Kind: "person", Actor: "sam", Via: "escalation"}, "Approved by sam, answering the reviewer's escalation."},
 	} {

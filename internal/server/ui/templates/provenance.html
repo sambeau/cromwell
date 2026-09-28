@@ -5,16 +5,16 @@
      the same way. */}}
 
 {{define "doc-written-by"}}
-<div class="doc-provenance u-mt-2" id="doc-written-by">
-  <p class="t-meta u-row">
+<div class="page-head-meta doc-provenance" id="doc-written-by">
+  <span class="t-meta">
     <svg class="icon icon-xs" aria-hidden="true"><use href="#i-edit"/></svg>
     <span>{{.Written}}{{if not .WrittenAt.IsZero}} <time datetime="{{.WrittenAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.WrittenAt.Format "2 Jan 2006, 15:04:05"}}">{{ago .WrittenAt}} ago</time>{{end}}{{if .WrittenRun}} · <a href="{{.WrittenRun}}">What the agent did</a>{{end}}</span>
-  </p>
+  </span>
   {{if .Verdict}}
-  <p class="t-meta u-row">
+  <span class="t-meta">
     <svg class="icon icon-xs" aria-hidden="true"><use href="#i-approve"/></svg>
     <span>{{.Verdict}}{{if not .VerdictAt.IsZero}} <time datetime="{{.VerdictAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.VerdictAt.Format "2 Jan 2006, 15:04:05"}}">{{ago .VerdictAt}} ago</time>{{end}}{{if .VerdictRun}} · <a href="{{.VerdictRun}}">Read the review</a>{{end}}</span>
-  </p>
+  </span>
   {{end}}
 </div>
 {{end}}
