@@ -717,7 +717,7 @@ M0, M3 and M6 handoffs.
 
 *Done when:* an agent's transcript shows the relevant decisions in its prompt.
 
-**M12 — Bugs** · M · needs M8
+**M12 — Bugs** · M · needs M8 · ✅ **done 2026-09-28**, see the [M12 handoff](handoff-M12-2026-09-28.md)
 *Goal: anyone reports, humans decide.*
 - Human triage.
 - Agents can file bugs, and minor review findings become bug reports.

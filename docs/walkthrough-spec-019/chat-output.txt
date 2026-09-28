@@ -1,0 +1,13 @@
+== The tools a chat agent sees
+  41 tools; new in M12: report_bug, list_bugs, get_bug, relay_triage
+== Plan the work
+» create_initiative {"slug":"greet","name":"Greetings","description":"Say hello to people, politely.","design_document":false}
+  {"id": "INIT-001"}
+» create_feature {"initiative_path":"INIT-001","slug":"time","name":"Time-aware greeting","description":"Greet people by the time of day.","design_document":false}
+  {"id": "FEAT-001", "path": "greet/time"}
+== Report a bug the person mentioned, with no quote: reporting is planning
+» report_bug {"on":"FEAT-001","title":"The evening greeting says good morning","steps":"Set the clock to 19:00\nOpen the home page","expected":"It says good evening.","actual":"It says good morning.","notes":"Log line: {{.Hour}} = 19, TODO check the time zone"}
+  {"id": "BUG-001", "triage": "reported", "report": "docs/work/INIT-001-greet/BUG-001-bug-report.md", "next": "It waits in the triage queue for a person to accept or reject it."}
+== A relay without the person's words is refused
+» relay_triage {"bug":"BUG-001","decision":"accept"}
+  refused: a relayed triage decision needs the person's own words, quoted, in "quote"
