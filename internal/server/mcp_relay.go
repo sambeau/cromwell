@@ -6,17 +6,24 @@ package server
 // on the audit trail, `via: mcp`. Each calls the same service method the
 // document page calls, as the MCP actor.
 //
+// The fifth relay, relay_tick_job (SPEC-014 FR-7.9), carries a person's word
+// that a job on a checklist is done, or not done after all. It is the only way
+// the chat agent can tick or untick a job.
+//
 // What is NOT here is the boundary (DEC-006 Amendment 1, DESIGN-010 §5c): no
-// tool sends to development, withdraws a send, starts building, locks a
-// milestone, overrides a gate or answers a checkpoint, and none holds a
-// verdict of the agent's own. Adding a relay tool that isn't on Amendment 1's
-// list needs a decision, and TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet
-// fails on anything unnamed.
+// tool sends to development, withdraws a send, starts building, overrides a
+// gate or answers a checkpoint, and none holds a verdict of the agent's own.
+// (Marking a milestone as shipped is planning, not a relay, under DEC-004
+// Amendment 1; it lives with the milestone tools.) Adding a relay tool that
+// isn't on Amendment 1's list needs a decision, and
+// TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet fails on anything unnamed.
 
 import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/jackc/pgx/v5"
 
 	"subutai/internal/store"
 )
@@ -79,7 +86,67 @@ func (s *Server) mcpRelayTools() []mcpTool {
 			}, "path", "quote"),
 			Handler: s.mcpRelayRelease,
 		},
+		{
+			Name: "relay_tick_job",
+			Description: "Carry a person's word that a job on a checklist is done, which ticks it, or that it " +
+				"isn't done after all, which unticks it. Use this only when the person has told you, and quote " +
+				"their words: the tick is recorded as theirs, relayed by you, with the quote beside it. Never " +
+				"tick a job on your own judgement. A note, if given, replaces the job's note.",
+			Schema: objectSchema(map[string]any{
+				"checklist": stringProp("The checklist's id, or its exact name if no other checklist shares it."),
+				"job":       stringProp("The job's id, or its exact title if no other job on this checklist shares it."),
+				"ticked":    map[string]any{"type": "boolean", "description": "true to tick the job (the person says it is done), false to untick it (they say it isn't)."},
+				"note":      stringProp("Optional. Something the person said about it, such as where the key is kept."),
+				"quote":     quoteProp,
+			}, "checklist", "job", "ticked", "quote"),
+			Handler: s.mcpRelayTickJob,
+		},
 	}
+}
+
+// mcpRelayTickJob ticks or unticks a job on a person's word, as the MCP actor,
+// with via: mcp and the quote stored on the job and on the audit row (SPEC-014
+// FR-7.9). It calls the same TickJob the checklist page calls.
+func (s *Server) mcpRelayTickJob(r *http.Request, args map[string]any) (any, error) {
+	ctx := r.Context()
+	quote, ok := argString(args, "quote")
+	if !ok {
+		return nil, errors.New("the person's words are required in quote: a relay carries what they said, " +
+			"and without it there is nothing to relay. If they haven't told you to do this, don't")
+	}
+	tick, ok := args["ticked"].(bool)
+	if !ok {
+		return nil, errors.New("say whether the job is done in \"ticked\": true to tick it, false to untick it")
+	}
+	c, j, err := s.mcpJobArg(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	note, _ := argString(args, "note")
+	var done *store.Job
+	if err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		var e error
+		done, e = store.TickJob(ctx, tx, j.ID, tick, note, "mcp", quote, s.mcpActor())
+		return e
+	}); err != nil {
+		return nil, mcpChecklistError(err)
+	}
+	s.notifyEntityChanged("checklist", c.ID)
+	st, err := store.GetChecklistStatus(ctx, s.Store.Pool, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	verb := "ticked"
+	if !tick {
+		verb = "unticked"
+	}
+	return map[string]any{
+		"done": fmt.Sprintf("recorded the person's word: %s is %s", done.Title, verb),
+		"job":  s.mcpJobSummary(*done),
+		"checklist": map[string]any{"id": c.ID.String(), "name": c.Name,
+			"jobs_ticked": st.Ticked, "jobs_total": st.Jobs, "done": st.Done()},
+		"url": checklistURL(c.ID),
+	}, nil
 }
 
 // relayTarget resolves the document and the person's quote every relay needs.

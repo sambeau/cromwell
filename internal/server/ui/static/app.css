@@ -530,6 +530,7 @@ code, kbd, samp, pre, .t-mono { font-family: var(--font-mono); font-size: 0.92em
 .icon-entity[data-entity="document"]    { color: var(--c-teal-mark); }
 .icon-entity[data-entity="milestone"]   { color: var(--c-amber-mark); }
 .icon-entity[data-entity="roadmap"]     { color: var(--c-amber-mark); }
+.icon-entity[data-entity="checklist"]   { color: var(--c-amber-mark); }
 .icon-entity[data-entity="task"]        { color: var(--c-grey-mark); }
 .icon-entity[data-entity="question"]    { color: var(--c-accent); }
 
@@ -2214,3 +2215,17 @@ dialog.modal::backdrop { background: var(--c-overlay); }
 .stats--reviewer { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .review-flag { display: flex; align-items: center; gap: var(--sp-2); color: var(--c-amber-text); font-size: var(--fs-sm); }
 .review-flag .icon { color: var(--c-amber-mark); }
+
+/* A checklist's jobs (SPEC-014 FR-4): literally a list of checkboxes (D-10).
+   The box is the tick button itself, so it is one click and one form. */
+.jobs { list-style: none; margin: 0; padding: 0; }
+.job { grid-template-columns: 22px minmax(0, 1fr) auto; align-items: start; padding-left: var(--sp-4); }
+.job-form { display: contents; }
+button.check-box { padding: 0; background: var(--c-surface); cursor: pointer; margin-top: 2px; }
+button.check-box:hover { border-color: var(--c-green-mark); }
+button.check-box:focus-visible { outline: var(--bw-thick) solid var(--c-accent); outline-offset: 2px; }
+.job-main { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.job-note { font-size: var(--fs-sm); color: var(--c-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.job-who { font-size: var(--fs-xs); color: var(--c-text-3); }
+.job-quote { font-style: italic; color: var(--c-text-2); }
+.check-item[data-done="true"] .job-title { text-decoration: line-through; text-decoration-color: var(--c-text-3); color: var(--c-text-2); }

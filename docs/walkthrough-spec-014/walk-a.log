@@ -1,0 +1,20 @@
+notice: Initiative created: Authentication
+notice: Feature created: Login form
+shot ./01-new-checklist-dialog.png
+notice: Checklist created: Launch paperwork
+shot ./02-plan-with-checklist.png
+shot ./03-checklist-editor.png
+notice: Milestone created: Sign-in beta
+shot ./04-milestone-editor-with-checklist.png
+milestone before ticking: 1 of 2 items done | 0 of 0 estimated tokens done (0%)
+shot ./05-milestone-not-complete.png
+shot ./06-checklist-page-open.png
+shot ./07-tick-with-a-note.png
+notice: Ticked: Get the API key from the identity provider.
+notice: Ticked: Choose the sign-in button icon.
+shot ./08-checklist-two-ticked.png
+milestone with one job open: 1 of 2 items done | 0 of 0 estimated tokens done (0%)
+notice: Ticked: Sign the data processing agreement.
+shot ./09-checklist-done.png
+milestone after ticking: 2 of 2 items done | 0 of 0 estimated tokens done (0%)
+shot ./10-milestone-complete.png

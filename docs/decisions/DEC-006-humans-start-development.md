@@ -3,7 +3,8 @@
 **Status:** **Accepted — Sam, 2026-09-28.** Drafted by Claude. The author
 can't be the approval gate, and wasn't. **Amended the same day:**
 [Amendment 1](#amendment-1--reviews-and-relay-2026-09-28) replaces decisions 5,
-6 and 8.
+6 and 8. A dated note on its decision 8 (Sam, 2026-09-28) adds unticking a
+job to the relay list.
 **Date drafted:** 2026-09-28
 **Date accepted:** 2026-09-28
 **Decided by:** Sam
@@ -346,6 +347,16 @@ Sam's ruling also sets out the human's role more clearly than DEC-006 did.
   back or review on its own judgement. That is enforced by leaving the tools
   out, as DEC-005 does.
 - Adding a relay tool that isn't on this list needs a decision.
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-014](../specs/SPEC-014-checklists-and-jobs.md) SD-10).**
+> "A ticked job" includes **unticking** one. An untick corrects a tick: it
+> touches the same record, starts nothing and can be undone, so it passes this
+> amendment's test of consequence. Both go through the one relay tool,
+> `relay_tick_job`, with the person's words quoted and the act audited `via:
+> mcp`. The store refuses a tick or untick through the chat agent without a
+> quote, and the database refuses a relayed tick without one. No planning tool can stand in for a tick: a ticked
+> job's title can't change, and the chat agent can't remove a checklist's
+> last unticked job (SPEC-014 SD-7).
 
 ### Rationale
 

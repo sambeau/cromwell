@@ -24,6 +24,7 @@ type memberRow struct {
 	URL   string
 	Done  bool
 	Kind  string
+	Sub   string // a short status beside it, such as a checklist's jobs ticked
 }
 
 type milestonePage struct {
@@ -83,6 +84,7 @@ func (s *Server) renderMilestonePage(w http.ResponseWriter, r *http.Request, id 
 		Members: rows, Locked: m.LockedAt != nil,
 		MemberOf: memberOf, MilestoneChoices: choices, Notice: notice, Error: errMsg,
 	}
+	pushPageURL(w, r, milestoneURL(m.ID))
 	s.render(w, "page-milestone", s.page(r.Context(), "browse", page))
 }
 
@@ -130,6 +132,18 @@ func (s *Server) milestoneMemberRows(ctx context.Context, milestoneID uuid.UUID)
 			}
 			out = append(out, memberRow{ID: sub.ID, Label: sub.Name, URL: "/ui/m/" + sub.ID.String(),
 				Done: sub.LockedAt != nil, Kind: "milestone"})
+		case "checklist":
+			// Done when it has jobs and every one is ticked (SPEC-014 FR-2.6).
+			c, err := store.GetChecklist(ctx, s.Store.Pool, mem.MemberID)
+			if err != nil {
+				return nil, err
+			}
+			card, err := s.checklistCardFor(ctx, *c)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, memberRow{ID: c.ID, Label: c.Name, URL: card.URL,
+				Done: card.Done, Kind: "checklist", Sub: card.Status()})
 		}
 	}
 	return out, nil

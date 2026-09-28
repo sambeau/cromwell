@@ -162,7 +162,7 @@ const prefixedMilestoneCols = `m.id, m.name, m.description, m.target_date, m.sta
 // milestone-side picker shows it (SPEC-010 FR-3.3): its kind, id, name, and —
 // for initiatives and features — its readable path.
 type MemberCandidate struct {
-	Kind string // "initiative" | "feature" | "milestone" (checklists join in M5)
+	Kind string // "initiative" | "feature" | "checklist" | "milestone"
 	ID   uuid.UUID
 	Name string
 	Path string
@@ -179,8 +179,8 @@ type MemberCandidate struct {
 // over document sections, so it would match entities by the prose of their
 // documents rather than by what they are called (SPEC-010 SD-7).
 //
-// Each member type is one branch of the union; checklists (M5) add a fourth
-// branch without changing the shape (FR-3.4). Current direct members, archived
+// Each member type is one branch of the union; checklists (SPEC-014 FR-6.1)
+// are the fourth, added without changing the shape (SPEC-010 FR-3.4). Current direct members, archived
 // initiatives, abandoned features, the milestone itself and any milestone that
 // already contains it (FR-1.5) are left out. It returns at most limit rows and
 // reports whether there were more.
@@ -220,13 +220,19 @@ func MemberCandidates(ctx context.Context, q Querier, milestoneID uuid.UUID, sco
 			FROM milestones m
 			WHERE m.id <> $1 AND m.id NOT IN (SELECT id FROM around)
 			  AND ($3 <> '' OR $2::uuid IS NULL OR m.owner_id IN (SELECT id FROM scoped))
+			UNION ALL
+			-- checklists (SPEC-014 FR-6.1): planned in the subtree by default,
+			-- anywhere when searching, as milestones are
+			SELECT 'checklist', c.id, c.name, ''
+			FROM checklists c
+			WHERE ($3 <> '' OR $2::uuid IS NULL OR c.owner_id IN (SELECT id FROM scoped))
 		)
 		SELECT c.kind, c.id, c.name, c.path FROM candidates c
 		WHERE ($3 = '' OR c.name ILIKE $4 ESCAPE '\' OR c.path ILIKE $4 ESCAPE '\')
 		  AND NOT EXISTS (
 			SELECT 1 FROM milestone_members mm
 			WHERE mm.milestone_id = $1 AND mm.member_type::text = c.kind AND mm.member_id = c.id)
-		ORDER BY (c.kind = 'milestone'), c.path, c.name
+		ORDER BY (c.kind IN ('milestone', 'checklist')), c.kind = 'milestone', c.path, c.name
 		LIMIT $5`, milestoneID, scopeRoot, strings.TrimSpace(query), pattern, limit+1)
 	if err != nil {
 		return nil, false, err

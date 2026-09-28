@@ -2,7 +2,8 @@
 
 **Status:** Accepted. **Amended 2026-09-28:**
 [Amendment 1](#amendment-1--milestones-and-roadmaps-2026-09-28) adds
-milestones and roadmaps to the planning layer.
+milestones and roadmaps to the planning layer. A dated note on it (Sam,
+2026-09-28) records that G4 now counts checklists as well as features.
 **Date:** 2026-07-24
 **Decided by:** Sam
 **Refines:** [vision-v1](../vision/vision-v1.md) §7 (the MCP facet's "no direct
@@ -138,3 +139,14 @@ The two tools are `mark_milestone_shipped` and `reopen_milestone`, added with
 [SPEC-010](../specs/SPEC-010-milestones-and-roadmaps-editing.md) FR-7.10.
 `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` names them on purpose, as
 DEC-005 requires.
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-014](../specs/SPEC-014-checklists-and-jobs.md) SD-3).**
+> G4 now counts **items**, not only features. A milestone's items are its
+> resolved features and checklists, so where this amendment says G4 stops
+> shipping "when none of its features is done", read "when none of its items
+> is done". A done checklist can satisfy G4 on its own, so a milestone of
+> human chores alone can be marked as shipped. This loosens G4, and it is
+> accepted on the same ground as this amendment: G4 is a record-keeping check,
+> and marking as shipped still records every unfinished item as not shipped.
+> The chat agent's checklist tools are planning too (DESIGN-010 §5c, note of
+> the same date).

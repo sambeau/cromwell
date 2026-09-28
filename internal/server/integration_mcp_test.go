@@ -126,11 +126,22 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// undone (SD-4, SD-11). Added deliberately, as DEC-005 asks.
 		"mark_milestone_shipped",
 		"reopen_milestone",
-		// SPEC-011 FR-8: the relay tools of DEC-006 Amendment 1 decision 8,
-		// each carrying a person's quoted decision. Tick-a-job joins with M5.
+		// SPEC-014: checklists and jobs, as planning authoring under DEC-004
+		// and DESIGN-010 §5c and §17a item 4. None of them ticks a job.
+		"add_job",
+		"create_checklist",
+		"get_checklist",
+		"list_checklists",
+		"move_job",
+		"remove_job",
+		"rename_job",
+		// SPEC-011 FR-8 and SPEC-014 FR-7.9: the relay tools of DEC-006
+		// Amendment 1 decision 8, each carrying a person's quoted decision.
+		// relay_tick_job is the only way the chat agent ticks or unticks a job.
 		"relay_issue",
 		"relay_release_hold",
 		"relay_review_request",
+		"relay_tick_job",
 		"relay_verdict",
 	}
 	sort.Strings(want)
@@ -146,6 +157,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-011 FR-8.3: sending, withdrawing and starting building commit
 		// resources, and checkpoints are answered in the web UI.
 		"send_to_development", "withdraw_send", "start_building", "answer_checkpoint",
+		// SPEC-014 FR-7.10: ticking without a person's quoted words isn't an
+		// act the chat agent has.
+		"tick_job", "untick_job", "set_job_ticked",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

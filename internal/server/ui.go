@@ -382,6 +382,20 @@ func eventLabel(v any) string {
 		return "placed a milestone on a roadmap"
 	case "roadmap.entry_removed":
 		return "took a milestone off a roadmap"
+	case "checklist.created":
+		return "created a checklist"
+	case "job.added":
+		return "added a job to a checklist"
+	case "job.edited":
+		return "changed a job on a checklist"
+	case "job.moved":
+		return "reordered a checklist"
+	case "job.removed":
+		return "removed a job from a checklist"
+	case "job.ticked":
+		return "ticked a job"
+	case "job.unticked":
+		return "unticked a job"
 	case "worktree.created":
 		return "made a working copy of the repository"
 	default:
@@ -611,6 +625,8 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/d/{path...}", s.handleUIDocumentPage)
 	mux.HandleFunc("GET /ui/m/{id}", s.handleUIMilestonePage)
 	mux.HandleFunc("GET /ui/r/{id}", s.handleUIRoadmapPage)
+	mux.HandleFunc("GET /ui/c/{id}", s.handleUIChecklistPage)
+	mux.HandleFunc("GET /ui/c/{id}/edit", s.handleUIChecklistEdit)
 	// The milestone and roadmap editors, loaded into a <dialog> (SPEC-010 FR-6).
 	mux.HandleFunc("GET /ui/m/{id}/edit", s.handleUIMilestoneEdit)
 	mux.HandleFunc("GET /ui/m/{id}/candidates", s.handleUIMilestoneCandidates)
@@ -657,6 +673,14 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/milestone/unlock", s.handleMilestoneUnlock)
 	mux.HandleFunc("POST /ui/roadmap/entry/place", s.handleRoadmapEntryPlace)
 	mux.HandleFunc("POST /ui/roadmap/entry/remove", s.handleRoadmapEntryRemove)
+	// Checklists and jobs (SPEC-014): created from the owner's page, ticked on
+	// the checklist page, edited in the checklist editor.
+	mux.HandleFunc("POST /ui/checklist/new", s.handleChecklistCreate)
+	mux.HandleFunc("POST /ui/job/tick", s.handleJobTick)
+	mux.HandleFunc("POST /ui/job/add", s.handleJobAdd)
+	mux.HandleFunc("POST /ui/job/edit", s.handleJobEdit)
+	mux.HandleFunc("POST /ui/job/move", s.handleJobMove)
+	mux.HandleFunc("POST /ui/job/remove", s.handleJobRemove)
 
 	// Live-region fragments (re-read through the normal service path on an SSE
 	// signal, SD-5).

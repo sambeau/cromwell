@@ -33,6 +33,7 @@ func (s *Server) renderEntity(w http.ResponseWriter, r *http.Request, refType st
 			s.uiError(w, err)
 			return
 		}
+		pushPageURL(w, r, "/ui/project")
 		s.render(w, "page-entity", s.page(r.Context(), "browse", page))
 	case "initiative":
 		in, err := store.GetInitiative(ctx, s.Store.Pool, id)
@@ -45,6 +46,7 @@ func (s *Server) renderEntity(w http.ResponseWriter, r *http.Request, refType st
 			s.uiError(w, err)
 			return
 		}
+		pushPageURL(w, r, "/ui/i/"+page.Path)
 		s.render(w, "page-entity", s.page(r.Context(), "browse", page))
 	case "feature":
 		f, err := store.GetFeature(ctx, s.Store.Pool, id)
@@ -57,11 +59,25 @@ func (s *Server) renderEntity(w http.ResponseWriter, r *http.Request, refType st
 			s.uiError(w, err)
 			return
 		}
+		pushPageURL(w, r, "/ui/f/"+page.Path)
 		s.render(w, "page-entity", s.page(r.Context(), "browse", page))
 	case "milestone":
 		s.renderMilestonePage(w, r, id, notice, errMsg)
+	case "checklist":
+		s.renderChecklistPage(w, r, id, notice, errMsg)
 	default:
 		s.uiError(w, errUnknownRef(refType))
+	}
+}
+
+// pushPageURL tells HTMX the address of the page a boosted form post rendered.
+// Every body is hx-boost'ed, so HTMX otherwise puts the post's route — such
+// as /ui/checklist/new — in the address bar. Reloading that address, which an
+// editor does when it closes after a change (SPEC-010 FR-6.4), then lands on
+// the wrong page. With the header, the address bar shows the page itself.
+func pushPageURL(w http.ResponseWriter, r *http.Request, url string) {
+	if r.Method == http.MethodPost && r.Header.Get("HX-Boosted") != "" && url != "" {
+		w.Header().Set("HX-Push-Url", url)
 	}
 }
 

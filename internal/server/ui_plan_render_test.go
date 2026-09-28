@@ -106,11 +106,11 @@ func TestPlanEditorsRender(t *testing.T) {
 	mustContain(t, "changed marker", pages["editor, lockable"], `data-changed="true"`)
 	// FR-5.2: marking as shipped says what it does, and that it can be undone.
 	mustContain(t, "ship button", pages["editor, lockable"], "Mark as shipped</button>")
-	mustContain(t, "explained", pages["editor, lockable"], "the 4 features it covers (1 of them done so far)")
+	mustContain(t, "explained", pages["editor, lockable"], "the 4 items it covers (1 of them done so far)")
 	mustContain(t, "reversible", pages["editor, lockable"], "You can reopen it if it was a mistake.")
 	// FR-5.1: the disabled button with G4's reason in plain words.
 	mustContain(t, "disabled", pages["editor, G4 would fail"], "disabled")
-	mustContain(t, "plain reason", pages["editor, G4 would fail"], "none of its 3 features is done")
+	mustContain(t, "plain reason", pages["editor, G4 would fail"], "none of its 3 items is done")
 	if strings.Contains(pages["editor, G4 would fail"], `action="/ui/milestone/lock"`) {
 		t.Error("a milestone G4 would refuse still offers the form")
 	}

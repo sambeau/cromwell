@@ -1,4 +1,5 @@
-{{/* Milestones and roadmaps you can edit (SPEC-010).
+{{/* Milestones and roadmaps you can edit (SPEC-010), and the checklists
+     planned beside them (SPEC-014).
 
      Creating happens on the owner's page. Composing a milestone, ordering a
      roadmap and locking happen in an editor loaded by HTMX into a native
@@ -22,20 +23,22 @@
     <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
     <svg class="icon icon-sm" aria-hidden="true"><use href="#i-milestone"/></svg>
     <span class="section-title">This {{if eq .Kind "project"}}project{{else}}{{.Kind}}{{end}}&#39;s own plan</span>
-    <span class="section-summary"><span class="count-pill">{{add (len .OwnedMilestones) (len .OwnedRoadmaps)}}</span></span>
+    <span class="section-summary"><span class="count-pill">{{add (add (len .OwnedMilestones) (len .OwnedRoadmaps)) (len .OwnedChecklists)}}</span></span>
   </summary>
   <div class="section-body">
     <div class="plan-head">
-      <p class="t-meta">Milestones and roadmaps planned at this level. A milestone may include work from anywhere in the project, not only from here.</p>
+      <p class="t-meta">Milestones, roadmaps and checklists planned at this level. A milestone may include work from anywhere in the project, not only from here.</p>
       <div class="action-row">
         <button class="btn btn--sm" type="button" data-open-dialog="dlg-new-milestone">
           <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New milestone</button>
         <button class="btn btn--sm" type="button" data-open-dialog="dlg-new-roadmap">
           <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New roadmap</button>
+        <button class="btn btn--sm" type="button" data-open-dialog="dlg-new-checklist">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New checklist</button>
       </div>
     </div>
 
-    {{if or .OwnedMilestones .OwnedRoadmaps}}
+    {{if or .OwnedMilestones .OwnedRoadmaps .OwnedChecklists}}
     {{range .OwnedRoadmaps}}
     {{/* A block, not a card: this already sits inside one. */}}
     <div class="u-mt-6 u-mb-6">
@@ -70,11 +73,28 @@
       <div class="rail-divider u-mt-4"></div>
     </div>
     {{end}}
+
+    {{/* Checklists: the jobs only a person can do (SPEC-014 FR-3.1). */}}
+    {{range .OwnedChecklists}}
+    <div class="u-mb-4">
+      <div class="u-row">
+        <svg class="icon icon-md icon-entity" data-entity="checklist" aria-hidden="true"><use href="#i-checklist"/></svg>
+        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
+        <span class="u-push u-row">
+          <span class="t-meta">{{.Status}}</span>
+          <button class="btn btn--sm" type="button" aria-label="Edit the checklist {{.Name}}"
+                  hx-get="/ui/c/{{.ID}}/edit" hx-target="#modal-slot" hx-swap="innerHTML">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit</button>
+        </span>
+      </div>
+      <div class="rail-divider u-mt-4"></div>
+    </div>
+    {{end}}
     {{else}}
     <div class="empty">
       <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-roadmap"/></svg></span>
       <p class="empty-title">Nothing is planned here yet</p>
-      <p class="empty-text">A milestone gathers the work that ships together, and a roadmap puts milestones in the order you intend. Plans made here belong to {{if eq .Kind "project"}}the project{{else}}{{.Title}}{{end}}, but they can include work from anywhere in the project.</p>
+      <p class="empty-text">A milestone gathers the work that ships together, a roadmap puts milestones in the order you intend, and a checklist holds the jobs only a person can do. Plans made here belong to {{if eq .Kind "project"}}the project{{else}}{{.Title}}{{end}}, but they can include work from anywhere in the project.</p>
     </div>
     {{end}}
   </div>
@@ -138,6 +158,35 @@
     <div class="modal-foot">
       <button class="btn" type="button" data-close-dialog>Cancel</button>
       <button class="btn btn--primary" type="submit">Create the roadmap</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="dlg-new-checklist" aria-labelledby="t-new-checklist">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-new-checklist"><svg class="icon icon-md" aria-hidden="true"><use href="#i-checklist"/></svg> New checklist</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/checklist/new">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">A checklist holds the jobs only a person can do, such as getting an API key or signing a contract. It is done when every job is ticked, and it can count towards a milestone. This one will be planned in {{if eq .Kind "project"}}the project{{else}}<b>{{.Title}}</b>{{end}}.</p>
+        <div class="field">
+          <label class="field-label" for="nc-name">Name</label>
+          <input class="input" id="nc-name" name="name" placeholder="Launch paperwork" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="nc-desc">Description <span class="opt">optional</span></label>
+          <input class="input" id="nc-desc" name="description" placeholder="What are these jobs for, in one sentence?">
+        </div>
+      </div>
+      <input type="hidden" name="owner_type" value="{{.RefType}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Create the checklist</button>
     </div>
   </form>
 </dialog>
@@ -261,7 +310,7 @@
           <a href="{{.URL}}">{{.Label}}</a>
         </span>
         <span class="check-end">
-          <span class="t-meta">{{.Kind}}</span>
+          <span class="t-meta">{{if .Sub}}{{.Sub}} · {{end}}{{.Kind}}</span>
           {{if not $.Locked}}
           <details class="inline-confirm">
             <summary class="btn btn--ghost btn--sm" aria-label="Take {{.Label}} out">Take it out…</summary>
@@ -286,7 +335,7 @@
     {{if .Locked}}
     <div class="banner banner--info u-mt-6">
       <svg class="icon icon-md" aria-hidden="true"><use href="#i-lock"/></svg>
-      <div><b>This milestone is marked as shipped.</b>What it contains is fixed, so later work under its initiatives doesn't change the record. Progress is measured against the features it covered when it shipped.</div>
+      <div><b>This milestone is marked as shipped.</b>What it contains is fixed, so later work under its initiatives doesn't change the record. Progress is measured against the items it covered when it shipped, and anything not done then is recorded as not shipped.</div>
     </div>
     <h3 class="t-row-title u-mt-6 u-mb-2">Reopen this milestone</h3>
     <details class="inline-confirm inline-confirm--block">
@@ -313,7 +362,7 @@
 
     <h3 class="t-row-title u-mt-6 u-mb-2">Mark as shipped</h3>
     {{if .CanLock}}
-    <p class="t-meta u-mb-4">When this release goes out, mark it as shipped. That records the {{if eq .LeafCount 1}}one feature it covers, which is done,{{else}}{{.LeafCount}} features it covers ({{.LeafDone}} of them done so far){{end}} and stops what it contains from changing, so work added later under its initiatives doesn't rewrite the record. You can reopen it if it was a mistake.</p>
+    <p class="t-meta u-mb-4">When this release goes out, mark it as shipped. That records the {{if eq .LeafCount 1}}one item it covers, which is done,{{else}}{{.LeafCount}} items it covers ({{.LeafDone}} of them done so far){{end}} — features and checklists alike — and stops what it contains from changing, so work added later under its initiatives doesn't rewrite the record.{{if lt .LeafDone .LeafCount}} Anything not done yet is recorded as not shipped.{{end}} You can reopen it if it was a mistake.</p>
     <form method="post" action="/ui/milestone/lock"
           hx-post="/ui/milestone/lock" hx-target="#milestone-editor" hx-swap="outerHTML">
       <input type="hidden" name="milestone_id" value="{{.Milestone.ID}}">

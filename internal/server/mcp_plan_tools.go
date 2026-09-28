@@ -77,7 +77,7 @@ func (s *Server) mcpMemberArg(ctx context.Context, args map[string]any) (string,
 	memberType, _ := argString(args, "member_type")
 	ref, ok := argString(args, "member")
 	if !ok {
-		return "", uuid.Nil, "", errors.New("say what to add or take out in \"member\": a feature or initiative path, or a milestone's id or name")
+		return "", uuid.Nil, "", errors.New("say what to add or take out in \"member\": a feature or initiative path, or a checklist's or milestone's id or name")
 	}
 	switch memberType {
 	case "feature":
@@ -98,8 +98,14 @@ func (s *Server) mcpMemberArg(ctx context.Context, args map[string]any) (string,
 			return "", uuid.Nil, "", err
 		}
 		return memberType, m.ID, m.Name, nil
+	case "checklist":
+		c, err := s.mcpChecklistArg(ctx, args, "member")
+		if err != nil {
+			return "", uuid.Nil, "", err
+		}
+		return memberType, c.ID, c.Name, nil
 	}
-	return "", uuid.Nil, "", fmt.Errorf("member_type must be \"feature\", \"initiative\" or \"milestone\", not %q", memberType)
+	return "", uuid.Nil, "", fmt.Errorf("member_type must be \"feature\", \"initiative\", \"checklist\" or \"milestone\", not %q", memberType)
 }
 
 // argInt reads a whole-number argument. JSON numbers arrive as float64; a
@@ -447,7 +453,7 @@ func (s *Server) mcpGetMilestone(r *http.Request, args map[string]any) (any, err
 	members := make([]any, 0, len(rows))
 	for _, row := range rows {
 		mem := map[string]any{"type": row.Kind, "name": row.Label, "done": row.Done}
-		if row.Kind == "milestone" {
+		if row.Kind == "milestone" || row.Kind == "checklist" {
 			mem["id"] = row.ID.String()
 		} else {
 			mem["path"] = strings.TrimPrefix(strings.TrimPrefix(row.URL, "/ui/f/"), "/ui/i/")
@@ -584,25 +590,27 @@ func (s *Server) mcpPlanTools() []mcpTool {
 		},
 		{
 			Name: "add_milestone_member",
-			Description: "Add a feature, an initiative or another milestone to a milestone. An " +
-				"initiative brings in every feature under it, including ones created later. A " +
-				"milestone can't contain itself, and one marked as shipped can't change.",
+			Description: "Add a feature, an initiative, a checklist or another milestone to a milestone. An " +
+				"initiative brings in every feature under it, including ones created later, but not the " +
+				"checklists planned in it; add a checklist itself. A milestone isn't complete while one of " +
+				"its checklists has an unticked job. A milestone can't contain itself, and one marked as " +
+				"shipped can't change.",
 			Schema: objectSchema(map[string]any{
 				"milestone":   milestoneRef,
-				"member_type": stringProp("What is being added: \"feature\", \"initiative\" or \"milestone\"."),
-				"member":      stringProp("For a feature or initiative, its path, such as \"auth/login\". For a milestone, its id or exact name."),
+				"member_type": stringProp("What is being added: \"feature\", \"initiative\", \"checklist\" or \"milestone\"."),
+				"member":      stringProp("For a feature or initiative, its path, such as \"auth/login\". For a checklist or a milestone, its id or exact name."),
 			}, "milestone", "member_type", "member"),
 			Handler: s.mcpAddMilestoneMember,
 		},
 		{
 			Name: "remove_milestone_member",
-			Description: "Take a feature, an initiative or a milestone out of a milestone, for " +
-				"example when it is descoped from a release. The reason, if given, is kept on the " +
+			Description: "Take a feature, an initiative, a checklist or a milestone out of a milestone, " +
+				"for example when it is descoped from a release. The reason, if given, is kept on the " +
 				"audit trail. A milestone marked as shipped can't change.",
 			Schema: objectSchema(map[string]any{
 				"milestone":   milestoneRef,
-				"member_type": stringProp("What is being taken out: \"feature\", \"initiative\" or \"milestone\"."),
-				"member":      stringProp("For a feature or initiative, its path. For a milestone, its id or exact name."),
+				"member_type": stringProp("What is being taken out: \"feature\", \"initiative\", \"checklist\" or \"milestone\"."),
+				"member":      stringProp("For a feature or initiative, its path. For a checklist or a milestone, its id or exact name."),
 				"reason":      stringProp("Optional. Why it is coming out, in a sentence."),
 			}, "milestone", "member_type", "member"),
 			Handler: s.mcpRemoveMilestoneMember,
@@ -673,10 +681,11 @@ func (s *Server) mcpPlanTools() []mcpTool {
 		{
 			Name: "mark_milestone_shipped",
 			Description: "Mark a milestone as shipped, when the person tells you the release has gone " +
-				"out. This records exactly which features the milestone covers now, and stops what " +
-				"it contains from changing, so work added later under its initiatives doesn't " +
-				"rewrite the record. It is refused, with the reason, until at least one of its " +
-				"features is done. It can be undone with reopen_milestone.",
+				"out. This records exactly which items the milestone covers now — its features and " +
+				"checklists — and stops what it contains from changing, so work added later under its " +
+				"initiatives doesn't rewrite the record. Items not done yet are recorded as not " +
+				"shipped. It is refused, with the reason, until at least one item is done. It can be " +
+				"undone with reopen_milestone.",
 			Schema: objectSchema(map[string]any{
 				"milestone": milestoneRef,
 			}, "milestone"),

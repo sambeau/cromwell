@@ -2,7 +2,9 @@
 
 **Status:** **Approved — Sam, 2026-09-28.** *Amended the same day:* milestone
 locking became a reversible *Mark as shipped*, which the chat agent may also
-do (§5c, §6, §17a item 2; SPEC-010 SD-11; DEC-004 Amendment 1). This is Draft 2, consistency-
+do (§5c, §6, §17a item 2; SPEC-010 SD-11; DEC-004 Amendment 1). *And again
+with M5:* dated notes in §5c, §6 and §17a item 4 record how checklists and
+jobs were built (SPEC-014). This is Draft 2, consistency-
 reviewed (§19). The seven proposals in §17a were accepted with it. Drafted by
 Claude; the author isn't the approval gate, and wasn't.
 **Date:** 2026-09-28 (Draft 1: 2026-07-31)
@@ -417,6 +419,14 @@ by *what an act does*, not which channel it comes through.
 - **It may author planning structure,** under DEC-004: initiatives, features,
   milestones and roadmaps, descriptions and documents. Checklists and jobs are
   included too (§17a).
+
+  > **Note, 2026-09-28 (Sam, accepted with [SPEC-014](../specs/SPEC-014-checklists-and-jobs.md) SD-7
+  > and SD-10).** "Create checklists and jobs" is read as keeping them: the
+  > chat agent may also rename, reorder and remove jobs, as planning, without
+  > quoted words. Two limits stop that standing in for a tick: a ticked job's
+  > title can't change, and the chat agent can't remove a checklist's last
+  > unticked job. Relaying "a ticked job" includes unticking one, with the
+  > person's words (DEC-006 Amendment 1, note of the same date).
 - **It may relay a human's decisions:**
   - a verdict on any document;
   - an issue raised on a document;
@@ -501,6 +511,28 @@ API key, sign a contract, choose an icon.
 - A checklist is done when every job is ticked.
 - A checklist can be a milestone deliverable, so a release can't be called done
   while the human chores are still open.
+
+> **Note, 2026-09-28 (Sam, accepted with
+> [SPEC-014](../specs/SPEC-014-checklists-and-jobs.md) SD-1 to SD-6).** As
+> built in M5:
+>
+> - **A checklist is done when it has at least one job** and every job is
+>   ticked. An empty checklist isn't done.
+> - **A checklist counts as one item** in a milestone's "X of Y done", however
+>   many jobs it has. It carries no tokens, so the token bar ignores it.
+> - **G4 counts items.** A done checklist is a done deliverable, so it can let
+>   a milestone be marked as shipped on its own (DEC-004 Amendment 1, note of
+>   the same date).
+> - **An initiative in a milestone brings in its features, not the checklists
+>   planned in it.** "Everything under it" (§4) is read as the work tree. A
+>   checklist counts when it is added to the milestone itself.
+> - **Shipping records a checklist that isn't done as not shipped**, as it
+>   does a feature, and the shipped record never goes backwards: a checklist
+>   done when the milestone shipped stays done in the record. The checklist
+>   itself isn't frozen, and its page always shows it as it is now.
+> - **Jobs are ticked on the checklist page and edited in a modal**, opened
+>   from the owner's page or the checklist page. A job has one note, which a
+>   note given with a tick or untick replaces.
 
 ### Ownership and editing
 
@@ -888,7 +920,8 @@ the design, on 2026-09-28.**
    it (§5c, §6).
 3. **Bugs as milestone deliverables** (§4, §6).
 4. **Checklists owned by the project or an initiative**, and **the chat agent
-   may create checklists and jobs** as planning structure (§5c, §6).
+   may create checklists and jobs** as planning structure (§5c, §6). *Built in
+   M5 (SPEC-014); see the notes in §5c and §6.*
 5. **ID prefixes for milestones, roadmaps, checklists and tasks**, and the
    **document revision scheme** (§7).
 6. **The bug path** (§9): acceptance stands in for G0, the report is the spec,

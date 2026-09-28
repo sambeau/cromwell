@@ -127,6 +127,8 @@ type entityPage struct {
 	Documents       []docCard
 	OwnedMilestones []milestoneCard
 	OwnedRoadmaps   []roadmapCard
+	// The checklists planned here (SPEC-014 FR-3.1).
+	OwnedChecklists []checklistCard
 	MemberOf        []milestoneCard
 	// The open milestones this entity could be added to, grouped by where each
 	// is planned — the member-side end of D-12 (SPEC-010 FR-3.1).
@@ -462,6 +464,9 @@ func (s *Server) projectPage(ctx context.Context, notice, errMsg string) (*entit
 	if page.OwnedRoadmaps, err = s.ownedRoadmapCards(ctx, "project", nil); err != nil {
 		return nil, err
 	}
+	if page.OwnedChecklists, err = s.ownedChecklistCards(ctx, "project", nil); err != nil {
+		return nil, err
+	}
 	if page.Activity, err = s.Store.AuditTail(ctx, "project", nil, 10); err != nil {
 		return nil, err
 	}
@@ -540,6 +545,9 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 		return nil, err
 	}
 	if page.OwnedRoadmaps, err = s.ownedRoadmapCards(ctx, "initiative", &in.ID); err != nil {
+		return nil, err
+	}
+	if page.OwnedChecklists, err = s.ownedChecklistCards(ctx, "initiative", &in.ID); err != nil {
 		return nil, err
 	}
 	if page.MemberOf, err = s.memberOfCards(ctx, "initiative", in.ID); err != nil {

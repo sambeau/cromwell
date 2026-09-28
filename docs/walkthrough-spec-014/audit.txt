@@ -1,0 +1,26 @@
+          kind          |   actor    | via | count 
+------------------------+------------+-----+-------
+ checklist.created      | chat-agent |     |     1
+ checklist.created      | sam        |     |     1
+ job.added              | chat-agent |     |     3
+ job.added              | sam        |     |     3
+ job.moved              | chat-agent |     |     1
+ job.moved              | sam        |     |     1
+ job.ticked             | chat-agent | mcp |     3
+ job.ticked             | sam        | ui  |     3
+ job.unticked           | chat-agent | mcp |     1
+ milestone.created      | chat-agent |     |     1
+ milestone.created      | sam        |     |     1
+ milestone.locked       | sam        |     |     1
+ milestone.member_added | chat-agent |     |     2
+ milestone.member_added | sam        |     |     2
+(14 rows)
+
+             job             |                            quote                             
+-----------------------------+--------------------------------------------------------------
+ Write the store description | The store description is written and marketing signed it off
+ Choose the age rating       | We went with 4+
+ Choose the age rating       | Hold on, legal want 12+ because of the chat feature
+ Choose the age rating       | Age rating is done, it's 12+
+(4 rows)
+

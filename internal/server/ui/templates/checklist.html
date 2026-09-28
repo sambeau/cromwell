@@ -1,0 +1,225 @@
+{{/* Checklists and jobs (SPEC-014).
+
+     The checklist page is its jobs as plain checkboxes (D-10): a job is ticked
+     or unticked there, by pressing its box, or with a note. Adding, changing,
+     reordering and removing jobs happen in the checklist editor, a modal loaded
+     by HTMX exactly like the milestone editor (SD-5), so the dialog stays open
+     while a person makes several changes and the page reloads when it closes.
+
+     Every entity in a form is carried by its id in a hidden field — never
+     typed (NFR-4). All copy is written for people (D-6). */}}
+
+{{/* ---------- The checklist page (FR-4) ---------- */}}
+
+{{define "page-checklist"}}{{template "pagetop" .}}
+{{with .Data}}{{$cid := .Checklist.ID}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="checklist" aria-hidden="true"><use href="#i-checklist"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Checklist.Name}}</h1>
+      <div class="page-head-meta">
+        {{if .Card.Done}}{{template "state-badge" "done"}}{{else}}{{template "state-badge" "open"}}{{end}}
+        <span class="t-meta u-row">
+          <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
+          <span>Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a></span>
+        </span>
+        <span class="t-meta">{{.Card.Status}}</span>
+        {{with .MemberOf}}
+        <span class="t-meta u-row">
+          <svg class="icon icon-xs" aria-hidden="true"><use href="#i-milestone"/></svg>
+          <span>Part of {{range $i, $m := .}}{{if $i}}, {{end}}<a href="{{$m.URL}}">{{$m.Name}}</a>{{end}}</span>
+        </span>
+        {{end}}
+      </div>
+    </div>
+    <div class="page-head-actions">
+      <button class="btn btn--primary btn--sm" type="button"
+              hx-get="/ui/c/{{.Checklist.ID}}/edit" hx-target="#modal-slot" hx-swap="innerHTML">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit this checklist</button>
+      <button class="btn btn--sm" type="button" data-open-dialog="dlg-milestones">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-add-to-milestone"/></svg>Add to a milestone…</button>
+    </div>
+  </div>
+  {{if .Checklist.Description}}<p class="page-lede">{{.Checklist.Description}}</p>{{end}}
+</div>
+
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
+
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-checklist"/></svg> Jobs</h2>
+    <div class="panel-head-actions"><span class="count-pill">{{.Card.Ticked}} of {{.Card.Jobs}}</span></div>
+  </div>
+  <div class="panel-body panel-body--flush">
+    {{with .Jobs}}
+    <ul class="jobs checklist">
+      {{range .}}
+      <li class="check-item job" data-done="{{.Ticked}}">
+        <form class="job-form" method="post" action="/ui/job/tick">
+          <input type="hidden" name="job_id" value="{{.ID}}">
+          <input type="hidden" name="checklist_id" value="{{$cid}}">
+          <input type="hidden" name="tick" value="{{if .Ticked}}false{{else}}true{{end}}">
+          <button class="check-box" type="submit" role="checkbox" aria-checked="{{.Ticked}}"
+                  aria-label="{{if .Ticked}}Untick{{else}}Tick{{end}} {{.Title}}">
+            {{if .Ticked}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg>{{end}}
+          </button>
+        </form>
+        <div class="job-main">
+          <span class="check-title"><span class="job-title">{{.Title}}</span></span>
+          {{if .Note}}<span class="job-note">{{.Note}}</span>{{end}}
+          {{if .Ticked}}
+          <span class="job-who">Ticked by {{.TickedBy}} <time datetime="{{.TickedAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.TickedAt.Format "2 January 2006 at 15:04"}}">{{ago .TickedAt}} ago</time>{{if .Relayed}}, relaying the words “<span class="job-quote">{{.Quote}}</span>”{{end}}.</span>
+          {{end}}
+        </div>
+        <div class="check-end">
+          <details class="inline-confirm">
+            <summary class="btn btn--ghost btn--sm" aria-label="{{if .Ticked}}Untick{{else}}Tick{{end}} {{.Title}} with a note">{{if .Ticked}}Untick{{else}}Tick{{end}} with a note…</summary>
+            <form class="inline-confirm-form" method="post" action="/ui/job/tick">
+              <input type="hidden" name="job_id" value="{{.ID}}">
+              <input type="hidden" name="checklist_id" value="{{$cid}}">
+              <input type="hidden" name="tick" value="{{if .Ticked}}false{{else}}true{{end}}">
+              <input class="input input--sm" name="note" placeholder="A note about it" aria-label="A note about this job. It replaces the job's note; leave it blank to keep the note as it is.">
+              <button class="btn btn--sm" type="submit">{{if .Ticked}}Untick it{{else}}Tick it{{end}}</button>
+            </form>
+          </details>
+        </div>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <div class="empty">
+      <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-checklist"/></svg></span>
+      <p class="empty-title">This checklist has no jobs yet, so it isn't done</p>
+      <p class="empty-text">A job is one thing only a person can do, such as getting an API key or choosing an icon. Choose Edit this checklist to add them.</p>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{template "member-milestones-modal" .Membership}}
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+{{/* ---------- The checklist editor (FR-5) ---------- */}}
+
+{{define "checklist-editor-dialog"}}
+<dialog class="modal modal--wide" id="dlg-checklist" data-autoshow data-refresh-on-close aria-labelledby="t-checklist-editor">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-checklist-editor"><svg class="icon icon-md" aria-hidden="true"><use href="#i-checklist"/></svg> {{.Checklist.Name}}</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  {{template "checklist-editor" .}}
+</dialog>
+{{end}}
+
+{{define "checklist-editor"}}
+<div id="checklist-editor" {{if .Changed}}data-changed="true"{{end}}>
+  <div class="modal-body">
+    {{if .Notice}}
+    <div class="banner banner--success u-mb-4" role="status">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+    {{end}}
+    {{if .Error}}
+    <div class="banner banner--error u-mb-4" role="alert">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+    {{end}}
+
+    <p class="t-meta u-mb-4">Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a>. {{.Card.Status}}. Jobs are ticked on <a href="{{.Card.URL}}">the checklist's page</a>; here you add, change, reorder and remove them.</p>
+
+    {{if .Jobs}}
+    <ol class="plan-order">
+      {{range .Jobs}}
+      <li class="plan-order-item">
+        <span class="roadmap-num">{{.Place}}</span>
+        <span class="plan-order-main">
+          <span class="t-row-title">{{.Title}}</span>
+          {{if .Ticked}}<span class="t-meta">ticked</span>{{end}}
+          {{if .Note}}<span class="t-meta">{{.Note}}</span>{{end}}
+        </span>
+        <span class="plan-order-actions">
+          {{if not .First}}
+          <form method="post" action="/ui/job/move"
+                hx-post="/ui/job/move" hx-target="#checklist-editor" hx-swap="outerHTML">
+            <input type="hidden" name="job_id" value="{{.ID}}">
+            <input type="hidden" name="checklist_id" value="{{$.Checklist.ID}}">
+            <input type="hidden" name="place" value="{{dec .Place}}">
+            <button class="btn btn--ghost btn--sm" type="submit" aria-label="Move {{.Title}} up">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-up"/></svg>Up</button>
+          </form>
+          {{end}}
+          {{if not .Last}}
+          <form method="post" action="/ui/job/move"
+                hx-post="/ui/job/move" hx-target="#checklist-editor" hx-swap="outerHTML">
+            <input type="hidden" name="job_id" value="{{.ID}}">
+            <input type="hidden" name="checklist_id" value="{{$.Checklist.ID}}">
+            <input type="hidden" name="place" value="{{inc .Place}}">
+            <button class="btn btn--ghost btn--sm" type="submit" aria-label="Move {{.Title}} down">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>Down</button>
+          </form>
+          {{end}}
+          <details class="inline-confirm">
+            <summary class="btn btn--ghost btn--sm" aria-label="Change {{.Title}}">{{if .Ticked}}Change the note…{{else}}Change…{{end}}</summary>
+            <form class="inline-confirm-form" method="post" action="/ui/job/edit"
+                  hx-post="/ui/job/edit" hx-target="#checklist-editor" hx-swap="outerHTML">
+              <input type="hidden" name="job_id" value="{{.ID}}">
+              <input type="hidden" name="checklist_id" value="{{$.Checklist.ID}}">
+              {{if .Ticked}}<input type="hidden" name="title" value="{{.Title}}">
+              <span class="t-meta">The title can't change while the job is ticked.</span>
+              {{else}}<input class="input input--sm" name="title" value="{{.Title}}" required aria-label="The job's title">{{end}}
+              <input class="input input--sm" name="note" value="{{.Note}}" placeholder="A note (optional)" aria-label="A note about the job. This is optional.">
+              <button class="btn btn--sm" type="submit">Save</button>
+            </form>
+          </details>
+          <details class="inline-confirm">
+            <summary class="btn btn--ghost btn--sm" aria-label="Remove {{.Title}}">Remove…</summary>
+            <form class="inline-confirm-form" method="post" action="/ui/job/remove"
+                  hx-post="/ui/job/remove" hx-target="#checklist-editor" hx-swap="outerHTML">
+              <input type="hidden" name="job_id" value="{{.ID}}">
+              <input type="hidden" name="checklist_id" value="{{$.Checklist.ID}}">
+              <input class="input input--sm" name="reason" placeholder="Why? (optional)" aria-label="Why is it being removed? This is optional.">
+              <button class="btn btn--sm btn--danger" type="submit">Remove it</button>
+            </form>
+          </details>
+        </span>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}
+    <p class="empty--inline">This checklist has no jobs yet. Add the first one below.</p>
+    {{end}}
+
+    <h3 class="t-row-title u-mt-6 u-mb-2">Add a job</h3>
+    <form method="post" action="/ui/job/add"
+          hx-post="/ui/job/add" hx-target="#checklist-editor" hx-swap="outerHTML">
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label" for="ja-title-{{.Checklist.ID}}">Title</label>
+          <input class="input" id="ja-title-{{.Checklist.ID}}" name="title" placeholder="Get the API key" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="ja-note-{{.Checklist.ID}}">Note <span class="opt">optional</span></label>
+          <input class="input" id="ja-note-{{.Checklist.ID}}" name="note" placeholder="Anything worth knowing about it">
+        </div>
+      </div>
+      <input type="hidden" name="checklist_id" value="{{.Checklist.ID}}">
+      <div class="form-actions u-mt-4">
+        <button class="btn btn--primary" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>Add it</button>
+      </div>
+    </form>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn--primary" type="button" data-close-dialog>Done</button>
+  </div>
+</div>
+{{end}}
