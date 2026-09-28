@@ -16,7 +16,7 @@ import (
 // URL returns a connection string to a dedicated database named dbname,
 // creating it on the server behind SUBUTAI_TEST_DATABASE_URL if needed.
 // Cromwell's CROMWELL_TEST_DATABASE_URL is read when the new name is unset
-// (SPEC-013 §3.3).
+// (SPEC-013 §3.3). compat(M7)
 func URL(t *testing.T, dbname string) string {
 	t.Helper()
 	base := compat.Getenv("SUBUTAI_TEST_DATABASE_URL")

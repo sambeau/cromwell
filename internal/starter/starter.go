@@ -148,7 +148,7 @@ func RefreshHook(repoRoot, executable string) (note string, err error) {
 		return "", nil
 	}
 	_, statErr := os.Stat(oldExe)
-	stale := product == "cromwell" || statErr != nil || oldRepo != repoRoot
+	stale := product == "cromwell" || statErr != nil || oldRepo != repoRoot // "cromwell": compat(M7)
 	if !stale {
 		return "", nil
 	}
@@ -165,7 +165,7 @@ func RefreshHook(repoRoot, executable string) (note string, err error) {
 // migrations transactionally.
 func Init(ctx context.Context, repoRoot, executable string) error {
 	compRoot := filepath.Join(repoRoot, compat.Folder)
-	if compat.HasFolder(repoRoot) {
+	if compat.HasFolder(repoRoot) { // either name: compat(M7)
 		return fmt.Errorf("%s already has a project folder (.subutai/ or .cromwell/); init runs once per project (use upgrade when it exists in a later phase)", repoRoot)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, ".git")); err != nil {

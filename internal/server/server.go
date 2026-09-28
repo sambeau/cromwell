@@ -28,7 +28,7 @@ import (
 
 type Server struct {
 	RepoRoot        string // git repo root; document paths are relative to it
-	CompartmentRoot string // .subutai/, or Cromwell's .cromwell/ (SPEC-013 §3.2)
+	CompartmentRoot string // .subutai/, or Cromwell's .cromwell/ (SPEC-013 §3.2, compat(M7))
 	Store           *store.Store
 	Bus             *bus.Bus
 	Dispatcher      *dispatch.Dispatcher

@@ -328,7 +328,7 @@ func (c *Config) validate() error {
 
 // DatabaseURL resolves the connection string from the environment (F-2).
 // A url_env naming SUBUTAI_DATABASE_URL or CROMWELL_DATABASE_URL reads the
-// pair, the new name first (SPEC-013 §3.3).
+// pair, the new name first (SPEC-013 §3.3, compat(M7)).
 func (c *Config) DatabaseURL() (string, error) {
 	current, legacy, twins := compat.Twins(c.Database.URLEnv)
 	if twins && c.Database.URLEnv == legacy { // compat(M7)

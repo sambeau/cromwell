@@ -27,7 +27,7 @@ type Client struct {
 }
 
 // FindRepoRoot walks up from dir to the directory containing .subutai/, or
-// Cromwell's .cromwell/ (SPEC-013 §3.2).
+// Cromwell's .cromwell/ (SPEC-013 §3.2). compat(M7)
 func FindRepoRoot(dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
