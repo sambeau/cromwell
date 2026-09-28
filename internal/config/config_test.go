@@ -1,10 +1,13 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"subutai/internal/compat"
 )
 
 const validConfig = `version: 1
@@ -278,12 +281,50 @@ func TestDatabaseURLTwins(t *testing.T) {
 			t.Errorf("url_env %s, new variable set: %q, %v", urlEnv, got, err)
 		}
 	}
+	// Neither set: the error names the new variable, whichever url_env says.
+	for _, urlEnv := range []string{"SUBUTAI_DATABASE_URL", "CROMWELL_DATABASE_URL"} {
+		c := &Config{}
+		c.Database.URLEnv = urlEnv
+		t.Setenv("SUBUTAI_DATABASE_URL", "")
+		t.Setenv("CROMWELL_DATABASE_URL", "")
+		if _, err := c.DatabaseURL(); err == nil || !strings.Contains(err.Error(), "SUBUTAI_DATABASE_URL is not set") {
+			t.Errorf("url_env %s, neither set: %v", urlEnv, err)
+		}
+	}
 	// Any other name is read as written, with no twin.
 	c := &Config{}
 	c.Database.URLEnv = "MY_DB"
 	t.Setenv("SUBUTAI_DATABASE_URL", "postgres://new")
 	if _, err := c.DatabaseURL(); err == nil || !strings.Contains(err.Error(), "MY_DB") {
 		t.Errorf("url_env MY_DB unset should error naming it: %v", err)
+	}
+}
+
+// SPEC-013 §3.3: a url_env naming the old variable asks for config.yaml to
+// be changed; one naming the new variable says nothing.
+func TestDatabaseURLAsksForTheConfigChange(t *testing.T) {
+	var buf bytes.Buffer
+	old := compat.Stderr
+	compat.Stderr = &buf
+	compat.ResetWarnings()
+	t.Cleanup(func() { compat.Stderr = old })
+	t.Setenv("SUBUTAI_DATABASE_URL", "postgres://new")
+
+	c := &Config{}
+	c.Database.URLEnv = "SUBUTAI_DATABASE_URL"
+	if _, err := c.DatabaseURL(); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("unexpected warning: %q", buf.String())
+	}
+	c.Database.URLEnv = "CROMWELL_DATABASE_URL"
+	if _, err := c.DatabaseURL(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "database.url_env names CROMWELL_DATABASE_URL") ||
+		!strings.Contains(buf.String(), "change it to SUBUTAI_DATABASE_URL") {
+		t.Errorf("warning %q should ask for config.yaml's url_env to change", buf.String())
 	}
 }
 

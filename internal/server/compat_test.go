@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/config"
 	"subutai/internal/store"
 )
 
@@ -88,5 +89,22 @@ func TestWorktreeFoundAfterFolderRename(t *testing.T) {
 	// And git in the worktree works.
 	if _, err := gitIn(moved, "status", "--short"); err != nil {
 		t.Errorf("git status in the moved worktree: %v", err)
+	}
+	// Agents working on the feature are sent to the moved worktree: their
+	// tools, their commands, and the review diff all start from this root.
+	cfg, err := h.srv.freshConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tctx, err := h.srv.toolContextForFeature(ctx, cfg, fid.String(), "", &config.Role{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tctx.WorktreeRoot != moved {
+		t.Errorf("agents' worktree root = %q, want %q", tctx.WorktreeRoot, moved)
+	}
+	// Once repaired, it isn't repaired again on the next start.
+	if !h.srv.gitKnowsWorktree(moved) {
+		t.Error("git should list the repaired worktree")
 	}
 }

@@ -44,6 +44,14 @@ func Warn(msg string) {
 	fmt.Fprintln(Stderr, "warning: "+msg)
 }
 
+// ResetWarnings forgets which warnings were printed, so a test can see its
+// own.
+func ResetWarnings() {
+	warnMu.Lock()
+	defer warnMu.Unlock()
+	warned = map[string]bool{}
+}
+
 func isDir(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.IsDir()

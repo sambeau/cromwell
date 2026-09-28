@@ -353,7 +353,7 @@ func (c *Config) APIKey(provider string) (string, error) {
 	if !ok {
 		return "", errf(configFile, "providers", "unknown provider %q", provider)
 	}
-	v := compat.Getenv(p.APIKeyEnv)
+	v := os.Getenv(p.APIKeyEnv)
 	if v == "" {
 		return "", errf(configFile, "providers."+provider+".api_key_env",
 			"environment variable %s is not set", p.APIKeyEnv)

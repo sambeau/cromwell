@@ -178,10 +178,9 @@ func (s *Server) toolContextForFeature(ctx context.Context, cfg *config.Config, 
 	if err != nil {
 		return nil, fmt.Errorf("feature has no worktree: %w", err)
 	}
-	root := wt.Path
-	if !filepath.IsAbs(root) {
-		root = filepath.Join(s.RepoRoot, root)
-	}
+	// worktreeAbs follows a worktree recorded under .cromwell/ into the
+	// renamed folder (SPEC-013 §3.2).
+	root := s.worktreeAbs(wt.Path)
 	commands := map[string]toolhost.CommandSpec{}
 	for name, c := range cfg.Commands {
 		commands[name] = toolhost.CommandSpec{

@@ -162,6 +162,16 @@ func TestRefreshHook(t *testing.T) {
 		}
 	})
 
+	t.Run(".git as a file is no hook", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: /elsewhere\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if note, err := RefreshHook(root, self); note != "" || err != nil {
+			t.Errorf("note %q, err %v", note, err)
+		}
+	})
+
 	t.Run("a go run binary never goes into the hook", func(t *testing.T) {
 		old := anExecutable(t, "cromwell")
 		root, hook := repoWithHook(t, "")

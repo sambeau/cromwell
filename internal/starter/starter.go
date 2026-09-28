@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/jackc/pgx/v5"
 
@@ -127,7 +128,9 @@ var hookShape = regexp.MustCompile(`\A#!/bin/sh\n` +
 func RefreshHook(repoRoot, executable string) (note string, err error) {
 	hookPath := filepath.Join(repoRoot, ".git", "hooks", "post-commit")
 	data, err := os.ReadFile(hookPath)
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		// No hook, or .git is a file (a linked worktree or submodule),
+		// where init couldn't have installed one either.
 		return "", nil
 	}
 	if err != nil {

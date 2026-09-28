@@ -15,9 +15,7 @@ func captureWarnings(t *testing.T) *bytes.Buffer {
 	var buf bytes.Buffer
 	old := Stderr
 	Stderr = &buf
-	warnMu.Lock()
-	warned = map[string]bool{}
-	warnMu.Unlock()
+	ResetWarnings()
 	t.Cleanup(func() { Stderr = old })
 	return &buf
 }

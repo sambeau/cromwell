@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -147,6 +148,21 @@ func (s *Server) pruneMergedWorktrees(ctx context.Context) {
 	_, _ = gitIn(s.RepoRoot, "worktree", "prune")
 }
 
+// gitKnowsWorktree reports whether git lists a worktree at abs, so a
+// repaired worktree isn't repaired again on every start.
+func (s *Server) gitKnowsWorktree(abs string) bool {
+	out, err := gitIn(s.RepoRoot, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && filepath.Clean(p) == filepath.Clean(abs) {
+			return true
+		}
+	}
+	return false
+}
+
 // ReconcileWorktrees repairs worktree state on boot (DESIGN-006 §7): a live
 // worktree row whose directory is gone (crash before the git op) for a
 // non-terminal feature is re-created.
@@ -162,7 +178,7 @@ func (s *Server) ReconcileWorktrees(ctx context.Context) error {
 			// A worktree made under .cromwell/ moved with the folder when it
 			// was renamed; git still records the old path until it is
 			// repaired (SPEC-013 §3.2). compat(M7)
-			if _, moved := compat.WorktreePath(s.RepoRoot, filepath.Base(s.CompartmentRoot), wt.Path); moved {
+			if _, moved := compat.WorktreePath(s.RepoRoot, filepath.Base(s.CompartmentRoot), wt.Path); moved && !s.gitKnowsWorktree(abs) {
 				if _, err := gitIn(s.RepoRoot, "worktree", "repair", abs); err != nil {
 					s.Log.Error("worktree repair after folder rename", "feature", wt.FeatureID, "err", err)
 				} else {
