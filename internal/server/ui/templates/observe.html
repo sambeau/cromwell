@@ -1,0 +1,463 @@
+{{/* Seeing the work (SPEC-012): the feature timeline, the lists of agent runs,
+     the transcript of one run, and review health.
+
+     Two levels, as DESIGN-010 §8 asks: the timeline answers "how is it going?"
+     in one line, and every moment opens down to the runs behind it, whose
+     transcripts answer "what exactly happened?". Work is counted in tokens;
+     nothing here is money (D-4). All prose is for people (D-6). */}}
+
+{{/* ---------- The feature timeline (FR-6) ----------
+     Its own partial, included once from the feature page, between the page
+     head and the body. Only the one-line view reloads on the live signal
+     (FR-6.4): swapping the detail would close whatever the reader had opened
+     in it. */}}
+
+{{define "feature-timeline"}}
+<section class="journey u-mt-4" id="timeline" aria-label="How this feature is going">
+  {{if .Moments}}
+  <div id="journey-line" hx-get="/ui/frag/timeline?feature={{.FeatureID}}" hx-trigger="sse:changed" hx-swap="innerHTML">
+    {{template "feature-timeline-line" .}}
+  </div>
+  {{template "feature-timeline-detail" .}}
+  {{else}}
+  <p class="empty--inline">Nothing has happened to this feature yet.</p>
+  {{end}}
+</section>
+{{end}}
+
+{{define "feature-timeline-line"}}
+<ol class="journey-line" aria-label="The major moments so far">
+  {{range .Line}}
+  <li class="journey-step{{if .Current}} journey-step--current{{end}}" data-state="{{.State}}">
+    <a href="#moment-{{.Index}}" class="journey-step-link">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{.Icon}}"/></svg>
+      <span>{{.Label}}{{if gt .Count 1}} <span class="journey-count">×{{.Count}}</span>{{end}}</span>
+    </a>
+    {{if .Current}}<span class="visually-hidden">(where it is now)</span>{{end}}
+  </li>
+  {{end}}
+</ol>
+{{end}}
+
+{{define "feature-timeline-detail"}}
+
+<details class="section journey-detail u-mt-2">
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-activity"/></svg>
+    <span class="section-title">What happened at each step</span>
+    <span class="section-summary t-meta">Every event and every agent run, grouped under the moment it led from</span>
+  </summary>
+  <div class="section-body section-body--flush">
+    <ol class="moments">
+      {{range .Moments}}
+      <li class="moment{{if .Current}} moment--current{{end}}" id="moment-{{.Index}}" data-state="{{.State}}">
+        <div class="moment-head">
+          <span class="moment-mark"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{.Icon}}"/></svg></span>
+          <span class="moment-title">{{if .RefURL}}<a href="{{.RefURL}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}</span>
+          <span class="moment-meta t-meta">
+            {{if eq .By "person"}}by <b>{{.Actor}}</b> · {{else if eq .By "chat"}}by the chat agent · {{else if eq .By "agent"}}by an agent · {{end}}<time datetime="{{.At.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.At.Format "2 Jan 2006, 15:04:05"}}">{{ago .At}} ago</time>
+          </span>
+        </div>
+        {{with .Cause}}
+        <p class="moment-cause t-meta">What led to this:</p>
+        <ul class="moment-runs moment-runs--cause">{{template "run-line" .}}</ul>
+        {{end}}
+        {{if .Runs}}
+        {{if .Cause}}<p class="moment-cause t-meta">What ran after it:</p>{{end}}
+        <ul class="moment-runs">
+          {{range .Runs}}{{template "run-line" .}}{{end}}
+        </ul>
+        {{end}}
+        {{if .Events}}
+        <ul class="activity moment-events">
+          {{range .Events}}
+          <li class="activity-row">
+            <span class="activity-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-dot"/></svg></span>
+            <span class="activity-text"><b>{{.Actor}}</b> {{eventLabel .Kind}}{{if .About}} <span class="u-dim">— {{.About}}</span>{{end}}</span>
+            <span class="activity-time">{{ago .At}}</span>
+          </li>
+          {{end}}
+        </ul>
+        {{end}}
+      </li>
+      {{end}}
+    </ol>
+  </div>
+</details>
+{{end}}
+
+{{/* One agent run on a line: what it was for, how it ended, its tokens, and
+     the link to its transcript. Shared by the timeline and the run lists. */}}
+{{define "run-line"}}
+<li class="run-line">
+  <svg class="icon icon-sm" aria-hidden="true"><use href="#i-agent"/></svg>
+  <a class="run-line-what" href="{{.URL}}">{{.What}}</a>
+  {{if .Verdict}}<span class="badge" data-state="{{verdictState .Verdict}}"><span class="badge-text">{{verdictLabel .Verdict}}</span></span>
+  {{else}}{{template "state-badge" .State}}{{end}}
+  <span class="run-line-end t-meta">
+    {{if .Tokens}}<span class="tokens"><svg class="icon icon-xs" aria-hidden="true"><use href="#i-tokens"/></svg><span class="tokens-num">{{tokens .Tokens}}</span><span class="visually-hidden">tokens</span></span>{{end}}
+    {{if .HasTaken}}<span>took {{.Took}}</span>{{end}}
+    {{if gt .Attempt 1}}<span>attempt {{.Attempt}}</span>{{end}}
+  </span>
+</li>
+{{end}}
+
+{{/* ---------- Runs on a task or a document (FR-4) ---------- */}}
+
+{{define "task-runs"}}
+{{if .}}
+<section class="panel u-mt-4" id="runs">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg> Agent runs on this task</h2>
+    <div class="panel-head-actions"><span class="count-pill">{{len .}}</span></div>
+  </div>
+  <div class="panel-body">
+    <p class="t-meta u-mb-4">Each run is an agent building this task or reviewing its code. Open one to read exactly what the agent was told, what it did, and what it concluded.</p>
+    <ul class="run-lines">{{range .}}{{template "run-line" .}}{{end}}</ul>
+  </div>
+</section>
+{{end}}
+{{end}}
+
+{{define "document-runs"}}
+{{if .}}
+<section class="panel u-mt-4" id="runs">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg> Agent reviews of this document</h2>
+    <div class="panel-head-actions"><span class="count-pill">{{len .}}</span></div>
+  </div>
+  <div class="panel-body">
+    <p class="t-meta u-mb-4">Each review is one agent run. Open one to read what the reviewer was told, what it checked, and why it reached its verdict.</p>
+    <ul class="run-lines">{{range .}}{{template "run-line" .}}{{end}}</ul>
+  </div>
+</section>
+{{end}}
+{{end}}
+
+{{/* ---------- The transcript of one run (FR-3) ---------- */}}
+
+{{define "page-run"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg></span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{.Heading}}</h1>
+      <div class="page-head-meta">
+        {{template "state-badge" .Run.State}}
+        <span class="t-meta">by the <b>{{.Run.Role}}</b> role, on <code>{{.Run.Model}}</code></span>
+        {{if .Run.StartedAt}}<span class="t-meta">started {{ago .Run.StartedAt}} ago{{if .Took}}, took {{.Took}}{{end}}</span>{{end}}
+        {{if or .TokensIn .TokensOut}}
+        <span class="tokens"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
+          <span class="tokens-num">{{groupNum .TokensIn}}</span><span class="tokens-unit">tokens in</span>
+          <span class="tokens-num">{{groupNum .TokensOut}}</span><span class="tokens-unit">out</span></span>
+        {{end}}
+      </div>
+    </div>
+  </div>
+  {{if gt (len .Attempts) 1}}
+  <nav class="attempts u-mt-2" aria-label="Attempts">
+    <span class="t-meta">This run was tried {{len .Attempts}} times:</span>
+    {{$cur := .Attempt}}{{$id := .Run.ID}}
+    {{range .Attempts}}
+    <a class="chip{{if eq . $cur}} chip--on{{end}}" href="/ui/run/{{$id}}?attempt={{.}}" {{if eq . $cur}}aria-current="page"{{end}}>Attempt {{.}}</a>
+    {{end}}
+  </nav>
+  {{end}}
+</div>
+
+{{if and .Running .IsLatest}}{{template "run-progress" (progressOf .)}}{{end}}
+
+<div id="run-live">
+
+{{/* What it concluded, first (FR-3.2). */}}
+<section class="panel conclusion" data-kind="{{.Conclusion.Kind}}">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg> What it concluded</h2>
+    {{if .Conclusion.Verdict}}<div class="panel-head-actions"><span class="badge badge--lg" data-state="{{verdictState .Conclusion.Verdict}}"><span class="badge-text">{{verdictLabel .Conclusion.Verdict}}</span></span></div>{{end}}
+  </div>
+  <div class="panel-body">
+    {{with .Conclusion}}
+    {{if eq .Kind "verdict"}}
+      {{if .Reasoning}}<div class="doc"><p>{{.Reasoning}}</p></div>{{end}}
+      {{if .Findings}}
+      <p class="t-eyebrow u-mt-4">What it found</p>
+      <div class="rows--boxed u-mt-2">
+        {{range .Findings}}
+        <div class="finding">
+          <span class="badge" data-state="{{if eq .Severity "minor"}}idea{{else}}abandoned{{end}}"><span class="badge-text">{{if .Severity}}{{.Severity}}{{else}}comment{{end}}</span></span>
+          <div>{{if .Section}}<div class="finding-title">On “{{.Section}}”</div>{{end}}<div class="finding-body">{{.Body}}</div></div>
+        </div>
+        {{end}}
+      </div>
+      {{else if .Verdict}}<p class="t-meta u-mt-2">It raised no findings.</p>{{end}}
+      {{if .Criteria}}
+      <p class="t-eyebrow u-mt-4">Each acceptance criterion</p>
+      <div class="rows--boxed u-mt-2">
+        {{range .Criteria}}
+        <div class="finding">
+          <span class="badge" data-state="{{if .Met}}done{{else}}abandoned{{end}}"><span class="badge-text">{{if .Met}}met{{else}}not met{{end}}</span></span>
+          <div><div class="finding-title">{{.ID}}</div><div class="finding-body">{{.Evidence}}</div></div>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    {{else if eq .Kind "implementation"}}
+      <div class="doc"><p>{{if .Summary}}{{.Summary}}{{else}}It finished without a summary.{{end}}</p></div>
+      {{if .Files}}<p class="t-meta">Files it changed: {{range $i, $f := .Files}}{{if $i}}, {{end}}<code>{{$f}}</code>{{end}}</p>{{end}}
+    {{else if eq .Kind "document"}}
+      <p>It wrote the document, about {{.Words}} words long. The document's own page shows what it says.</p>
+    {{else if eq .Kind "error"}}
+      <div class="banner banner--error" role="alert">
+        <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg>
+        <div><b>This attempt failed.</b> {{.Plain}}</div>
+      </div>
+      <details class="said u-mt-2">
+        <summary><svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg> <span class="t-meta">What the engine recorded</span></summary>
+        <pre class="transcript-pre">{{.Error}}</pre>
+      </details>
+    {{else if eq .Kind "running"}}
+      <p class="t-meta"><span class="live"><span class="live-dot"></span>Running</span> It hasn't reached a conclusion yet. This page follows the run as it goes.</p>
+    {{else if eq .Kind "queued"}}
+      <p class="t-meta">This run is waiting in the queue and hasn't started yet.</p>
+    {{else}}
+      <pre class="transcript-pre">{{.Raw}}</pre>
+    {{end}}
+    {{end}}
+  </div>
+</section>
+
+{{if .HasTranscript}}
+{{/* What it was told, once (FR-3.3). */}}
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-document"/></svg> What it was told</h2>
+  </div>
+  <div class="panel-body">
+    {{with .System}}
+    <details class="said">
+      <summary><svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+        <b>Its instructions</b> <span class="t-meta">the system prompt, {{humanBytes .ContentBytes}}{{if .Truncated}}, cut to fit{{end}}</span></summary>
+      <pre class="transcript-pre">{{.Content}}</pre>
+    </details>
+    {{end}}
+    {{with .Prompt}}
+    <details class="said">
+      <summary><svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+        <b>Its task</b> <span class="t-meta">the first message, {{humanBytes .ContentBytes}}{{if .Truncated}}, cut to fit{{end}}</span></summary>
+      <pre class="transcript-pre">{{.Content}}</pre>
+    </details>
+    {{end}}
+  </div>
+</section>
+
+{{/* What it did, turn by turn (FR-3.4). */}}
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-activity"/></svg> What it did</h2>
+    <div class="panel-head-actions"><span class="t-meta">{{len .Turns}} {{if eq (len .Turns) 1}}turn{{else}}turns{{end}}</span></div>
+  </div>
+  <div class="panel-body">
+    <ol class="turns">
+      {{range .Turns}}
+      <li class="turn">
+        <div class="turn-head">
+          <span class="turn-n">{{if .N}}Turn {{.N}}{{else}}Before the first turn{{end}}</span>
+          {{if .HasTokens}}<span class="t-meta">{{groupNum .In}} tokens in · {{groupNum .Out}} out</span>{{end}}
+          {{if .Latency}}<span class="t-meta">the model took {{.Latency}}</span>{{end}}
+        </div>
+        {{range .Items}}
+        {{if eq .Kind "text"}}
+          <div class="said-text">{{.Entry.Content}}{{if .Entry.Truncated}} <span class="t-meta">(cut; it was {{humanBytes .Entry.ContentBytes}})</span>{{end}}</div>
+        {{else if eq .Kind "tool"}}
+          <details class="tool-call{{if and .Result .Result.IsError}} tool-call--error{{end}}">
+            <summary>
+              <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-code"/></svg>
+              <code class="tool-name">{{if .Entry.ToolName}}{{.Entry.ToolName}}{{else}}tool{{end}}</code>
+              {{if .Arg}}<span class="tool-arg">{{.Arg}}</span>{{end}}
+              <span class="tool-end t-meta">
+                {{if .Result}}{{if .Result.IsError}}<span class="badge" data-state="failed"><span class="badge-text">failed</span></span>{{end}}{{if .Latency}} took {{.Latency}}{{end}}{{else}}no result recorded{{end}}
+              </span>
+            </summary>
+            <div class="tool-body">
+              {{if eq .Entry.Kind "tool_call"}}
+              <p class="t-eyebrow">What it asked for</p>
+              <pre class="transcript-pre">{{prettyJSON .Entry.Content}}</pre>
+              {{end}}
+              {{with .Result}}
+              <p class="t-eyebrow u-mt-2">What came back{{if .Truncated}} — cut; it was {{humanBytes .ContentBytes}}{{end}}</p>
+              <pre class="transcript-pre">{{.Content}}</pre>
+              {{end}}
+            </div>
+          </details>
+        {{else if eq .Kind "nudge"}}
+          <p class="said-nudge t-meta"><svg class="icon icon-xs" aria-hidden="true"><use href="#i-info"/></svg> It didn't use a tool, so it was reminded: “{{.Entry.Content}}”</p>
+        {{else if eq .Kind "outcome"}}
+          <details class="tool-call tool-call--outcome" open>
+            <summary>
+              <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg>
+              <span>It gave its answer with <code class="tool-name">{{.Arg}}</code></span>
+            </summary>
+            <div class="tool-body"><pre class="transcript-pre">{{prettyJSON .Entry.Content}}</pre></div>
+          </details>
+        {{else if eq .Kind "error"}}
+          <div class="banner banner--error"><svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div><b>It stopped here.</b> {{failureWords .Entry.Content}} <span class="t-meta">The engine recorded: <code>{{.Entry.Content}}</code></span></div></div>
+        {{end}}
+        {{end}}
+      </li>
+      {{end}}
+    </ol>
+  </div>
+</section>
+{{else}}
+<section class="panel u-mt-4">
+  <div class="panel-body">
+    <div class="empty">
+      <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-activity"/></svg></span>
+      {{if .Pruned}}
+      <p class="empty-title">This run's transcript was removed</p>
+      <p class="empty-text">Transcripts are kept for a set number of days, and this one was removed {{ago .Pruned}} ago. What the run concluded, and the tokens it used, are kept for good.</p>
+      {{else if eq .Run.State "queued"}}
+      <p class="empty-title">This run hasn't started yet</p>
+      <p class="empty-text">Its transcript begins the moment an agent picks it up.</p>
+      {{else}}
+      <p class="empty-title">There is no transcript for this run</p>
+      <p class="empty-text">It ran before Subutai kept transcripts, so all that is left is what it concluded and the tools it used.</p>
+      {{end}}
+    </div>
+    {{if .Ledger}}
+    <p class="t-eyebrow u-mt-4">The tools it used</p>
+    <ul class="activity u-mt-2">
+      {{range .Ledger}}
+      <li class="activity-row">
+        <span class="activity-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-code"/></svg></span>
+        <span class="activity-text"><code>{{.Tool}}</code> <span class="u-dim">{{humanBytes .ArgBytes}} in, {{humanBytes .ResultBytes}} back{{if eq .Status "error"}}, failed{{end}}</span></span>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+  </div>
+</section>
+{{end}}
+</div>{{/* #run-live */}}
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+{{/* The status line a running run's page polls (FR-3.7). It replaces only
+     itself, so nothing the reader has opened below it closes. */}}
+{{define "run-progress"}}
+<p class="run-progress t-meta" id="run-progress"
+   {{if eq .State "running"}}hx-get="/ui/frag/run/{{.ID}}?shown={{.Shown}}" hx-trigger="every 5s" hx-swap="outerHTML"{{end}}>
+  {{if eq .State "running"}}
+  <span class="live"><span class="live-dot"></span>Running</span>
+  {{.Turns}} {{if eq .Turns 1}}turn{{else}}turns{{end}} so far.
+  {{if gt .Turns .Shown}}<a href="/ui/run/{{.ID}}">Reload to see the newest</a>{{end}}
+  {{else}}
+  This run has finished. <a href="/ui/run/{{.ID}}">Reload to see how it ended.</a>
+  {{end}}
+</p>
+{{end}}
+
+{{/* ---------- Review health (FR-8) ---------- */}}
+
+{{define "page-review-health"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-approve"/></svg></span>
+    <div class="page-head-titles"><h1 class="t-page">How the reviewers are doing</h1></div>
+  </div>
+  <p class="page-lede">Every agent that judges work — spec and plan reviewers, code reviewers and the verifier — with how often it approves, how much it finds, how many rounds its work takes, and how long it takes to decide.</p>
+  <nav class="attempts u-mt-2" aria-label="Which period">
+    {{range .Windows}}<a class="chip{{if .Selected}} chip--on{{end}}" href="/ui/review-health?window={{.Key}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>{{end}}
+  </nav>
+</div>
+
+{{if .Reviewers}}
+{{range .Reviewers}}
+<section class="panel u-mt-4 reviewer{{if .Flagged}} reviewer--flagged{{end}}">
+  <div class="panel-head">
+    <h2 class="panel-title">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-{{if .Flagged}}alert{{else}}agent{{end}}"/></svg>
+      The <b>{{.Role}}</b>&nbsp;role on <code>{{.Model}}</code></h2>
+    <div class="panel-head-actions"><span class="t-meta">{{.What}}</span></div>
+  </div>
+  <div class="panel-body">
+    {{range .Warnings}}
+    <div class="banner banner--warning u-mb-4" role="note">
+      <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg><div>{{.}}</div>
+    </div>
+    {{end}}
+    <div class="stats stats--reviewer">
+      <div class="stat">
+        <span class="stat-label">Approved</span>
+        <span class="stat-num">{{.ApprovalPct}}%</span>
+        <span class="stat-note">{{.Approved}} of {{.Verdicts}} {{if eq .Verdicts 1}}verdict{{else}}verdicts{{end}}{{if .SentBack}}; sent back {{.SentBack}}{{end}}{{if .Escalated}}; escalated {{.Escalated}}{{end}}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Findings per review</span>
+        <span class="stat-num">{{f1 .MajorsPerReview}} <span class="stat-unit">major</span></span>
+        <span class="stat-note">and {{f1 .MinorsPerReview}} minor; {{.Majors}} major and {{.Minors}} minor in all</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Rounds</span>
+        <span class="stat-num">{{f1 .MeanRounds}}</span>
+        <span class="stat-note">reviews for each of the {{.Reviewed}} things it reviewed; at most {{.MaxRounds}}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Time to verdict</span>
+        <span class="stat-num">{{dur .MedianTime}}</span>
+        <span class="stat-note">the median; the slowest took {{dur .SlowestTime}}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Tokens per review</span>
+        <span class="stat-num">{{tokens .MedianTokens}}</span>
+        <span class="stat-note">the median</span>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}
+{{else}}
+<section class="panel u-mt-4"><div class="panel-body">
+  <p class="empty--inline">No agent has reached a verdict {{if eq .Window "all"}}yet{{else}}in this period{{end}}, so there is nothing to measure.</p>
+</div></section>
+{{end}}
+
+<section class="panel u-mt-6">
+  <div class="panel-head"><h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-info"/></svg> How to read this</h2></div>
+  <div class="panel-body doc">
+    <p>A review counts once an agent has reached a verdict: approve, ask for changes, or escalate to a person. Findings are the problems it raised; a verifier's unmet acceptance criteria count as major findings. Rounds count how many times the same document, task or feature came back to this reviewer. Time to verdict runs from the agent starting to its answer, so time spent waiting in the queue doesn't count.</p>
+    <p>A reviewer is flagged once it has given at least {{.Rules.MinVerdicts}} verdicts, when:</p>
+    <ul>
+      <li>it approves {{.Rules.HighPct}}% or more, its median verdict takes under {{.Rules.FastSeconds}} seconds, and its median answer is under {{.Rules.TerseOutput}} tokens long. Speed alone isn't a warning: a document review is a single call to the model, so a fast model is quick however carefully it reads;</li>
+      <li>it approves {{.Rules.HighPct}}% or more of its reviews and raises fewer than {{.Rules.FewPerReview}}, counting major and minor findings together. This isn't applied to verification, because a verifier can't approve while a criterion is unmet, so its approvals never carry findings;</li>
+      <li>it approves {{.Rules.LowPct}}% or fewer.</li>
+    </ul>
+    <p>People's decisions aren't counted here. They are on each document's page, and in the inbox.</p>
+  </div>
+</section>
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+{{/* The card on Home (FR-8.2), loaded as a fragment. */}}
+{{define "frag-review-health"}}
+<p class="rail-card-head"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg> How the reviewers are doing</p>
+<div class="rail-card-body">
+  {{if .Reviews}}
+  <p class="t-meta">{{.Reviews}} {{if eq .Reviews 1}}verdict{{else}}verdicts{{end}} from {{len .Reviewers}} {{if eq (len .Reviewers) 1}}reviewer{{else}}reviewers{{end}}.</p>
+  {{if .Flagged}}
+  <p class="review-flag u-mt-2"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-alert"/></svg>
+    {{.Flagged}} {{if eq .Flagged 1}}reviewer needs{{else}}reviewers need{{end}} a look.</p>
+  {{else}}
+  <p class="t-meta u-mt-2">None of them looks like a rubber stamp.</p>
+  {{end}}
+  {{else}}
+  <p class="empty--inline">No agent has reached a verdict yet.</p>
+  {{end}}
+  <a class="btn btn--sm u-mt-2" href="/ui/review-health">See each reviewer</a>
+</div>
+{{end}}

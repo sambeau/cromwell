@@ -2106,3 +2106,111 @@ dialog.modal::backdrop { background: var(--c-overlay); }
 }
 .plan-order-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
 .plan-order-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); justify-content: flex-end; }
+
+/* == 31 Seeing the work (SPEC-012) ======================================== */
+
+/* The journey: a feature's major moments on one line (FR-6.1). Each step is
+   the lifecycle mark and a word, never colour alone; the current step is
+   outlined. It wraps rather than scrolls, so the whole line is always read. */
+.journey { display: flex; flex-direction: column; gap: var(--sp-2); }
+.journey-line {
+  list-style: none; display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--sp-1) 0; margin: 0; padding: 0;
+}
+.journey-step { display: flex; align-items: center; }
+.journey-step + .journey-step::before {
+  content: ""; width: 14px; height: var(--bw-thick); background: var(--c-line-strong);
+  margin: 0 var(--sp-1);
+}
+.journey-step-link {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 3px var(--sp-2); border-radius: var(--r-full);
+  border: var(--bw) solid var(--c-line); background: var(--c-surface);
+  font-size: var(--fs-xs); color: var(--c-text-2); text-decoration: none; white-space: nowrap;
+}
+.journey-step-link:hover { background: var(--c-surface-2); color: var(--c-text); }
+.journey-step[data-state="done"] .icon      { color: var(--c-green-mark); }
+.journey-step[data-state="ready"] .icon     { color: var(--c-blue-mark); }
+.journey-step[data-state="active"] .icon    { color: var(--c-amber-mark); }
+.journey-step[data-state="review"] .icon    { color: var(--c-violet-mark); }
+.journey-step[data-state="abandoned"] .icon { color: var(--c-red-mark); }
+.journey-step[data-state="idea"] .icon,
+.journey-step[data-state="draft"] .icon     { color: var(--c-text-3); }
+.journey-step--current .journey-step-link {
+  border-color: var(--c-accent-line); background: var(--c-accent-soft);
+  color: var(--c-text); font-weight: var(--fw-medium);
+}
+.journey-count { color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+
+/* The detail: each moment, what led to it, and what ran in its phase. */
+.moments { list-style: none; margin: 0; padding: 0; }
+.moment { padding: var(--sp-3) var(--sp-4); border-bottom: var(--bw) solid var(--c-line); }
+.moment:last-child { border-bottom: 0; }
+.moment--current { background: var(--c-surface-2); }
+.moment-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.moment-mark { display: inline-flex; color: var(--c-text-3); }
+.moment[data-state="done"] .moment-mark      { color: var(--c-green-mark); }
+.moment[data-state="abandoned"] .moment-mark { color: var(--c-red-mark); }
+.moment[data-state="review"] .moment-mark    { color: var(--c-violet-mark); }
+.moment[data-state="active"] .moment-mark    { color: var(--c-amber-mark); }
+.moment[data-state="ready"] .moment-mark     { color: var(--c-blue-mark); }
+.moment-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.moment-meta { margin-left: auto; }
+.moment-cause { margin: var(--sp-2) 0 0 calc(16px + var(--sp-2)); }
+.moment-runs, .moment-events { margin: var(--sp-1) 0 0 calc(16px + var(--sp-2)); }
+.moment-events .activity-row { padding-top: 2px; padding-bottom: 2px; }
+
+/* One agent run on a line (FR-4, FR-6.3). */
+.run-lines, .moment-runs { list-style: none; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.run-line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-sm); padding: 2px 0;
+}
+.run-line > .icon { color: var(--c-text-3); }
+.run-line-end { margin-left: auto; display: inline-flex; gap: var(--sp-3); align-items: center; }
+.moment-runs--cause .run-line-what { font-weight: var(--fw-medium); }
+
+/* The transcript (FR-3). */
+.attempts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.chip--on { background: var(--c-accent-soft); border-color: var(--c-accent-line); color: var(--c-text); font-weight: var(--fw-medium); }
+.run-progress { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.transcript-pre {
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.55;
+  background: var(--c-surface-2); border: var(--bw) solid var(--c-line); border-radius: var(--r-md);
+  padding: var(--sp-3); margin-top: var(--sp-2);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto;
+}
+.said, .tool-call { border: var(--bw) solid var(--c-line); border-radius: var(--r-md); }
+.said + .said { margin-top: var(--sp-2); }
+.said > summary, .tool-call > summary {
+  list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+}
+.said > summary::-webkit-details-marker, .tool-call > summary::-webkit-details-marker { display: none; }
+.said[open] > summary .disclosure-twisty, .tool-call[open] > summary .disclosure-twisty { transform: rotate(90deg); }
+.said > .transcript-pre { margin: 0 var(--sp-3) var(--sp-3); }
+.turns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-5); }
+.turn { display: flex; flex-direction: column; gap: var(--sp-2); }
+.turn-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3);
+  border-bottom: var(--bw) solid var(--c-line); padding-bottom: var(--sp-1);
+}
+.turn-n { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.said-text {
+  font-family: var(--font-read); font-size: var(--fs-md); line-height: var(--lh-read);
+  white-space: pre-wrap; max-width: var(--measure-read);
+}
+.said-nudge { display: flex; align-items: center; gap: var(--sp-1); }
+.tool-name { font-size: var(--fs-xs); }
+.tool-arg { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-2); overflow-wrap: anywhere; }
+.tool-end { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-2); }
+.tool-body { padding: 0 var(--sp-3) var(--sp-3); }
+.tool-call--error { border-color: var(--c-red-line); }
+.tool-call--outcome { border-color: var(--c-green-line); }
+
+/* Review health (FR-8): one card per reviewer, its figures as stat blocks
+   with a sentence under each, not a dense table (D-10). */
+.reviewer--flagged { border-color: var(--c-amber-line); }
+.stats--reviewer { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.review-flag { display: flex; align-items: center; gap: var(--sp-2); color: var(--c-amber-text); font-size: var(--fs-sm); }
+.review-flag .icon { color: var(--c-amber-mark); }

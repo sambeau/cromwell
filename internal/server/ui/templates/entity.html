@@ -55,6 +55,8 @@
 </div>
 {{end}}
 
+{{with .Timeline}}{{template "feature-timeline" .}}{{end}}
+
 <div class="page-split u-mt-6">
   <div>
     {{/* The body: the main design document, rendered at reading width. */}}
@@ -770,6 +772,7 @@
   <div class="panel-body"><div class="doc"><p>{{.Task.Description}}</p></div></div>
 </section>
 {{end}}
+{{template "task-runs" .Runs}}
 {{end}}
 {{template "pagebottom" .}}{{end}}
 {{/* ---------- Document page ---------- */}}
@@ -906,6 +909,7 @@
   </div>
 </section>
 {{end}}
+{{template "document-runs" .Runs}}
 </div>{{/* #doc-live */}}
 {{end}}
 {{template "pagebottom" .}}{{end}}

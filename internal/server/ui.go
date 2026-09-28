@@ -612,6 +612,9 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/m/{id}/candidates", s.handleUIMilestoneCandidates)
 	mux.HandleFunc("GET /ui/r/{id}/edit", s.handleUIRoadmapEdit)
 	mux.HandleFunc("GET /ui/t/{id}", s.handleUITaskPage)
+	// Seeing the work (SPEC-012): a run's transcript, and review health.
+	mux.HandleFunc("GET /ui/run/{id}", s.handleUIRun)
+	mux.HandleFunc("GET /ui/review-health", s.handleUIReviewHealth)
 
 	// Actions on their things (FR-5): each carries the entity's id from the
 	// page it was rendered on, and calls the same gated, audited service
@@ -644,6 +647,9 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/frag/calibration", s.handleFragCalibration)
 	mux.HandleFunc("GET /ui/frag/inbox", s.handleFragInbox)
 	mux.HandleFunc("GET /ui/frag/inbox-badge", s.handleFragInboxBadge)
+	mux.HandleFunc("GET /ui/frag/timeline", s.handleFragTimeline)
+	mux.HandleFunc("GET /ui/frag/run/{id}", s.handleFragRunProgress)
+	mux.HandleFunc("GET /ui/frag/review-health", s.handleFragReviewHealth)
 
 	// Realtime stream and the inbox respond.
 	mux.HandleFunc("GET /ui/events", s.handleUIEvents)

@@ -125,6 +125,9 @@ type entityPage struct {
 	// is planned — the member-side end of D-12 (SPEC-010 FR-3.1).
 	MilestoneChoices []milestoneChoiceGroup
 	Activity         []store.AuditEvent
+	// Timeline is a feature's journey (SPEC-012 FR-6). On a feature page it
+	// replaces Activity, whose events it carries as its detail level (SD-7).
+	Timeline *timelineView
 
 	Notice string
 	Error  string
@@ -586,7 +589,7 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 	if page.MilestoneChoices, err = s.milestoneChoices(ctx, "feature", f.ID, page.MemberOf); err != nil {
 		return nil, err
 	}
-	if page.Activity, err = s.Store.AuditTail(ctx, "feature", &f.ID, 10); err != nil {
+	if page.Timeline, err = s.featureTimeline(ctx, f.ID); err != nil {
 		return nil, err
 	}
 	return page, nil
