@@ -452,8 +452,8 @@ Phase C  M9 Executors · M10 Decisions · M11 Bugs · M12 Spikes & checklists
 Phase D  M13a Import ── M13b GitHub projection ── M13c Tickly pilot = v1
 ```
 
-Adding up the sizes gives roughly **24 to 26 sprints**, if M13's three parts
-take three to five sprints between them. At one sprint a fortnight that's about
+Adding up the sizes gives roughly **25 to 26 sprints**, with M13's three parts
+taking four to five sprints between them. At one sprint a fortnight that's about
 a year. At one a week, about six months. The "Subutai usable" point at the end
 of phase B is about 14 sprints in. Phase A is four sprints, and most of that is
 Sam's reading time.
