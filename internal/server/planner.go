@@ -52,11 +52,17 @@ func (s *Server) Plan(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, e
 				ValidateOutcome: validateComments,
 			}, nil
 		}
+		// The reviewer answers the document's open human issues in its
+		// outcome, and an approval must answer all of them (SPEC-011 SD-6).
+		open, err := s.openIssueIDs(ctx, d.RefID)
+		if err != nil {
+			return nil, err
+		}
 		return &dispatch.Plan{
 			System: system, User: user, TurnCap: turnCap,
-			Tools:           []provider.ToolDef{dispatch.ReviewOutcomeTool()},
+			Tools:           []provider.ToolDef{reviewOutcomeTool()},
 			OutcomeTool:     "submit_review",
-			ValidateOutcome: validateReview,
+			ValidateOutcome: validateReviewWithIssues(open),
 		}, nil
 	}
 }
@@ -510,9 +516,20 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 				r.Section, strings.Join(r.Columns, ", "))
 		}
 	}
+	// A draft that came back — from its reviewer, or with a person's issue —
+	// is revised, not rewritten from nothing (SPEC-011 FR-3.2).
+	revising, err := s.revisionContext(ctx, &b, f.ID, docType)
+	if err != nil {
+		return nil, err
+	}
 	b.WriteString("\n# Your task\n\n")
-	fmt.Fprintf(&b, "Write the %s for this feature, following the template's sections exactly, and call submit_document once with the whole file. Set the front matter's owner to `%s`.\n",
-		strings.ReplaceAll(docType, "_", "-"), path+"/"+f.Slug)
+	if revising {
+		fmt.Fprintf(&b, "Revise the %s above so that every major finding and every human issue is dealt with, keeping what already stands. Follow the template's sections exactly, and call submit_document once with the whole revised file. Keep the front matter's owner as `%s`.\n",
+			strings.ReplaceAll(docType, "_", "-"), path+"/"+f.Slug)
+	} else {
+		fmt.Fprintf(&b, "Write the %s for this feature, following the template's sections exactly, and call submit_document once with the whole file. Set the front matter's owner to `%s`.\n",
+			strings.ReplaceAll(docType, "_", "-"), path+"/"+f.Slug)
+	}
 
 	turnCap := cfg.Dispatch.TurnCap
 	if role.Limits != nil && role.Limits.TurnCap > 0 {

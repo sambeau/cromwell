@@ -1,5 +1,4 @@
 type: design
-reviewer_role: design-reviewer
 approved_by: human
 front_matter:
   required: [title, type, owner]

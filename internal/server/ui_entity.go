@@ -115,6 +115,13 @@ type entityPage struct {
 	StartReason string
 	CanAbandon  bool
 	IsTerminal  bool
+	// Send to development (SPEC-011 FR-4.1): the feature's send card, and
+	// on an initiative whether any of its features could be sent.
+	Send       sendCard
+	CanSendAny bool
+	// ShowStartCard is whether the blocked Start building card appears: not
+	// for a feature nobody has sent, whose next step is sending it.
+	ShowStartCard bool
 
 	Children        []childCard
 	Documents       []docCard
@@ -505,6 +512,11 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 		return nil, err
 	}
 	for _, f := range feats {
+		if f.State == lifecycle.FeatIdea || f.State == lifecycle.FeatReady {
+			if _, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID); err == store.ErrNotFound {
+				page.CanSendAny = true
+			}
+		}
 		r, err := s.featureRollup(ctx, f.ID)
 		if err != nil {
 			return nil, err
@@ -567,6 +579,9 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 		page.StartReason = featureStartReason(string(f.State), specApproved, devPlanApproved)
 	}
 
+	page.Send = s.sendCardFor(ctx, f)
+	page.ShowStartCard = !page.CanStart && !page.IsTerminal && (f.State != lifecycle.FeatIdea || page.Send.Sent)
+
 	body, bodyDoc, ok := s.bodyFor(ctx, "feature", &f.ID)
 	page.HasBody, page.Body, page.BodyDoc = ok, body, bodyDoc
 
@@ -602,8 +617,8 @@ func (s *Server) currentDocApproved(ctx context.Context, docType string, feature
 	return err == nil && d.State == lifecycle.DocApproved
 }
 
-// featureStartReason explains, in the words a person needs, why "Start work"
-// is unavailable. For a feature still forming that means naming the half of
+// featureStartReason explains, in the words a person needs, why "Start
+// building" is unavailable. For a feature still forming that means naming the half of
 // the contract that is actually missing: saying "once the specification is
 // approved" to someone looking at an approved specification tells them to do
 // something they have already done, and leaves them stuck.
@@ -612,11 +627,11 @@ func featureStartReason(state string, specApproved, devPlanApproved bool) string
 	case "idea":
 		switch {
 		case !specApproved && !devPlanApproved:
-			return "Work can start once this feature has an approved specification and an approved dev-plan. Neither is approved yet, so it is still an idea."
+			return "Building can start once this feature has an approved specification and an approved dev-plan. Neither is approved yet, so it is still an idea."
 		case !specApproved:
-			return "Work can start once this feature's specification is approved. Its dev-plan is approved; the specification is not, so it is still an idea."
+			return "Building can start once this feature's specification is approved. Its dev-plan is approved; the specification is not, so it is still an idea."
 		case !devPlanApproved:
-			return "Work can start once this feature's dev-plan is approved. Its specification is approved, but a dev-plan decomposes that specification into the tasks agents build, and this feature does not have an approved one yet."
+			return "Building can start once this feature's dev-plan is approved. Its specification is approved, but a dev-plan decomposes that specification into the tasks agents build, and this feature does not have an approved one yet."
 		}
 		// Both halves approved but still an idea: the gate has not been
 		// re-evaluated yet, and the heartbeat will pick it up.
@@ -626,7 +641,7 @@ func featureStartReason(state string, specApproved, devPlanApproved bool) string
 	case "review":
 		return "This feature is in review; its work is complete and awaiting verification."
 	default:
-		return "This feature is not in the ready state, so work cannot be started."
+		return "This feature is not in the ready state, so building can't start."
 	}
 }
 

@@ -29,11 +29,19 @@
     </div>
     {{/* One primary action, everything else in the menu (round 4 rule 3). */}}
     <div class="page-head-actions">
+      {{if and (eq .Kind "feature") .Send.CanSend}}
+      <a class="btn {{if not .CanStart}}btn--primary {{end}}btn--sm" href="/ui/send?feature={{.ID}}">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Send to development</a>
+      {{end}}
+      {{if and (eq .Kind "initiative") .CanSendAny}}
+      <a class="btn btn--sm" href="/ui/send?initiative={{.ID}}">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Send features to development…</a>
+      {{end}}
       {{if and (eq .Kind "feature") .CanStart}}
       <form method="post" action="/ui/feature/start">
         <input type="hidden" name="id" value="{{.ID}}">
         <button class="btn btn--primary btn--sm" type="submit">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Start work</button>
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Start building</button>
       </form>
       {{end}}
       {{template "entity-menu" .}}
@@ -282,12 +290,13 @@
 
   {{/* A blocked action, and only a blocked action, gets its own card: it has to
        show the reason it is blocked, which a closed menu cannot do (round 4 §1). */}}
-  {{if and (eq .Kind "feature") (not .CanStart) (not .IsTerminal)}}
+  {{if eq .Kind "feature"}}{{template "send-card" .}}{{end}}
+  {{if and (eq .Kind "feature") .ShowStartCard}}
   <div class="rail-card">
     <div class="rail-card-body">
       <div class="action">
         <button class="btn btn--block" type="button" disabled aria-describedby="why-start">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Start work on this</button>
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Start building</button>
         <p class="action-reason" id="why-start">
           <svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg>
           <span>{{.StartReason}}</span></p>
@@ -790,8 +799,12 @@
      page follows — state badge, decision controls, body and comments alike.
      The banners stay outside so an action's notice is not swept away by the
      refresh its own event causes. */}}
+{{/* hx-disinherit: the forms inside must not inherit this block's hx-select
+     and hx-swap, or a boosted form post swaps the whole body for this
+     fragment and loses the page's banners and navigation (found by the
+     SPEC-011 walkthrough). */}}
 <div id="doc-live" hx-get="/ui/d/{{.Document.Path}}" hx-trigger="sse:changed"
-     hx-select="#doc-live" hx-swap="outerHTML">
+     hx-select="#doc-live" hx-swap="outerHTML" hx-disinherit="*">
 <div class="page-head">
   <div class="page-head-top">
     <span class="page-head-icon">
@@ -820,6 +833,8 @@
   <svg class="icon icon-md" aria-hidden="true"><use href="#i-info"/></svg>
   <div><b>This document is written in your own editor.</b>Edit the file in git and this page updates itself — Cromwell reads it, it does not own it.</div>
 </div>
+
+{{template "doc-actions" .}}
 
 {{if or .ReviewCheckpointID .HumanDecision}}
 <section class="panel u-mt-4">
@@ -897,8 +912,11 @@
             <span class="comment-author">{{.Author}}</span>
             {{if .SectionRef}}<span class="comment-time">on {{.SectionRef}}</span>{{end}}
             {{if .Severity}}<span class="badge" data-state="{{if eq .Severity "major"}}abandoned{{else}}idea{{end}}"><span class="badge-text">{{.Severity}}</span></span>{{end}}
+            {{if .IsIssue}}<span class="badge" data-state="{{if .Resolved}}approved{{else}}active{{end}}"><span class="badge-text">{{if .Resolved}}issue answered{{else}}open issue{{end}}</span></span>{{if eq .Via "mcp"}}<span class="comment-time">relayed from chat</span>{{end}}{{end}}
           </div>
-          <div class="comment-body"><p>{{.Body}}</p></div>
+          <div class="comment-body"><p>{{.Body}}</p>
+            {{if .Quote}}<p class="t-meta">In their words: “{{.Quote}}”</p>{{end}}
+            {{if .AddressedNote}}<p class="t-meta">Answered by {{.AddressedBy}}: {{.AddressedNote}}</p>{{end}}</div>
         </div>
       </div>
       {{end}}

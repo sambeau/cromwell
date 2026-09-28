@@ -122,6 +122,12 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"place_roadmap_entry",
 		"remove_milestone_member",
 		"remove_roadmap_entry",
+		// SPEC-011 FR-8: the relay tools of DEC-006 Amendment 1 decision 8,
+		// each carrying a person's quoted decision. Tick-a-job joins with M5.
+		"relay_issue",
+		"relay_release_hold",
+		"relay_review_request",
+		"relay_verdict",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -136,6 +142,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-010 SD-4: locking a milestone is a gated, one-way lifecycle act
 		// and stays a person's act in the web UI.
 		"lock_milestone",
+		// SPEC-011 FR-8.3: sending, withdrawing and starting building commit
+		// resources, and checkpoints are answered in the web UI.
+		"send_to_development", "withdraw_send", "start_building", "answer_checkpoint",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

@@ -415,12 +415,18 @@ func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, st
 	if err != nil {
 		return "", "", 0, err
 	}
+	var issues []store.Comment
 	for _, c := range comments {
+		if c.IsIssue {
+			issues = append(issues, c)
+			continue
+		}
 		in.Comments = append(in.Comments, content.CommentContext{
 			Author: c.Author, SectionRef: c.SectionRef, Body: c.Body, CreatedAt: c.CreatedAt,
 		})
 	}
 
+	in.HumanIssues = issuesPromptSection(issues)
 	system, user := content.AssembleReviewPrompt(in)
 	turnCap := cfg.Dispatch.TurnCap
 	if role.Limits != nil && role.Limits.TurnCap > 0 {

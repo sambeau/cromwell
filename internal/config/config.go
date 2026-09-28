@@ -60,6 +60,30 @@ type Config struct {
 	Assignments map[string]string  `yaml:"assignments"`
 	Dispatch    DispatchConfig     `yaml:"dispatch"`
 	Commands    map[string]Command `yaml:"commands"`
+	// SpecReview is how specs are reviewed (SPEC-011 FR-5.1, DEC-006
+	// Amendment 1): the agent reviewer is the normal approver, and a project
+	// may hold every spec for a person after it. Absent, both take their
+	// defaults.
+	SpecReview SpecReviewConfig `yaml:"spec_review"`
+}
+
+// SpecReviewConfig is the project's spec-review settings. Agent is a pointer
+// because it defaults to on: an absent key must read as true.
+type SpecReviewConfig struct {
+	Agent *bool `yaml:"agent"`
+	Hold  bool  `yaml:"hold"`
+}
+
+// AgentSpecReview reports whether the agent spec review runs (default on).
+func (c *Config) AgentSpecReview() bool {
+	return c.SpecReview.Agent == nil || *c.SpecReview.Agent
+}
+
+// HoldSpecs reports the project's hold. With agent review off it is forced
+// on, whatever the file says: there is always at least one reviewer
+// (Amendment 1, decision 6).
+func (c *Config) HoldSpecs() bool {
+	return c.SpecReview.Hold || !c.AgentSpecReview()
 }
 
 type DatabaseConfig struct {

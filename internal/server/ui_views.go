@@ -37,7 +37,7 @@ func answerOptions(kind string) []string {
 		return []string{"approve", "request_changes"}
 	case "gate-override":
 		return []string{"override", "deny"}
-	case "dispatch-failure":
+	case "dispatch-failure", "authoring-deadlock":
 		return []string{"retry", "cancel"}
 	case "review-deadlock":
 		return []string{"approve", "abandon"}
@@ -73,7 +73,7 @@ func responseFor(kind, verb, reason string) map[string]any {
 		r["decision"] = verb // approve | request_changes
 	case "gate-override":
 		r["override"] = verb == "override"
-	case "dispatch-failure":
+	case "dispatch-failure", "authoring-deadlock":
 		r["retry"] = verb == "retry"
 	case "review-deadlock":
 		r["decision"] = verb // approve | abandon
@@ -106,8 +106,11 @@ type docPageData struct {
 	// request-changes controls appear without any checkpoint, because for this
 	// type the human decision is the point rather than the fallback.
 	HumanDecision bool
-	Notice        string
-	Error         string
+	// Actions is what the page may offer beyond the verdict panel: Submit,
+	// Revise, Detach, issues, and the spec-review acts (SPEC-011).
+	Actions docActions
+	Notice  string
+	Error   string
 }
 
 func (s *Server) documentView(r *http.Request) (*docPageData, error) {
@@ -145,6 +148,7 @@ func (s *Server) documentViewByPath(ctx context.Context, path, notice, errMsg st
 	// Is this document's review human-gated? A human-approved type always is
 	// while it is in reviewing (SPEC-009 FR-2.3); an agent-approved type is
 	// only when an open review-escalation checkpoint refs it (SD-4).
+	page.Actions = s.docActionsFor(ctx, doc)
 	if doc.State == lifecycle.DocReviewing && s.humanApprovalType(doc.Type) {
 		page.HumanDecision = true
 	} else if cp, err := s.openReviewCheckpoint(ctx, doc.ID); err == nil && cp != nil {

@@ -110,6 +110,15 @@ type FeatureDescribed struct {
 
 func (FeatureDescribed) EventKind() string { return "feature.described" }
 
+// FeatureSent is Send to development (SPEC-011 FR-1.3): a person committed
+// resources to a feature, and the authoring invariants may now run for it.
+// Published after the transaction that wrote the mark commits.
+type FeatureSent struct {
+	FeatureID uuid.UUID
+}
+
+func (FeatureSent) EventKind() string { return "feature.sent" }
+
 // CheckpointRaised is a presentation-only signal that a checkpoint has just
 // been created (DESIGN-007 §6, FR-8.2). Checkpoint creation emits no workflow
 // event — the rule engine acts on responses, not raises — so this never enters

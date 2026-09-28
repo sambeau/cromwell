@@ -17,8 +17,13 @@ func TestDevPlanApprovalDecomposesThenGates(t *testing.T) {
 		OwnerFeature: &FeatureSnap{ID: featID, State: lifecycle.FeatIdea},
 	}
 	actions := Decide(bus.DocumentTransitioned{DocID: docID, From: lifecycle.DocReviewing, To: lifecycle.DocApproved}, snap)
-	if len(actions) != 2 {
-		t.Fatalf("want [decompose, gate], got %d: %+v", len(actions), actions)
+	// SPEC-011 FR-7: the chain ends with an estimate, which the server
+	// queues only for a sent feature.
+	if len(actions) != 3 {
+		t.Fatalf("want [decompose, gate, estimate], got %d: %+v", len(actions), actions)
+	}
+	if _, ok := actions[2].(EstimateFeature); !ok {
+		t.Errorf("action 2 should estimate: %+v", actions[2])
 	}
 	if d, ok := actions[0].(DecomposeDevPlan); !ok || d.FeatureID != featID {
 		t.Errorf("action 0 should decompose: %+v", actions[0])

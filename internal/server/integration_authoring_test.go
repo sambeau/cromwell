@@ -15,30 +15,73 @@ import (
 
 	"github.com/google/uuid"
 
+	"cromwell/internal/bus"
 	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
 	"cromwell/internal/store"
 )
 
-// enableAuthoringChain uncomments the opt-in authoring assignments in the
-// test project's config, the way a project that wants the chain would. Only
-// write-spec is enabled here: leaving write-dev-plan silent keeps the mock
-// provider's scripted FIFO deterministic while the assertions count spec
-// dispatches.
-func (h *harness) enableAuthoringChain() {
+// onlyWriteSpec comments out the starter's write-dev-plan assignment, so a
+// test that counts spec dispatches keeps the mock provider's scripted FIFO
+// deterministic: a sent feature whose spec is approved would otherwise set an
+// unscripted plan writer off. The starter enables both (SPEC-011 FR-11.1).
+func (h *harness) onlyWriteSpec() {
+	h.t.Helper()
+	h.editConfig("  write-dev-plan: dev-plan-author", "  # write-dev-plan: dev-plan-author")
+}
+
+// editConfig replaces one line of the test project's config.yaml.
+func (h *harness) editConfig(old, new string) {
 	h.t.Helper()
 	cfgPath := filepath.Join(h.root, ".cromwell/config.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	replaced := strings.Replace(string(data), "# write-spec: spec-author", "write-spec: spec-author", 1)
+	replaced := strings.Replace(string(data), old, new, 1)
 	if replaced == string(data) {
-		h.t.Fatal("starter config no longer carries the commented write-spec assignment")
+		h.t.Fatalf("starter config no longer carries %q", old)
 	}
 	if err := os.WriteFile(cfgPath, []byte(replaced), 0o644); err != nil {
 		h.t.Fatal(err)
 	}
+}
+
+// send sends a feature to development as the operator would (SPEC-011).
+func (h *harness) send(featurePath string, hold bool) {
+	h.t.Helper()
+	f, err := h.srv.featureByPath(context.Background(), featurePath)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if err := h.srv.SendToDevelopment(context.Background(), f.ID, hold, "sam"); err != nil {
+		h.t.Fatalf("send %s: %v", featurePath, err)
+	}
+}
+
+// countPurpose counts a feature's dispatches of one purpose.
+func (h *harness) countPurpose(featurePath, purpose string) int {
+	h.t.Helper()
+	f, err := h.srv.featureByPath(context.Background(), featurePath)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	n, err := store.CountDispatchesForRef(context.Background(), h.srv.Store.Pool, "feature", f.ID, purpose)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return n
+}
+
+// quiet waits for the dispatch queue to drain, so a deliberately unscripted
+// dispatch has failed and rested before the next step is scripted.
+func (h *harness) quiet() {
+	h.t.Helper()
+	h.eventually("dispatch queue quiet", func() bool {
+		var busy int
+		err := h.srv.Store.Pool.QueryRow(context.Background(),
+			`SELECT count(*) FROM dispatches WHERE state IN ('queued','running')`).Scan(&busy)
+		return err == nil && busy == 0
+	})
 }
 
 func cascadeSpec(feature string) string {
@@ -123,13 +166,12 @@ func (h *harness) registerDoc(path, docType, ownerType, ownerRef, body string) {
 	}
 }
 
-// approveDesignAsHuman drives a design through submit → agent comments →
-// the human approve action (SPEC-009 FR-2), and waits for approval.
+// approveDesignAsHuman drives a design through submit and the human approve
+// action (SPEC-009 FR-2). A fresh project has no design reviewer (SPEC-011
+// FR-10), so a submitted design simply waits for the person.
 func (h *harness) approveDesignAsHuman(path string) {
 	h.t.Helper()
 	ctx := context.Background()
-	h.mock.RespondOutcome("submit_comments",
-		`{"reasoning":"Read whole; the decisions hold"}`, provider.Usage{Input: 10, Output: 10})
 	if code, out := h.call("POST", "/api/docs/submit", map[string]string{"path": path}); code != 200 {
 		h.t.Fatalf("submit %s: %d %v", path, code, out)
 	}
@@ -137,10 +179,9 @@ func (h *harness) approveDesignAsHuman(path string) {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	// Wait for the reviewer's comments so the scripted FIFO stays aligned.
-	h.eventually("design review round complete for "+path, func() bool {
-		comments, err := store.CommentsForDocument(ctx, h.srv.Store.Pool, doc.ID, false)
-		return err == nil && len(comments) > 0
+	h.eventually("design in review "+path, func() bool {
+		d, err := store.GetDocument(ctx, h.srv.Store.Pool, doc.ID)
+		return err == nil && d.State == lifecycle.DocReviewing
 	})
 	if err := h.srv.HumanApproveDocument(ctx, doc.ID, "sam"); err != nil {
 		h.t.Fatalf("human approve %s: %v", path, err)
@@ -188,45 +229,37 @@ func (h *harness) reviseAndApproveDesign(path, amendment string) {
 	h.approveDesignAsHuman(revPath)
 }
 
-// TestFeatureTriggersUnderApprovedDesign is SPEC-009 FR-4.3/FR-4.4: approve
-// the design once, then keep planning — a described feature created under it
-// is specced on creation, an undescribed one is left in silence (FR-4.5), and
-// giving it a description releases it.
-func TestFeatureTriggersUnderApprovedDesign(t *testing.T) {
+// TestSendIsTheTrigger is SPEC-011 FR-2.3 over SPEC-009 FR-4.3/4.4:
+// approving a design, creating a described feature under it, and describing
+// a placeholder all only re-check, and start nothing, because nothing is sent.
+// Send to development is what sets the spec writer off — once, however often
+// the event replays — and an undescribed feature can't be sent (FR-4.1).
+func TestSendIsTheTrigger(t *testing.T) {
 	h := newHarness(t)
-	h.enableAuthoringChain()
+	h.onlyWriteSpec()
 	ctx := context.Background()
 
 	if code, out := h.call("POST", "/api/initiatives", map[string]string{"slug": "pf", "name": "Platform"}); code != 201 {
 		t.Fatalf("create initiative: %d %v", code, out)
 	}
+	// A feature described before the design exists: approving the design
+	// must not spec it (DEC-006 decision 1).
+	if code, out := h.call("POST", "/api/features", map[string]string{
+		"initiative_path": "pf", "slug": "early", "name": "The early behaviour",
+		"description": "Everything the early behaviour must do."}); code != 201 {
+		t.Fatalf("create early feature: %d %v", code, out)
+	}
 	designPath := "docs/design/pf.md"
 	h.registerDoc(designPath, "design", "initiative", "pf", cascadeDesignV1)
 	h.approveDesignAsHuman(designPath)
 
-	countWriteSpec := func(feature string) int {
-		f, err := h.srv.featureByPath(ctx, "pf/"+feature)
-		if err != nil {
-			t.Fatal(err)
-		}
-		n, err := store.CountDispatchesForRef(ctx, h.srv.Store.Pool, "feature", f.ID, "write-spec")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-
-	// A described feature created under the approved design is specced now.
+	// A described feature created under the approved design: still nothing.
 	if code, out := h.call("POST", "/api/features", map[string]string{
 		"initiative_path": "pf", "slug": "told", "name": "The told behaviour",
 		"description": "Everything the told behaviour must do."}); code != 201 {
 		t.Fatalf("create described feature: %d %v", code, out)
 	}
-	h.eventually("write-spec dispatched for the described feature", func() bool {
-		return countWriteSpec("told") == 1
-	})
-
-	// An undescribed feature is silence: no dispatch, no checkpoint (FR-4.5).
+	// An undescribed feature, then described through the UI action.
 	if code, out := h.call("POST", "/api/features", map[string]string{
 		"initiative_path": "pf", "slug": "stub", "name": "The stub behaviour"}); code != 201 {
 		t.Fatalf("create undescribed feature: %d %v", code, out)
@@ -235,27 +268,67 @@ func TestFeatureTriggersUnderApprovedDesign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := countWriteSpec("stub"); got != 0 {
-		t.Fatalf("an undescribed feature must not be dispatched; got %d", got)
+	if err := h.srv.SendToDevelopment(ctx, stub.ID, false, "sam"); err == nil ||
+		!strings.Contains(err.Error(), "no description") {
+		t.Fatalf("an undescribed feature must not be sendable; got %v", err)
 	}
-
-	// Describing it through the UI action is the release.
 	if code, body := h.postForm("/ui/entity/describe", map[string]string{
 		"ref_type": "feature", "id": stub.ID.String(),
 		"description": "Now the stub behaviour is real."}); code != 200 {
 		t.Fatalf("describe: %d\n%s", code, truncate(body, 300))
 	}
-	h.eventually("write-spec dispatched once the feature is described", func() bool {
-		return countWriteSpec("stub") == 1
-	})
+	// Let every re-check the events above caused run, then look.
+	h.quiet()
+	for _, f := range []string{"early", "told", "stub"} {
+		if got := h.countPurpose("pf/"+f, "write-spec"); got != 0 {
+			t.Fatalf("nothing is sent, so %s must not be specced; got %d dispatches", f, got)
+		}
+	}
+	if got := len(h.pendingByKind("config-error")) + len(h.pendingByKind("dispatch-failure")); got != 0 {
+		t.Fatalf("an unsent feature raises nothing; got %d checkpoints", got)
+	}
 
-	// NFR-2 / DoD 4: an authoring dispatch carries a nil ToolCtx. Documents
-	// live in the main repository, never a worktree — the property most
-	// likely to be eroded by a later change, so it is pinned here.
+	// The heartbeat sweep leaves unsent features alone (FR-2.4).
+	h.srv.ReconcileAuthoringSweep(ctx)
+	h.quiet()
+	if got := h.countPurpose("pf/told", "write-spec"); got != 0 {
+		t.Fatalf("the sweep must not spec an unsent feature; got %d", got)
+	}
+
+	// Send one of them: exactly that one is specced.
+	h.send("pf/told", false)
+	h.eventually("write-spec dispatched for the sent feature", func() bool {
+		return h.countPurpose("pf/told", "write-spec") == 1
+	})
 	told, err := h.srv.featureByPath(ctx, "pf/told")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A replayed send, and a sweep, dispatch nothing more (FR-4.6 of SPEC-009).
+	h.quiet()
+	h.srv.Bus.Publish(bus.FeatureSent{FeatureID: told.ID})
+	h.srv.ReconcileAuthoringSweep(ctx)
+	h.quiet()
+	if got := h.countPurpose("pf/told", "write-spec"); got != 1 {
+		t.Fatalf("a replayed send must not double-dispatch; got %d", got)
+	}
+	if got := h.countPurpose("pf/stub", "write-spec"); got != 0 {
+		t.Fatalf("the unsent feature beside it must stay quiet; got %d", got)
+	}
+	// Sending twice is refused in a sentence.
+	if err := h.srv.SendToDevelopment(ctx, told.ID, false, "sam"); err == nil ||
+		!strings.Contains(err.Error(), "already been sent") {
+		t.Fatalf("a second send must be refused; got %v", err)
+	}
+	var sentRows int
+	_ = h.srv.Store.Pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE kind = 'feature.sent'`).Scan(&sentRows)
+	if sentRows != 1 {
+		t.Errorf("one feature.sent audit row expected; got %d", sentRows)
+	}
+
+	// NFR-2 / DoD 4: an authoring dispatch carries a nil ToolCtx. Documents
+	// live in the main repository, never a worktree — the property most
+	// likely to be eroded by a later change, so it is pinned here.
 	for _, purpose := range []string{"write-spec", "write-dev-plan"} {
 		role := "spec-author"
 		if purpose == "write-dev-plan" {
@@ -282,7 +355,7 @@ func TestFeatureTriggersUnderApprovedDesign(t *testing.T) {
 // raises no checkpoint at all, invalidating directly.
 func TestDesignRevisionCascade(t *testing.T) {
 	h := newHarness(t)
-	h.enableAuthoringChain()
+	h.onlyWriteSpec()
 	ctx := context.Background()
 
 	if code, out := h.call("POST", "/api/initiatives", map[string]string{"slug": "pf", "name": "Platform"}); code != 201 {
@@ -297,27 +370,37 @@ func TestDesignRevisionCascade(t *testing.T) {
 		}
 	}
 
-	// Three approved specs; alpha also gets an approved dev-plan, which
-	// decomposes and passes G1, so alpha reaches ready.
-	specPaths := map[string]string{}
-	for _, f := range features {
-		p := "docs/specs/" + f + ".md"
-		h.registerDoc(p, "spec", "feature", "pf/"+f, cascadeSpec(f))
-		h.approveDoc(p)
-		specPaths[f] = p
-	}
-	devPlanPath := "docs/plans/alpha.md"
-	h.registerDoc(devPlanPath, "dev_plan", "feature", "pf/alpha", cascadeDevPlan("alpha"))
-	h.approveDoc(devPlanPath)
-	h.eventually("alpha ready", func() bool { return h.featureState("pf/alpha") == lifecycle.FeatReady })
-
-	// The first design approves without a cascade: every feature already has
-	// its spec, so the reconciler is silent.
+	// The first design approves without a cascade, and starts nothing.
 	designPath := "docs/design/pf.md"
 	h.registerDoc(designPath, "design", "initiative", "pf", cascadeDesignV1)
 	h.approveDesignAsHuman(designPath)
 	if got := len(h.pendingByKind("design-revision")); got != 0 {
 		t.Fatalf("a first design approval must not raise a revision checkpoint; got %d", got)
+	}
+
+	// Specs written ahead in chat (DESIGN-010 §5a), then all three features
+	// sent: a step whose document exists is skipped, so no spec is written.
+	specPaths := map[string]string{}
+	for _, f := range features {
+		p := "docs/specs/" + f + ".md"
+		h.registerDoc(p, "spec", "feature", "pf/"+f, cascadeSpec(f))
+		specPaths[f] = p
+		h.send("pf/"+f, false)
+	}
+	// Three approved specs; alpha also gets an approved dev-plan, which
+	// decomposes and passes G1, so alpha reaches ready.
+	for _, f := range features {
+		h.approveDoc(specPaths[f])
+	}
+	devPlanPath := "docs/plans/alpha.md"
+	h.registerDoc(devPlanPath, "dev_plan", "feature", "pf/alpha", cascadeDevPlan("alpha"))
+	h.approveDoc(devPlanPath)
+	h.eventually("alpha ready", func() bool { return h.featureState("pf/alpha") == lifecycle.FeatReady })
+	h.quiet() // alpha's closing estimate is unscripted; let it rest
+	for _, f := range features {
+		if got := h.countPurpose("pf/"+f, "write-spec"); got != 0 {
+			t.Fatalf("a spec written ahead is used as it is; %s got %d write-spec dispatches", f, got)
+		}
 	}
 
 	// Revision one: all three specs are affected → exactly one checkpoint.
@@ -434,15 +517,8 @@ func TestDesignRevisionCascade(t *testing.T) {
 		t.Error("the keep decision should appear in the audit trail")
 	}
 
-	// Let the (deliberately unscripted) write-spec dispatches fail and rest
-	// before the next design review is scripted, so the mock's FIFO stays
-	// aligned with the dispatch that should consume each step.
-	h.eventually("dispatch queue quiet", func() bool {
-		var busy int
-		err := h.srv.Store.Pool.QueryRow(ctx,
-			`SELECT count(*) FROM dispatches WHERE state IN ('queued','running')`).Scan(&busy)
-		return err == nil && busy == 0
-	})
+	// Let the (deliberately unscripted) write-spec dispatches fail and rest.
+	h.quiet()
 
 	// Revision two: gamma now holds the single remaining approved spec, so
 	// FR-9.1 invalidates it directly — no checkpoint, no question.

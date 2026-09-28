@@ -1,16 +1,17 @@
 package server
 
-// The authoring chain (SPEC-009 Stage 1). Approving a design document is the
-// single act that means "ready to spec"; from there the orchestrator carries a
-// feature to decomposition with no further human involvement, and stops at
-// gate 2 — a human starting the work.
+// The authoring chain (SPEC-009 Stage 1, retriggered by SPEC-011). Approving a
+// design records what we want and starts nothing; a person pressing Send to
+// development is what commits resources (DEC-006). From the send, the
+// orchestrator carries a feature to decomposition and an estimate with no
+// further human involvement, and stops at gate 2 — Start building.
 //
 // The chain is expressed as two invariants rather than a sequence of steps
-// (FR-4), because width-first planning means approvals, features and
-// descriptions arrive in any order:
+// (FR-4), because width-first planning means approvals, features, descriptions
+// and sends arrive in any order:
 //
-//	every feature G0 admits, and that has a description, has a current spec
-//	every feature with an approved spec has a current dev-plan
+//	every sent feature G0 admits, and that has a description, has a current spec
+//	every sent feature with an approved spec has a current dev-plan
 //
 // Stating them this way means the heartbeat can reconcile them: a feature that
 // should have a spec and does not eventually gets one even if an event was
@@ -37,9 +38,18 @@ import (
 // designApproved reports whether an owner's current design document is
 // approved. A missing design is not an error — it is simply not approved,
 // the same reading evaluateContractGate takes of a missing spec.
+//
+// An approved design stays in force while a revision of it is open: the
+// predecessor is superseded only when its successor is approved, so G0 asks
+// whether an approved, unsuperseded design exists rather than reading the
+// newest document, which would be the revision's draft (found by the
+// SPEC-011 walkthrough: Revise made every feature unsendable).
 func (s *Server) designApproved(ctx context.Context, ownerType string, ownerID uuid.UUID) bool {
-	d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "design", ownerType, ownerID)
-	return err == nil && d.State == lifecycle.DocApproved
+	var ok bool
+	err := s.Store.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM documents
+		WHERE type = 'design' AND owner_type = $1 AND owner_id = $2 AND state = 'approved')`,
+		ownerType, ownerID).Scan(&ok)
+	return err == nil && ok
 }
 
 // specReady evaluates G0 for a feature: its own design, or its immediate
@@ -58,99 +68,231 @@ func (s *Server) specReady(ctx context.Context, f *store.Feature) lifecycle.Gate
 // safe to call at any time on any feature — which is what lets the heartbeat
 // use it as a safety net.
 func (s *Server) reconcileFeatureAuthoring(ctx context.Context, featureID uuid.UUID) error {
-	purpose, err := s.neededAuthoring(ctx, featureID)
-	if err != nil || purpose == "" {
-		return err
-	}
-	return s.queueAuthoring(ctx, purpose, featureID)
+	return s.restoreAuthoring(ctx, featureID, false)
 }
 
-// neededAuthoring evaluates the two invariants for a feature and names the
-// authoring purpose that would restore them, or "" when both hold (or the
-// feature is not in a state the invariants govern).
-func (s *Server) neededAuthoring(ctx context.Context, featureID uuid.UUID) (string, error) {
+// restoreAuthoring queues whatever restores the invariants. A revision of a
+// draft that waits for its author is bounded by the round cap (SPEC-011
+// FR-3.3) unless a person allowed another round (force).
+func (s *Server) restoreAuthoring(ctx context.Context, featureID uuid.UUID, force bool) error {
+	need, err := s.neededAuthoring(ctx, featureID)
+	if err != nil || need.Purpose == "" {
+		return err
+	}
+	switch {
+	case need.Purpose == "estimate":
+		return s.enqueueEstimate(ctx, "feature", featureID)
+	case need.Revising != nil:
+		return s.queueRevision(ctx, need, force)
+	}
+	return s.queueAuthoring(ctx, need.Purpose, featureID)
+}
+
+// authoringNeed is what the invariants owe a feature: a purpose to dispatch,
+// and for a revision, the draft the author is to revise.
+type authoringNeed struct {
+	Feature  *store.Feature
+	Purpose  string // write-spec | write-dev-plan | estimate | ""
+	Revising *store.Document
+}
+
+// neededAuthoring evaluates the invariants for a feature (SPEC-011 FR-2) and
+// names what would restore them, or nothing when they hold (or the feature is
+// not in a state they govern).
+func (s *Server) neededAuthoring(ctx context.Context, featureID uuid.UUID) (authoringNeed, error) {
+	var none authoringNeed
 	f, err := store.GetFeature(ctx, s.Store.Pool, featureID)
 	if err != nil {
 		if err == store.ErrNotFound {
-			return "", nil
+			return none, nil
 		}
-		return "", err
+		return none, err
 	}
-	// A feature past the forming stage has a contract already; re-authoring
-	// one mid-flight is the revision cascade's job, not this one.
-	if f.State != lifecycle.FeatIdea {
-		return "", nil
+	// A feature being built has its contract; re-authoring one mid-flight is
+	// the revision cascade's job, not this one. A ready feature is still
+	// governed: an issue on its approved spec reopens it (SD-7), and a
+	// feature prepared in chat is sent from ready to be estimated (SD-2).
+	if f.State != lifecycle.FeatIdea && f.State != lifecycle.FeatReady {
+		return none, nil
+	}
+	// Nothing runs before Send (SPEC-011 FR-2.1, FR-2.2, SD-2): the
+	// invariants need the mark, so a design approval, a new feature or a
+	// description re-checks and finds nothing to do for an unsent feature.
+	if sent, err := s.featureSent(ctx, f); err != nil || !sent {
+		return none, err
 	}
 
 	// Invariant 1 — the spec.
-	spec, specErr := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", f.ID)
-	hasSpec := specErr == nil
-	if !hasSpec {
+	spec, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", f.ID)
+	if err == store.ErrNotFound {
 		// An undescribed feature is not dispatched, not checkpointed, and not
 		// complained about: in width-first planning a placeholder feature is
-		// entirely normal, and a checkpoint here would be noise at exactly the
-		// moment the system should be quiet (FR-4.5).
-		if f.Description == "" {
-			return "", nil
+		// entirely normal (SPEC-009 FR-4.5). Send refuses it anyway.
+		if f.State != lifecycle.FeatIdea || f.Description == "" {
+			return none, nil
 		}
 		if g := s.specReady(ctx, f); !g.Pass {
-			return "", nil
+			return none, nil
 		}
-		return "write-spec", nil
+		return authoringNeed{Feature: f, Purpose: "write-spec"}, nil
+	}
+	if err != nil {
+		return none, err
+	}
+	if spec.State == lifecycle.DocDraft {
+		if waits, err := s.waitsForAuthor(ctx, spec); err != nil || !waits {
+			return none, err
+		}
+		return authoringNeed{Feature: f, Purpose: "write-spec", Revising: spec}, nil
+	}
+	if spec.State != lifecycle.DocApproved {
+		return none, nil
 	}
 
 	// Invariant 2 — the dev-plan, once the spec is approved.
-	if spec.State != lifecycle.DocApproved {
-		return "", nil
+	plan, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "dev_plan", "feature", f.ID)
+	if err == store.ErrNotFound {
+		return authoringNeed{Feature: f, Purpose: "write-dev-plan"}, nil
 	}
-	if _, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "dev_plan", "feature", f.ID); err == nil {
-		return "", nil // already has one; nothing to restore
-	} else if err != store.ErrNotFound {
-		return "", err
+	if err != nil {
+		return none, err
 	}
-	return "write-dev-plan", nil
+	if plan.State == lifecycle.DocDraft {
+		if waits, err := s.waitsForAuthor(ctx, plan); err != nil || !waits {
+			return none, err
+		}
+		return authoringNeed{Feature: f, Purpose: "write-dev-plan", Revising: plan}, nil
+	}
+	if plan.State != lifecycle.DocApproved {
+		return none, nil
+	}
+
+	// The closing estimate (FR-2.2a), owed once per send and per plan.
+	if owed, err := s.estimateOwed(ctx, f, plan); err != nil || !owed {
+		return none, err
+	}
+	return authoringNeed{Feature: f, Purpose: "estimate"}, nil
+}
+
+// waitsForAuthor reports whether a draft is the author's to revise (SPEC-011
+// FR-2.1): it carries an open human issue or a major review finding. A draft
+// with nothing against it belongs to whoever is writing it.
+func (s *Server) waitsForAuthor(ctx context.Context, d *store.Document) (bool, error) {
+	var waits bool
+	err := s.Store.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM document_comments
+		WHERE document_id = $1 AND NOT resolved AND (is_issue OR severity = 'major'))`, d.ID).Scan(&waits)
+	return waits, err
+}
+
+// estimateOwed: the project assigns an estimator, and no estimate has been
+// queued since the later of the send and the plan's approval (FR-2.2a).
+func (s *Server) estimateOwed(ctx context.Context, f *store.Feature, plan *store.Document) (bool, error) {
+	cfg, err := s.freshConfig()
+	if err != nil || cfg.Assignments["estimate"] == "" {
+		return false, nil
+	}
+	send, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID)
+	if err == store.ErrNotFound {
+		return false, nil // building features are sent, but not re-estimated here
+	}
+	if err != nil {
+		return false, err
+	}
+	since := send.SentAt
+	if plan.ApprovedAt != nil && plan.ApprovedAt.After(since) {
+		since = *plan.ApprovedAt
+	}
+	prior, err := store.DispatchesForRefSince(ctx, s.Store.Pool, "feature", f.ID, []string{"estimate"}, since)
+	return err == nil && len(prior) == 0, err
+}
+
+// queueRevision dispatches the author to revise a draft that waits for it
+// (FR-3.1), unless the author is already at work, and raises an
+// authoring-deadlock question instead once the draft has had
+// dispatch.max_review_rounds reviews (FR-3.3).
+func (s *Server) queueRevision(ctx context.Context, need authoringNeed, force bool) error {
+	doc, f := need.Revising, need.Feature
+	if live, err := store.LiveDispatchForRef(ctx, s.Store.Pool, "feature", f.ID, need.Purpose); err != nil || live {
+		return err
+	}
+	if !force {
+		cfg, err := s.freshConfig()
+		if err != nil {
+			return s.configErrorCheckpoint(ctx, "document", doc.ID, err)
+		}
+		rounds, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "document", doc.ID, "review-"+doc.Type)
+		if err != nil {
+			return err
+		}
+		if rounds >= cfg.Dispatch.MaxReviewRounds {
+			var cp *store.Checkpoint
+			err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+				var e error
+				cp, e = store.CreateCheckpoint(ctx, tx, "authoring-deadlock", "document", doc.ID,
+					fmt.Sprintf("The %s for %s has been sent back %d times. Allow its author another round, or stop and edit it yourself?",
+						docTypeWords(doc.Type), f.Name, rounds),
+					map[string]any{"document": doc.Path, "rounds": rounds})
+				return e
+			})
+			if err == nil && cp != nil {
+				s.notifyCheckpointRaised(cp)
+			}
+			if isUniqueViolation(err) {
+				return nil // the question is already pending
+			}
+			return err
+		}
+	}
+	return s.queueAuthoring(ctx, need.Purpose, f.ID)
 }
 
 // ReconcileAuthoringSweep is the heartbeat's safety net (FR-4.7): every
-// forming feature whose invariants are unsatisfied and whose needed purpose
-// has never been attempted gets its dispatch, so a lost trigger event cannot
-// strand a feature. Never-attempted is the boundary on purpose: a failed
-// authoring dispatch already has a dispatch-failure checkpoint governing its
+// sent, forming feature whose invariants are unsatisfied and whose needed
+// work has not been attempted gets its dispatch, so a lost trigger event
+// cannot strand a feature. Not-attempted is the boundary on purpose: a
+// failed dispatch already has a dispatch-failure checkpoint governing its
 // retry, and a sweep that re-enqueued it every thirty seconds would override
-// a human's answer to that question.
+// a human's answer to that question. For a revision it reads "not attempted
+// since the draft last changed" (SPEC-011 FR-2.4).
 func (s *Server) ReconcileAuthoringSweep(ctx context.Context) {
-	rows, err := s.Store.Pool.Query(ctx, `SELECT id FROM features WHERE state = 'idea'`)
+	// Sent features only (SPEC-011 FR-2.4): an unsent feature has no gap to
+	// fill, because nothing is owed to it until someone sends it.
+	ids, err := store.SentFormingFeatureIDs(ctx, s.Store.Pool)
 	if err != nil {
-		s.Log.Error("authoring sweep", "err", err)
-		return
-	}
-	defer rows.Close()
-	var ids []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			s.Log.Error("authoring sweep", "err", err)
-			return
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
 		s.Log.Error("authoring sweep", "err", err)
 		return
 	}
 	for _, id := range ids {
-		purpose, err := s.neededAuthoring(ctx, id)
-		if err != nil || purpose == "" {
+		need, err := s.neededAuthoring(ctx, id)
+		if err != nil || need.Purpose == "" {
 			continue
 		}
-		n, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "feature", id, purpose)
-		if err != nil || n > 0 {
+		attempted, err := s.attemptedFor(ctx, need)
+		if err != nil || attempted {
 			continue
 		}
-		if err := s.queueAuthoring(ctx, purpose, id); err != nil {
+		if err := s.restoreAuthoring(ctx, id, false); err != nil {
 			s.Log.Error("authoring sweep", "feature", id, "err", err)
 		}
 	}
+}
+
+// attemptedFor reports whether the needed work has already been tried: ever,
+// for a first draft; since the draft last changed, for a revision; since the
+// send or the plan, for an estimate (which estimateOwed already reads).
+func (s *Server) attemptedFor(ctx context.Context, need authoringNeed) (bool, error) {
+	if need.Purpose == "estimate" {
+		return false, nil
+	}
+	if need.Revising == nil {
+		n, err := store.CountDispatchesForRef(ctx, s.Store.Pool, "feature", need.Feature.ID, need.Purpose)
+		return n > 0, err
+	}
+	var attempted bool
+	err := s.Store.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM dispatches d, documents doc
+		WHERE doc.id = $3 AND d.ref_type = 'feature' AND d.ref_id = $1 AND d.purpose = $2
+		  AND d.queued_at >= doc.updated_at)`, need.Feature.ID, need.Purpose, need.Revising.ID).Scan(&attempted)
+	return attempted, err
 }
 
 // reconcileAuthoringScope expands an owner into the features it releases and
@@ -178,6 +320,24 @@ func (s *Server) reconcileAuthoringScope(ctx context.Context, ownerType string, 
 	return nil
 }
 
+// featureSent is the one predicate for "has this feature been sent to
+// development" (SPEC-011 FR-1.2): it carries the mark, or it is being built.
+// Start building is a stronger commitment than Send, so a feature started
+// before the mark existed, or with its documents written by hand, still gets
+// its spec rewritten when its design is revised mid-build (SD-3). A ready
+// feature without the mark is not sent: DESIGN-010 §5 leaves it without a
+// spec until someone sends it.
+func (s *Server) featureSent(ctx context.Context, f *store.Feature) (bool, error) {
+	if f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview {
+		return true, nil
+	}
+	_, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID)
+	if err == store.ErrNotFound {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // queueAuthoring enqueues an authoring dispatch for a feature. The idempotency
 // key counts the dispatches this feature has already had for the purpose, so a
 // replayed event — or a heartbeat reconciling the same invariant a second time
@@ -202,6 +362,16 @@ func (s *Server) queueAuthoring(ctx context.Context, purpose string, featureID u
 		return s.configErrorCheckpoint(ctx, "feature", featureID, err)
 	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		// Serialise on the feature row, then refuse a second live dispatch
+		// of the purpose: an event and the heartbeat sweep can both find the
+		// same gap at once, and with the count-based key they would each
+		// enqueue one (SPEC-011, found by TestIssueOnASentFeaturesSpec...).
+		if _, err := tx.Exec(ctx, `SELECT id FROM features WHERE id = $1 FOR UPDATE`, featureID); err != nil {
+			return err
+		}
+		if live, err := store.LiveDispatchForRef(ctx, tx, "feature", featureID, purpose); err != nil || live {
+			return err
+		}
 		n, err := store.CountDispatchesForRef(ctx, tx, "feature", featureID, purpose)
 		if err != nil {
 			return err
@@ -619,7 +789,17 @@ func (s *Server) authoredDocPath(ctx context.Context, f *store.Feature, docType 
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join("docs", initPath, f.Slug, docType+".md"), nil
+	// An author never writes over a file it didn't register — a detached
+	// draft left on disk, say (SPEC-011 FR-9.3): the new document goes beside
+	// it with a numbered name.
+	base := filepath.Join("docs", initPath, f.Slug, docType)
+	path := base + ".md"
+	for n := 2; ; n++ {
+		if _, err := os.Stat(filepath.Join(s.RepoRoot, path)); os.IsNotExist(err) {
+			return path, nil
+		}
+		path = fmt.Sprintf("%s-%d.md", base, n)
+	}
 }
 
 // commitDocument commits one path with cromwell as the author. A failure is

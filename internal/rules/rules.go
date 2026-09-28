@@ -9,6 +9,7 @@ package rules
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -25,6 +26,10 @@ type QueueReview struct {
 	DocID          uuid.UUID
 	DocType        string
 	IdempotencyKey string
+	// Fresh asks for a review even though one already ran on this content:
+	// a person's request (SPEC-011 FR-5.5) or a verdict that an issue raised
+	// mid-review overtook (FR-6.4). The server keys it by the review count.
+	Fresh bool
 }
 
 func (QueueReview) ActionKind() string { return "queue_review" }
@@ -198,6 +203,8 @@ type ReviewOutcome struct {
 	Verdict   string          `json:"verdict"` // approve | request_changes | escalate
 	Comments  []ReviewComment `json:"comments,omitempty"`
 	Reasoning string          `json:"reasoning"`
+	// Issues answers the human issues open on the document (SPEC-011 SD-6).
+	Issues []IssueAnswer `json:"issues,omitempty"`
 }
 
 // HasMajor reports whether any finding blocks approval.
@@ -247,8 +254,28 @@ func ParseReviewOutcome(raw json.RawMessage) (*ReviewOutcome, error) {
 				i+1, c.Severity, SeverityMajor, SeverityMinor)
 		}
 	}
+	for i, a := range o.Issues {
+		switch a.Status {
+		case IssueAddressed, IssueDoesNotApply:
+			if strings.TrimSpace(a.Note) == "" {
+				return nil, fmt.Errorf("review outcome: issue answer %d says %q but gives no note — say how it was addressed, or why it does not apply", i+1, a.Status)
+			}
+		case IssueNotAddressed:
+		default:
+			return nil, fmt.Errorf("review outcome: issue answer %d has unknown status %q (expected %q, %q or %q)",
+				i+1, a.Status, IssueAddressed, IssueDoesNotApply, IssueNotAddressed)
+		}
+		if _, err := uuid.Parse(a.IssueID); err != nil {
+			return nil, fmt.Errorf("review outcome: issue answer %d names %q, which is not an issue id", i+1, a.IssueID)
+		}
+	}
 	switch o.Verdict {
 	case "approve":
+		for _, a := range o.Issues {
+			if a.Status == IssueNotAddressed {
+				return nil, fmt.Errorf("review outcome: cannot approve while human issue %s is not addressed — request changes so the author deals with it", a.IssueID)
+			}
+		}
 		if o.HasMajor() {
 			return nil, fmt.Errorf("review outcome: cannot approve while a major finding stands — " +
 				"either downgrade it to minor or request changes")
@@ -319,6 +346,14 @@ type DocSnap struct {
 	// snapshot. When true, no dispatch outcome may move this document — the
 	// review branch records comments and nothing else.
 	HumanApproval bool
+	// Held says an agent approval of this document would be held for a
+	// person (SPEC-011 FR-5.2). The server computes it from the settings.
+	Held bool
+	// OpenIssues are the document's unanswered human issues (FR-6.3).
+	OpenIssues []uuid.UUID
+	// StaleVerdict is set on a review outcome for content the document no
+	// longer has: it was revised while the reviewer worked (FR-3.5).
+	StaleVerdict bool
 }
 
 // FeatureSnap is the rule engine's view of a feature row.
@@ -364,6 +399,11 @@ func Decide(ev bus.Event, snap Snapshot) []Action {
 		return []Action{ReconcileAuthoring{OwnerType: "feature", OwnerID: e.FeatureID}}
 	case bus.FeatureDescribed:
 		return []Action{ReconcileAuthoring{OwnerType: "feature", OwnerID: e.FeatureID}}
+	case bus.FeatureSent:
+		// Send to development is the trigger (SPEC-011 FR-2.3). The others
+		// above only re-check: the invariants need the mark, so they start
+		// nothing for a feature nobody has sent.
+		return []Action{ReconcileAuthoring{OwnerType: "feature", OwnerID: e.FeatureID}}
 	}
 	return nil
 }
@@ -391,6 +431,16 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 			IdempotencyKey: ReviewIdempotencyKey(snap.Doc.ID, snap.Doc.ContentHash),
 		})
 		return actions
+
+	case lifecycle.DocDraft:
+		// A spec or plan sent back — by its reviewer or by a person — goes
+		// back to its author (SPEC-011 FR-3.1). The server decides whether
+		// the feature is sent and whether the round cap has been reached.
+		if e.Event == lifecycle.DocRequestChanges && snap.Doc != nil && snap.Doc.OwnerType == "feature" &&
+			(snap.Doc.Type == "spec" || snap.Doc.Type == "dev_plan") {
+			return []Action{ReviseAuthoredDocument{DocID: snap.Doc.ID, FeatureID: snap.Doc.OwnerID, DocType: snap.Doc.Type}}
+		}
+		return nil
 
 	case lifecycle.DocApproved:
 		if snap.Doc == nil {
@@ -437,6 +487,11 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 				actions = append(actions, ReconcileAuthoring{OwnerType: "feature", OwnerID: f.ID})
 			}
 			actions = append(actions, EvaluateContractGate{FeatureID: f.ID})
+			// The chain's last step: a decomposed plan is estimated, for a
+			// sent feature (SPEC-011 FR-7). The server decides whether it is.
+			if snap.Doc.Type == "dev_plan" {
+				actions = append(actions, EstimateFeature{FeatureID: f.ID})
+			}
 			return actions
 		}
 		// A revised contract document approved for an in-flight feature:
@@ -446,6 +501,15 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 		if snap.Doc.IsSuccessor && snap.Doc.Type == "dev_plan" &&
 			(f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview) {
 			return []Action{ReDecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID}}
+		}
+		// A revised plan on a ready feature — an issue raised on the approved
+		// plan (SPEC-011 FR-6.6) — re-decomposes before anyone starts
+		// building, and the estimate is re-checked against the new tasks.
+		if snap.Doc.IsSuccessor && snap.Doc.Type == "dev_plan" && f.State == lifecycle.FeatReady {
+			return []Action{
+				ReDecomposeDevPlan{FeatureID: f.ID, DevPlanDocID: snap.Doc.ID},
+				EstimateFeature{FeatureID: f.ID},
+			}
 		}
 	}
 	return nil
@@ -488,6 +552,11 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 			Comments:   outcome.Comments,
 		}}
 	}
+	// A verdict for a document that has moved on while the reviewer worked —
+	// sent back by a person, say — is stale, and is dropped (SPEC-011 FR-3.5).
+	if snap.Doc.State != lifecycle.DocReviewing || snap.Doc.StaleVerdict {
+		return nil
+	}
 	outcome, err := ParseReviewOutcome(e.Outcome)
 	if err != nil {
 		// A malformed outcome should have failed the dispatch before it
@@ -500,19 +569,37 @@ func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
 			Context:  map[string]any{"dispatch_id": e.DispatchID.String(), "error": err.Error()},
 		}}
 	}
+	var actions []Action
+	if answered := outcome.AnsweredIssues(); len(answered) > 0 {
+		actions = append(actions, AnswerIssues{
+			DocID: snap.Doc.ID, Actor: e.Role, DispatchID: &dispatchID, Answers: answered,
+		})
+	}
 	switch outcome.Verdict {
 	case "approve":
-		return []Action{ApproveDocument{
+		// An issue raised while the reviewer was working is one it never
+		// saw. The approval doesn't jump it: the review runs again (FR-6.4).
+		if err := CheckIssueCoverage(outcome, snap.Doc.OpenIssues); err != nil {
+			return append(actions, QueueReview{DocID: snap.Doc.ID, DocType: snap.Doc.Type, Fresh: true})
+		}
+		// A held spec waits for a person instead of being approved (FR-5.4).
+		if snap.Doc.Held {
+			return append(actions, HoldDocument{
+				DocID: snap.Doc.ID, Actor: e.Role, DispatchID: &dispatchID,
+				Reasoning: outcome.Reasoning, Comments: outcome.MinorComments(),
+			})
+		}
+		return append(actions, ApproveDocument{
 			DocID: snap.Doc.ID, Actor: e.Role,
 			Comments: outcome.MinorComments(), DispatchID: &dispatchID,
-		}}
+		})
 	case "request_changes":
-		return []Action{ReturnForChanges{
+		return append(actions, ReturnForChanges{
 			DocID:      snap.Doc.ID,
 			Actor:      e.Role,
 			DispatchID: &dispatchID,
 			Comments:   outcome.Comments,
-		}}
+		})
 	case "escalate":
 		return []Action{RaiseCheckpoint{
 			CPKind:   "review-escalation",
@@ -614,7 +701,14 @@ func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Actio
 			case "approve":
 				return []Action{ApproveDocument{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
 			case "request_changes":
-				return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: r.Comments}}
+				// The person's reason is what the author needs; with no
+				// structured comments it would otherwise be dropped. For a spec
+				// or plan it becomes a human issue (SPEC-011 SD-15).
+				comments := r.Comments
+				if len(comments) == 0 && strings.TrimSpace(r.Reason) != "" {
+					comments = []ReviewComment{{Body: strings.TrimSpace(r.Reason)}}
+				}
+				return []Action{ReturnForChanges{DocID: snap.Doc.ID, Actor: e.RespondedBy, Comments: comments}}
 			}
 		case "task":
 			if snap.Task == nil {
@@ -684,6 +778,14 @@ func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Actio
 			ApplyDesignRevision{DesignDocID: snap.Doc.ID, Invalidate: invalidate, Actor: e.RespondedBy},
 			ReconcileAuthoring{OwnerType: snap.Doc.OwnerType, OwnerID: snap.Doc.OwnerID},
 		}
+	case "authoring-deadlock":
+		var r FailureResponse
+		if err := json.Unmarshal(e.Response, &r); err != nil || !r.Retry || snap.Doc == nil {
+			return nil
+		}
+		return []Action{ReviseAuthoredDocument{
+			DocID: snap.Doc.ID, FeatureID: snap.Doc.OwnerID, DocType: snap.Doc.Type, Force: true,
+		}}
 	case "gate-override":
 		var r OverrideResponse
 		if err := json.Unmarshal(e.Response, &r); err != nil || !r.Override {

@@ -65,13 +65,22 @@ assignments:
   review-code: code-reviewer
   verify-feature: verifier
   estimate: estimator
-  # The authoring chain (SPEC-009). Uncomment either line to have Cromwell
-  # write that document for you: approving a design writes the
-  # specification, and an approved specification writes the dev-plan. An
-  # unassigned purpose simply does not run, so leaving these commented means
-  # you write those documents by hand, as before.
-  # write-spec: spec-author
-  # write-dev-plan: dev-plan-author
+  # The authoring chain (SPEC-009, SPEC-011). Nothing here runs until a
+  # person presses Send to development on a feature: then an agent writes
+  # the specification, and once it is approved, the dev-plan. A spec or plan
+  # you have already written is used as it is. Comment a line out to write
+  # that document by hand instead.
+  write-spec: spec-author
+  write-dev-plan: dev-plan-author
+
+# How specifications are reviewed (SPEC-011, DEC-006 Amendment 1). The agent
+# spec reviewer is the normal approver. Set hold to true to have every spec
+# wait for a person after its review; the send screen can also hold a single
+# send. Setting agent to false turns the agent review off, and then every
+# spec waits for a person: no setting lets a spec through unreviewed.
+spec_review:
+  agent: true
+  hold: false
 
 # Tool-host command whitelist (DESIGN-006 §4.6). Edit these to your project's
 # build and test commands; implementers and the verifier may run only these.

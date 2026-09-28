@@ -219,6 +219,16 @@ type Comment struct {
 	Severity  string
 	Resolved  bool
 	CreatedAt time.Time
+	// IsIssue marks a human issue (SPEC-011 FR-6): always must-address. Via is
+	// the channel it came by ("ui" | "mcp") and Quote the person's own words
+	// when the chat agent relayed it. The Addressed* fields say who answered
+	// it and how, once it is resolved (SD-6).
+	IsIssue       bool
+	Via           string
+	Quote         string
+	AddressedBy   string
+	AddressedNote string
+	AddressedAt   *time.Time
 }
 
 func InsertComment(ctx context.Context, tx pgx.Tx, docID uuid.UUID, dispatchID *uuid.UUID, author, sectionRef, body, severity string) error {
@@ -232,7 +242,7 @@ func InsertComment(ctx context.Context, tx pgx.Tx, docID uuid.UUID, dispatchID *
 // CommentsForDocument returns the comment thread, unresolved first-class:
 // they persist across resubmission (DESIGN-001 §5).
 func CommentsForDocument(ctx context.Context, q Querier, docID uuid.UUID, unresolvedOnly bool) ([]Comment, error) {
-	sql := `SELECT id, document_id, dispatch_id, author, COALESCE(section_ref, ''), body, COALESCE(severity, ''), resolved, created_at
+	sql := `SELECT ` + commentCols + `
 		FROM document_comments WHERE document_id = $1`
 	if unresolvedOnly {
 		sql += ` AND NOT resolved`
@@ -246,12 +256,22 @@ func CommentsForDocument(ctx context.Context, q Querier, docID uuid.UUID, unreso
 	var out []Comment
 	for rows.Next() {
 		var c Comment
-		if err := rows.Scan(&c.ID, &c.DocumentID, &c.DispatchID, &c.Author, &c.SectionRef, &c.Body, &c.Severity, &c.Resolved, &c.CreatedAt); err != nil {
+		if err := scanComment(rows, &c); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+const commentCols = `id, document_id, dispatch_id, author, COALESCE(section_ref, ''), body,
+	COALESCE(severity, ''), resolved, created_at, is_issue, COALESCE(via, ''), COALESCE(quote, ''),
+	COALESCE(addressed_by, ''), COALESCE(addressed_note, ''), addressed_at`
+
+func scanComment(row pgx.Row, c *Comment) error {
+	return row.Scan(&c.ID, &c.DocumentID, &c.DispatchID, &c.Author, &c.SectionRef, &c.Body,
+		&c.Severity, &c.Resolved, &c.CreatedAt, &c.IsIssue, &c.Via, &c.Quote,
+		&c.AddressedBy, &c.AddressedNote, &c.AddressedAt)
 }
 
 func nullable(s string) *string {

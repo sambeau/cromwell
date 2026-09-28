@@ -36,13 +36,16 @@ type GateResult struct {
 // would spec work nobody has thought about yet. Each level of the tree is an
 // explicit decision.
 func G0(ownDesignApproved, parentDesignApproved bool) GateResult {
+	// The reasons are sentences a person reads as they stand: the Send to
+	// development button shows them beside itself (SPEC-011 FR-2.6).
 	pass := ownDesignApproved || parentDesignApproved
-	reason := "the initiative's design is approved, so its features are ready to spec"
+	reason := "Its initiative's design is approved, so this feature can be sent to development."
 	switch {
 	case ownDesignApproved:
-		reason = "this feature's own design is approved"
+		reason = "This feature's own design is approved, so it can be sent to development."
 	case !pass:
-		reason = "no approved design — a feature is ready to spec once its own design, or its initiative's, is approved"
+		reason = "Neither this feature's design nor its initiative's design is approved yet. " +
+			"A feature can be sent to development once one of them is."
 	}
 	return GateResult{Gate: GateG0, Pass: pass, Reason: reason}
 }
