@@ -560,7 +560,10 @@ The old path's page redirects.
   decision, a well-formed `DEC-nnn` is kept, from the front matter or, failing
   that, the start of the file name (`DEC-005-the-orchestration-boundary.md`).
   An `id:` in the front matter that doesn't fit is refused; a file name that
-  doesn't fit is ignored and an ID is minted. The revision is 1, or one more
+  doesn't fit is ignored and an ID is minted. A decision whose file name
+  claims a number another document already has is refused, with a sentence
+  asking for the file to be renamed, rather than given a number its name
+  contradicts. The revision is 1, or one more
   than the kept ID has had; the file's own `revision:` isn't trusted.
 - **FR-5.5** Keeping a `DEC-nnn` moves the decision sequence past it, so the
   next decision minted is higher than any adopted.

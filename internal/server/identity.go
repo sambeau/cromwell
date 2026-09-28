@@ -617,6 +617,9 @@ func (s *Server) adoptIdentity(ctx context.Context, tx pgx.Tx, path, raw string,
 			return "", 0, err
 		}
 		if live {
+			if declared == "" {
+				return "", 0, nameTaken(ctx, tx, path, candidate)
+			}
 			return "", 0, alreadyTaken(ctx, tx, path, candidate)
 		}
 		r, _ := ident.Parse(candidate)
@@ -658,6 +661,17 @@ func (s *Server) adoptIdentity(ctx context.Context, tx pgx.Tx, path, raw string,
 		}
 	}
 	return store.NextDocumentIdentity(ctx, tx, req.OwnerType, req.OwnerID, req.DocType)
+}
+
+// nameTaken refuses a decision whose file name claims a number another
+// document has: minting a different number for a file named DEC-005-… would
+// leave its name contradicting its ID.
+func nameTaken(ctx context.Context, q store.Querier, path, id string) error {
+	where := ""
+	if other, err := store.CurrentDocumentByPublicID(ctx, q, id); err == nil {
+		where = ", at " + other.Path
+	}
+	return fmt.Errorf("%s is named as %s, but %s is already registered%s. Rename the file, then adopt it.", path, id, id, where)
 }
 
 func alreadyTaken(ctx context.Context, q store.Querier, path, id string) error {
