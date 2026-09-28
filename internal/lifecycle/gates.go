@@ -101,32 +101,33 @@ func G3(verificationApproved, branchMerged bool) GateResult {
 }
 
 // G4 — milestone-lockable. Guards milestone open → locked: at least one
-// resolved member is done (DESIGN-003 §8). A milestone with nothing finished
-// has shipped nothing, so there is nothing honest to snapshot (FR-5.2). The
-// resolvedMembers count feeds the reason so an empty milestone reads
-// differently from a live-but-unfinished one.
-func G4(resolvedMembers, doneMembers int) GateResult {
+// resolved item is done (DESIGN-003 §8). An item is a leaf a milestone
+// resolves to: a feature, or a checklist (SPEC-014 SD-3), since DESIGN-010 §6
+// asks for "at least one deliverable done" and a checklist is a deliverable. A
+// milestone with nothing finished has shipped nothing, so there is nothing
+// honest to snapshot (FR-5.2). The resolved count feeds the reason so an empty
+// milestone reads differently from a live-but-unfinished one.
+func G4(resolvedItems, doneItems int) GateResult {
 	// A refusal is shown to a person as it stands — beside the disabled "Mark as
 	// shipped" button in the web UI, and relayed by the chat agent — so it is a
-	// full sentence that counts what the gate counts: resolved features
-	// (DESIGN-008 D-6, SPEC-010 FR-5.1). People see locking as marking a
-	// milestone as shipped, so the reason uses those words.
+	// full sentence that counts what the gate counts, in the word the progress
+	// line uses: items (DESIGN-008 D-6, SPEC-010 FR-5.1, SPEC-014 FR-2.4).
 	switch {
-	case resolvedMembers == 0:
+	case resolvedItems == 0:
 		return GateResult{Gate: GateG4, Pass: false,
-			Reason: "This milestone can't be marked as shipped yet, because nothing in it comes down to a feature. " +
+			Reason: "This milestone can't be marked as shipped yet, because nothing in it comes down to a feature or a checklist. " +
 				"Add the work it is meant to deliver first."}
-	case doneMembers == 0 && resolvedMembers == 1:
+	case doneItems == 0 && resolvedItems == 1:
 		return GateResult{Gate: GateG4, Pass: false,
-			Reason: "This milestone can't be marked as shipped yet, because its one feature isn't done. " +
-				"Marking it as shipped records what actually went out, so at least one feature has to be finished first."}
-	case doneMembers == 0:
+			Reason: "This milestone can't be marked as shipped yet, because the one item in it isn't done. " +
+				"Marking it as shipped records what actually went out, so at least one item has to be finished first."}
+	case doneItems == 0:
 		return GateResult{Gate: GateG4, Pass: false,
-			Reason: fmt.Sprintf("This milestone can't be marked as shipped yet, because none of its %d features is done. "+
-				"Marking it as shipped records what actually went out, so at least one has to be finished first.", resolvedMembers)}
+			Reason: fmt.Sprintf("This milestone can't be marked as shipped yet, because none of its %d items is done. "+
+				"Marking it as shipped records what actually went out, so at least one has to be finished first.", resolvedItems)}
 	}
 	return GateResult{Gate: GateG4, Pass: true,
-		Reason: fmt.Sprintf("%d of %d resolved member(s) done", doneMembers, resolvedMembers)}
+		Reason: fmt.Sprintf("%d of %d resolved item(s) done", doneItems, resolvedItems)}
 }
 
 // G5 — initiative-archivable: no non-terminal features in the subtree.

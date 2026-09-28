@@ -266,15 +266,38 @@ func Members(ctx context.Context, q Querier, milestoneID uuid.UUID) ([]Milestone
 	return out, rows.Err()
 }
 
-// ResolveMembers expands a milestone's live membership to its flat leaf set of
-// feature ids (FR-5.1): a feature member resolves to itself, an initiative to
-// its descendant features transitively, and a nested milestone to its own
-// resolved features (recursively). The result is deduplicated. Checklists are
-// not members in this slice (SD-2).
+// ResolveMembers expands a milestone's live membership to its flat set of
+// leaf feature ids (FR-5.1): a feature member resolves to itself, an initiative
+// to its descendant features transitively, and a nested milestone to its own
+// resolved features (recursively). The result is deduplicated. The cost and
+// token roll-ups read this, so it stays features only; ResolveChecklists gives
+// the other kind of leaf (SPEC-014 FR-2.2).
 func ResolveMembers(ctx context.Context, q Querier, milestoneID uuid.UUID) ([]uuid.UUID, error) {
-	seen := map[uuid.UUID]bool{}    // features
+	feats, _, err := resolveLeaves(ctx, q, milestoneID)
+	return feats, err
+}
+
+// ResolveChecklists returns the checklists a milestone delivers: each checklist
+// member, and the checklists of nested milestones, recursively. An initiative
+// member brings in features only, never the checklists it owns: ownership says
+// whose page a checklist is planned on, not what a milestone contains
+// (SPEC-014 SD-2, D-12).
+func ResolveChecklists(ctx context.Context, q Querier, milestoneID uuid.UUID) ([]uuid.UUID, error) {
+	_, lists, err := resolveLeaves(ctx, q, milestoneID)
+	return lists, err
+}
+
+// resolveLeaves walks a milestone's live membership once, collecting both
+// kinds of leaf, deduplicated, in the order first reached.
+func resolveLeaves(ctx context.Context, q Querier, milestoneID uuid.UUID) (features, checklists []uuid.UUID, err error) {
+	seen := map[uuid.UUID]bool{}    // features and checklists (uuids don't collide)
 	visited := map[uuid.UUID]bool{} // milestones, to break nesting cycles
-	var order []uuid.UUID
+	add := func(list *[]uuid.UUID, id uuid.UUID) {
+		if !seen[id] {
+			seen[id] = true
+			*list = append(*list, id)
+		}
+	}
 	var walk func(mID uuid.UUID) error
 	walk = func(mID uuid.UUID) error {
 		if visited[mID] {
@@ -288,20 +311,16 @@ func ResolveMembers(ctx context.Context, q Querier, milestoneID uuid.UUID) ([]uu
 		for _, mem := range members {
 			switch mem.MemberType {
 			case "feature":
-				if !seen[mem.MemberID] {
-					seen[mem.MemberID] = true
-					order = append(order, mem.MemberID)
-				}
+				add(&features, mem.MemberID)
+			case "checklist":
+				add(&checklists, mem.MemberID)
 			case "initiative":
 				feats, err := descendantFeatureIDs(ctx, q, mem.MemberID)
 				if err != nil {
 					return err
 				}
 				for _, f := range feats {
-					if !seen[f] {
-						seen[f] = true
-						order = append(order, f)
-					}
+					add(&features, f)
 				}
 			case "milestone":
 				if err := walk(mem.MemberID); err != nil {
@@ -312,9 +331,9 @@ func ResolveMembers(ctx context.Context, q Querier, milestoneID uuid.UUID) ([]uu
 		return nil
 	}
 	if err := walk(milestoneID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return order, nil
+	return features, checklists, nil
 }
 
 // descendantFeatureIDs returns every feature in an initiative's subtree
@@ -336,51 +355,133 @@ func descendantFeatureIDs(ctx context.Context, q Querier, initiativeID uuid.UUID
 }
 
 // Progress is a milestone's computed completion over its resolved (open) or
-// snapshotted (locked) leaf features.
+// snapshotted (locked) leaves. Total and Done count items — features and
+// checklists together — which is what "X of Y items done" and gate G4 read
+// (SPEC-014 SD-1, SD-3). Leaves stays the feature ids alone, because the token
+// bar and the cost roll-ups read it and a checklist carries no tokens.
 type Progress struct {
-	Total  int
-	Done   int
-	Leaves []uuid.UUID
+	Total      int
+	Done       int
+	Leaves     []uuid.UUID // features
+	Checklists []uuid.UUID
 }
 
 // LiveProgress computes progress over the live-resolved membership (open
 // milestones, FR-5.1).
 func LiveProgress(ctx context.Context, q Querier, milestoneID uuid.UUID) (Progress, error) {
-	leaves, err := ResolveMembers(ctx, q, milestoneID)
+	feats, lists, err := resolveLeaves(ctx, q, milestoneID)
 	if err != nil {
 		return Progress{}, err
 	}
-	return featureProgress(ctx, q, leaves)
+	return leafProgress(ctx, q, feats, lists)
 }
 
 // SnapshotProgress computes progress over the frozen leaf set of a locked
 // milestone: the promised set is fixed, but each leaf's current state still
-// advances the historical progress (FR-5.2).
+// advances the historical progress (FR-5.2) — a feature finished, or a
+// checklist's last job ticked, after shipping. It never goes backwards: a
+// feature's done is terminal, and a checklist done when the milestone shipped
+// stays done in the record even if a job is unticked or added later (SPEC-014
+// SD-4).
 func SnapshotProgress(ctx context.Context, q Querier, milestoneID uuid.UUID) (Progress, error) {
-	rows, err := q.Query(ctx, `
-		SELECT leaf_id FROM milestone_snapshots
-		WHERE milestone_id = $1 AND leaf_type = 'feature' ORDER BY leaf_id`, milestoneID)
+	feats, err := snapshotLeaves(ctx, q, milestoneID, "feature")
 	if err != nil {
 		return Progress{}, err
 	}
-	defer func() { rows.Close() }()
-	leaves, err := scanIDs(rows)
-	rows.Close()
+	lists, err := snapshotLeaves(ctx, q, milestoneID, "checklist")
 	if err != nil {
 		return Progress{}, err
 	}
-	return featureProgress(ctx, q, leaves)
+	p, err := leafProgress(ctx, q, feats, nil)
+	if err != nil {
+		return Progress{}, err
+	}
+	var doneLists int
+	if err := q.QueryRow(ctx, `
+		SELECT count(*) FROM milestone_snapshots s
+		WHERE s.milestone_id = $1 AND s.leaf_type = 'checklist' AND (
+			s.done_at_lock
+			OR (EXISTS (SELECT 1 FROM jobs j WHERE j.checklist_id = s.leaf_id)
+			    AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.checklist_id = s.leaf_id AND j.ticked_at IS NULL)))`,
+		milestoneID).Scan(&doneLists); err != nil {
+		return Progress{}, err
+	}
+	p.Total += len(lists)
+	p.Done += doneLists
+	p.Checklists = lists
+	return p, nil
 }
 
-func featureProgress(ctx context.Context, q Querier, leaves []uuid.UUID) (Progress, error) {
-	p := Progress{Total: len(leaves), Leaves: leaves}
-	if len(leaves) == 0 {
-		return p, nil
+func snapshotLeaves(ctx context.Context, q Querier, milestoneID uuid.UUID, leafType string) ([]uuid.UUID, error) {
+	rows, err := q.Query(ctx, `
+		SELECT leaf_id FROM milestone_snapshots
+		WHERE milestone_id = $1 AND leaf_type = $2 ORDER BY leaf_id`, milestoneID, leafType)
+	if err != nil {
+		return nil, err
 	}
-	err := q.QueryRow(ctx, `
-		SELECT count(*) FILTER (WHERE state = 'done')
-		FROM features WHERE id = ANY($1)`, leaves).Scan(&p.Done)
-	return p, err
+	ids, err := scanIDs(rows)
+	rows.Close()
+	return ids, err
+}
+
+func leafProgress(ctx context.Context, q Querier, feats, lists []uuid.UUID) (Progress, error) {
+	p := Progress{Total: len(feats) + len(lists), Leaves: feats, Checklists: lists}
+	if len(feats) > 0 {
+		if err := q.QueryRow(ctx, `
+			SELECT count(*) FILTER (WHERE state = 'done')
+			FROM features WHERE id = ANY($1)`, feats).Scan(&p.Done); err != nil {
+			return p, err
+		}
+	}
+	doneLists, err := checklistsDone(ctx, q, lists)
+	if err != nil {
+		return p, err
+	}
+	p.Done += doneLists
+	return p, nil
+}
+
+// notShipped names every leaf that isn't done, for the audit row written when
+// a milestone is marked as shipped: deliverables not done then are recorded as
+// not shipped, not quietly dropped (DESIGN-010 §6, SPEC-014 SD-4).
+func notShipped(ctx context.Context, q Querier, feats, lists []uuid.UUID) ([]map[string]any, error) {
+	out := []map[string]any{}
+	if len(feats) > 0 {
+		rows, err := q.Query(ctx, `
+			SELECT id, name FROM features WHERE id = ANY($1) AND state <> 'done' ORDER BY name, id`, feats)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id uuid.UUID
+			var name string
+			if err := rows.Scan(&id, &name); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out = append(out, map[string]any{"type": "feature", "id": id.String(), "name": name})
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	for _, id := range lists {
+		st, err := GetChecklistStatus(ctx, q, id)
+		if err != nil {
+			return nil, err
+		}
+		if st.Done() {
+			continue
+		}
+		c, err := GetChecklist(ctx, q, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"type": "checklist", "id": id.String(), "name": c.Name,
+			"jobs": st.Jobs, "ticked": st.Ticked})
+	}
+	return out, nil
 }
 
 // LockMilestone evaluates gate G4 over the live membership and, if it passes,
@@ -419,12 +520,30 @@ func LockMilestone(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, actor 
 			return g, err
 		}
 	}
+	for _, leaf := range p.Checklists {
+		st, err := GetChecklistStatus(ctx, tx, leaf)
+		if err != nil {
+			return g, err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO milestone_snapshots (milestone_id, leaf_type, leaf_id, done_at_lock)
+			VALUES ($1, 'checklist', $2, $3)`, milestoneID, leaf, st.Done()); err != nil {
+			return g, err
+		}
+	}
+	missing, err := notShipped(ctx, tx, p.Leaves, p.Checklists)
+	if err != nil {
+		return g, err
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE milestones SET state = 'locked', locked_at = now() WHERE id = $1`, milestoneID); err != nil {
 		return g, err
 	}
 	if err := Audit(ctx, tx, actor, "milestone.locked", "milestone", &milestoneID,
-		map[string]any{"leaves": len(p.Leaves), "done_at_lock": p.Done}); err != nil {
+		// leaves counts features and checklists counts checklists; done_at_lock
+		// counts items of both kinds, as G4 and the progress line do.
+		map[string]any{"leaves": len(p.Leaves), "checklists": len(p.Checklists),
+			"done_at_lock": p.Done, "not_shipped": missing}); err != nil {
 		return g, err
 	}
 	return g, nil
@@ -445,13 +564,11 @@ func UnlockMilestone(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, reas
 	if m.State != lifecycle.MilestoneLocked {
 		return ErrMilestoneNotLocked
 	}
-	rows, err := tx.Query(ctx, `
-		SELECT leaf_id FROM milestone_snapshots WHERE milestone_id = $1 ORDER BY leaf_id`, milestoneID)
+	leaves, err := snapshotLeaves(ctx, tx, milestoneID, "feature")
 	if err != nil {
 		return err
 	}
-	leaves, err := scanIDs(rows)
-	rows.Close()
+	lists, err := snapshotLeaves(ctx, tx, milestoneID, "checklist")
 	if err != nil {
 		return err
 	}
@@ -462,12 +579,17 @@ func UnlockMilestone(ctx context.Context, tx pgx.Tx, milestoneID uuid.UUID, reas
 		UPDATE milestones SET state = 'open', locked_at = NULL WHERE id = $1`, milestoneID); err != nil {
 		return err
 	}
-	snapshot := make([]string, len(leaves))
-	for i, id := range leaves {
-		snapshot[i] = id.String()
-	}
 	return Audit(ctx, tx, actor, "milestone.unlocked", "milestone", &milestoneID,
-		map[string]any{"reason": reason, "locked_at": m.LockedAt, "snapshot": snapshot})
+		map[string]any{"reason": reason, "locked_at": m.LockedAt,
+			"snapshot": idStrings(leaves), "snapshot_checklists": idStrings(lists)})
+}
+
+func idStrings(ids []uuid.UUID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out
 }
 
 // ErrMilestoneNotLocked is returned when reopening a milestone that is open.

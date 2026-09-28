@@ -156,12 +156,20 @@ func TestG4(t *testing.T) {
 	}{
 		{0, 0, false}, // empty milestone: nothing to lock
 		{3, 0, false}, // live but nothing finished
-		{1, 0, false}, // its one feature not finished
+		{1, 0, false}, // its one item not finished
 		{3, 1, true},  // one member done: lockable (FR-5.2)
 		{1, 1, true},
 	}
+	want := map[[2]int]string{
+		{0, 0}: "This milestone can't be marked as shipped yet, because nothing in it comes down to a feature or a checklist. Add the work it is meant to deliver first.",
+		{1, 0}: "This milestone can't be marked as shipped yet, because the one item in it isn't done. Marking it as shipped records what actually went out, so at least one item has to be finished first.",
+		{3, 0}: "This milestone can't be marked as shipped yet, because none of its 3 items is done. Marking it as shipped records what actually went out, so at least one has to be finished first.",
+	}
 	for _, c := range cases {
 		got := G4(c.resolved, c.done)
+		if w, ok := want[[2]int{c.resolved, c.done}]; ok && got.Reason != w {
+			t.Errorf("G4(%d,%d).Reason = %q, want %q", c.resolved, c.done, got.Reason, w)
+		}
 		if got.Pass != c.pass {
 			t.Errorf("G4(%d,%d).Pass = %v, want %v (reason %q)",
 				c.resolved, c.done, got.Pass, c.pass, got.Reason)
@@ -170,10 +178,12 @@ func TestG4(t *testing.T) {
 			t.Errorf("G4 result malformed: %+v", got)
 		}
 		// A refusal is shown to a person as it stands (SPEC-010 FR-5.1): a
-		// full sentence that counts features, not a fragment.
+		// full sentence that counts items — features and checklists — in the
+		// word the progress line uses (SPEC-014 FR-2.4), not a fragment.
 		if !got.Pass && (!strings.HasPrefix(got.Reason, "This milestone can't be marked as shipped yet, because") ||
-			!strings.HasSuffix(got.Reason, ".") || !strings.Contains(got.Reason, "feature")) {
-			t.Errorf("G4(%d,%d) refusal is not a plain sentence about features: %q", c.resolved, c.done, got.Reason)
+			!strings.HasSuffix(got.Reason, ".") ||
+			!(strings.Contains(got.Reason, "item") || strings.Contains(got.Reason, "a feature or a checklist"))) {
+			t.Errorf("G4(%d,%d) refusal is not a plain sentence about items: %q", c.resolved, c.done, got.Reason)
 		}
 	}
 }
