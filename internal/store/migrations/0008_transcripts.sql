@@ -29,9 +29,13 @@ CREATE TABLE transcript_entries (
   cache_write_tokens bigint,
   created_at         timestamptz NOT NULL DEFAULT now(),
   CHECK (kind IN ('system', 'prompt', 'turn', 'text', 'tool_call',
-                  'tool_result', 'nudge', 'outcome', 'error')),
-  UNIQUE (dispatch_id, attempt, seq)
+                  'tool_result', 'nudge', 'outcome', 'error'))
 );
+-- Deliberately not unique: the running loop numbers its own entries, and the
+-- failure that gives up on it appends one more from the database side. If the
+-- two ever pick the same number, both rows are kept, and the time-ordered id
+-- breaks the tie (SPEC-012 FR-1.9).
+CREATE INDEX transcript_entries_run ON transcript_entries (dispatch_id, attempt, seq, id);
 
 -- When retention removed a finished run's transcript (SD-5). The run's
 -- outcome, tokens and tool ledger are kept regardless.

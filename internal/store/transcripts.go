@@ -96,32 +96,39 @@ func (s *Store) AppendTranscript(ctx context.Context, entries []TranscriptEntry)
 }
 
 // appendErrorEntry records why an attempt failed, in the transaction that
-// marks it failed (SD-3). The sequence number follows whatever the attempt
-// already wrote.
-func appendErrorEntry(ctx context.Context, tx pgx.Tx, dispatchID uuid.UUID, reason string) error {
+// marks it failed (SD-3). It runs inside a savepoint, so whatever happens to
+// this write, it can't undo the failure being recorded (FR-1.9, NFR-4); the
+// reason is on the audit row as well. The sequence number follows whatever
+// the attempt already wrote.
+func appendErrorEntry(ctx context.Context, tx pgx.Tx, dispatchID uuid.UUID, reason string) {
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return
+	}
 	var attempt, seq, turn int
-	if err := tx.QueryRow(ctx, `
+	if err := sp.QueryRow(ctx, `
 		SELECT d.attempt,
 		       COALESCE((SELECT MAX(seq) FROM transcript_entries t WHERE t.dispatch_id = d.id AND t.attempt = d.attempt), 0) + 1,
 		       COALESCE((SELECT MAX(turn) FROM transcript_entries t WHERE t.dispatch_id = d.id AND t.attempt = d.attempt), 0)
 		FROM dispatches d WHERE d.id = $1`, dispatchID).Scan(&attempt, &seq, &turn); err != nil {
-		return err
+		_ = sp.Rollback(ctx)
+		return
 	}
 	e := TranscriptEntry{
 		DispatchID: dispatchID, Attempt: attempt, Seq: seq, Turn: turn,
 		Kind: EntryError, Content: reason, ContentBytes: len(reason), IsError: true,
 	}
-	// ON CONFLICT: a live loop the stall sweep gave up on may still be writing,
-	// and may have taken this sequence number in the meantime. The failure
-	// itself is recorded on the dispatch row either way.
-	_, err := tx.Exec(ctx, insertTranscriptSQL+` ON CONFLICT (dispatch_id, attempt, seq) DO NOTHING`, e.args()...)
-	return err
+	if _, err := sp.Exec(ctx, insertTranscriptSQL, e.args()...); err != nil {
+		_ = sp.Rollback(ctx)
+		return
+	}
+	_ = sp.Commit(ctx)
 }
 
 // Transcript returns one attempt's entries in order.
 func Transcript(ctx context.Context, q Querier, dispatchID uuid.UUID, attempt int) ([]TranscriptEntry, error) {
 	rows, err := q.Query(ctx, `SELECT `+transcriptCols+` FROM transcript_entries
-		WHERE dispatch_id = $1 AND attempt = $2 ORDER BY seq`, dispatchID, attempt)
+		WHERE dispatch_id = $1 AND attempt = $2 ORDER BY seq, id`, dispatchID, attempt)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +164,14 @@ func TranscriptAttempts(ctx context.Context, q Querier, dispatchID uuid.UUID) ([
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// TranscriptTurns counts the model turns an attempt has recorded so far.
+func TranscriptTurns(ctx context.Context, q Querier, dispatchID uuid.UUID, attempt int) (int, error) {
+	var n int
+	err := q.QueryRow(ctx, `SELECT count(*) FROM transcript_entries
+		WHERE dispatch_id = $1 AND attempt = $2 AND kind = 'turn'`, dispatchID, attempt).Scan(&n)
+	return n, err
 }
 
 // TranscriptPrunedAt reports when retention removed a run's transcript, or nil.

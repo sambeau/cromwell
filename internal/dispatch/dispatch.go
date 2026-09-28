@@ -329,6 +329,12 @@ func (dp *Dispatcher) runOne(ctx context.Context, d *store.Dispatch, price confi
 	outcome, usage, runErr := dp.runLoop(ctx, d)
 	cost := Cost(usage, price)
 
+	if errors.Is(runErr, store.ErrAttemptGivenUp) {
+		// The stall sweep already failed this attempt and wrote down why; a
+		// retry may be running on the same row. Nothing more to record.
+		dp.Log.Warn("dispatcher: attempt given up on while still running", "dispatch", d.ID, "attempt", d.Attempt)
+		return
+	}
 	if runErr != nil {
 		err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			return store.MarkDispatchFailed(ctx, tx, d.ID, runErr.Error())
@@ -341,7 +347,7 @@ func (dp *Dispatcher) runOne(ctx context.Context, d *store.Dispatch, price confi
 	}
 
 	err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		return store.MarkDispatchSucceeded(ctx, tx, d.ID, store.TokenUsage{
+		return store.MarkAttemptSucceeded(ctx, tx, d.ID, d.Attempt, store.TokenUsage{
 			Input: usage.Input, Output: usage.Output,
 			CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
 		}, cost, json.RawMessage(outcome))
@@ -390,7 +396,9 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 	msgs := []provider.Message{provider.UserText(plan.User)}
 	seq := 0
 	for turn := 0; turn < plan.TurnCap; turn++ {
-		_ = dp.Store.Heartbeat(ctx, d.ID)
+		if err := dp.stillCurrent(ctx, d); err != nil {
+			return nil, total, err
+		}
 		n := turn + 1
 
 		began := time.Now()
@@ -402,6 +410,12 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 			return nil, total, err
 		}
 		total.Add(resp.Usage)
+		// A model call can outlast the stall threshold. If the attempt was
+		// given up on meanwhile, stop here: its transcript already ends with
+		// why, and acting on this reply could race a retry (SPEC-012 FR-1.9).
+		if err := dp.stillCurrent(ctx, d); err != nil {
+			return nil, total, err
+		}
 		rec.turn(ctx, n, resp, time.Since(began))
 
 		// Collect every tool_use block in the turn. Providers may return
@@ -462,6 +476,18 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 			provider.Message{Role: "user", Blocks: results})
 	}
 	return nil, total, fmt.Errorf("turn cap %d reached without %s", plan.TurnCap, plan.OutcomeTool)
+}
+
+// stillCurrent refreshes the attempt's heartbeat and reports
+// store.ErrAttemptGivenUp when the attempt is no longer the run's current,
+// running one. A database error is not a reason to stop; the stall sweep is
+// the backstop.
+func (dp *Dispatcher) stillCurrent(ctx context.Context, d *store.Dispatch) error {
+	ok, err := dp.Store.HeartbeatAttempt(ctx, d.ID, d.Attempt)
+	if err == nil && !ok {
+		return store.ErrAttemptGivenUp
+	}
+	return nil
 }
 
 // execTool runs one non-outcome tool call, enforcing the profile as

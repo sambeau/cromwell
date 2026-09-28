@@ -45,10 +45,16 @@ func (r *recorder) entry(e store.TranscriptEntry, limit int) store.TranscriptEnt
 	if content, cut := store.Cut(e.Content, limit); cut {
 		e.Content, e.Truncated = content, true
 	}
-	if max := r.limits.MaxAttemptBytes; max > 0 && r.used+len(e.Content) > max {
-		e.Content, e.Truncated = budgetMarker, true
+	switch e.Kind {
+	case store.EntrySystem, store.EntryPrompt, store.EntryOutcome, store.EntryError:
+		// What the agent was told and what it concluded are always kept
+		// whole, within their own limit; the budget bounds what it did.
+	default:
+		if max := r.limits.MaxAttemptBytes; max > 0 && r.used+len(e.Content) > max {
+			e.Content, e.Truncated = budgetMarker, true
+		}
+		r.used += len(e.Content)
 	}
-	r.used += len(e.Content)
 	return e
 }
 
@@ -61,8 +67,8 @@ func (r *recorder) write(ctx context.Context, entries ...store.TranscriptEntry) 
 // prompts records what the agent was told, once per attempt (FR-1.2).
 func (r *recorder) prompts(ctx context.Context, system, user string) {
 	r.write(ctx,
-		r.entry(store.TranscriptEntry{Kind: store.EntrySystem, Content: system}, r.limits.MaxEntryBytes),
-		r.entry(store.TranscriptEntry{Kind: store.EntryPrompt, Content: user}, r.limits.MaxEntryBytes))
+		r.entry(store.TranscriptEntry{Kind: store.EntrySystem, Content: system}, r.limits.MaxPromptBytes),
+		r.entry(store.TranscriptEntry{Kind: store.EntryPrompt, Content: user}, r.limits.MaxPromptBytes))
 }
 
 // turn records one model reply: the turn's tokens and latency, then its text

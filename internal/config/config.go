@@ -133,8 +133,10 @@ type DispatchConfig struct {
 // TranscriptConfig limits the size of stored transcripts and sets how long
 // they are kept (SPEC-012 FR-2). An entry over its limit is cut in the middle
 // with a marker, never dropped (SD-4). A pointer distinguishes "not set" from
-// an explicit 0 for retention, where 0 means keep for ever.
+// an explicit 0 for retention, where 0 means keep for ever; for the byte
+// limits, 0 means the default.
 type TranscriptConfig struct {
+	MaxPromptBytes     int  `yaml:"max_prompt_bytes"`
 	MaxToolResultBytes int  `yaml:"max_tool_result_bytes"`
 	MaxEntryBytes      int  `yaml:"max_entry_bytes"`
 	MaxAttemptBytes    int  `yaml:"max_attempt_bytes"`
@@ -143,6 +145,7 @@ type TranscriptConfig struct {
 
 // Transcript defaults (SPEC-012 FR-2.1).
 const (
+	DefaultMaxPromptBytes     = 1 << 20
 	DefaultMaxToolResultBytes = 32 << 10
 	DefaultMaxEntryBytes      = 256 << 10
 	DefaultMaxAttemptBytes    = 4 << 20
@@ -267,6 +270,7 @@ func (c *Config) validate() error {
 		name string
 		v    int
 	}{
+		{"max_prompt_bytes", t.MaxPromptBytes},
 		{"max_tool_result_bytes", t.MaxToolResultBytes},
 		{"max_entry_bytes", t.MaxEntryBytes},
 		{"max_attempt_bytes", t.MaxAttemptBytes},
@@ -277,6 +281,10 @@ func (c *Config) validate() error {
 	}
 	if t.RetentionDays != nil && *t.RetentionDays < 0 {
 		add("transcripts.retention_days", "must not be negative; 0 keeps transcripts for ever")
+	}
+	// 0, like leaving a byte limit out, means its default.
+	if t.MaxPromptBytes == 0 {
+		t.MaxPromptBytes = DefaultMaxPromptBytes
 	}
 	if t.MaxToolResultBytes == 0 {
 		t.MaxToolResultBytes = DefaultMaxToolResultBytes

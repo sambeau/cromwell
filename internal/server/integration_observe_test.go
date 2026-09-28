@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -186,7 +187,7 @@ func TestTranscriptOfAFailedRun(t *testing.T) {
 
 	h.mock.Respond(provider.Response{
 		StopReason: "end_turn", Usage: provider.Usage{Input: 90, Output: 5},
-		Blocks:     []provider.Block{provider.TextBlock("Thinking about it.")},
+		Blocks: []provider.Block{provider.TextBlock("Thinking about it.")},
 	})
 	h.mock.Fail(errors.New("provider said no"))
 
@@ -304,7 +305,8 @@ func TestTranscriptLimits(t *testing.T) {
 }
 
 // TestTranscriptBudget is FR-2.3 on the recorder's own terms: with a tiny
-// attempt budget, entries past it exist and carry the marker.
+// attempt budget, entries past it exist and carry the marker, while what the
+// agent was told and what it concluded are kept whole.
 func TestTranscriptBudget(t *testing.T) {
 	h := newHarness(t)
 	specPath := h.setupFeatureWithSpec()
@@ -314,12 +316,14 @@ func TestTranscriptBudget(t *testing.T) {
 	h.approveDoc(specPath)
 	run := h.runsFor("document", h.docID(specPath))[0]
 	es := h.transcript(run.ID, 1)
-	if len(es) < 4 {
-		t.Fatalf("entries = %v", kinds(es))
+	if got := kinds(es); strings.Join(got, ",") != "system,prompt,turn,tool_call,outcome" {
+		t.Fatalf("entries = %v", got)
 	}
-	last := es[len(es)-1]
-	if last.Kind != store.EntryOutcome || !last.Truncated || !strings.Contains(last.Content, "size limit") {
-		t.Errorf("entry past the budget should keep its kind and carry the marker: %+v", last)
+	if call := es[3]; !call.Truncated || !strings.Contains(call.Content, "size limit") || call.ToolName != "submit_review" {
+		t.Errorf("the entry past the budget keeps its shape and carries the marker: %+v", call)
+	}
+	if es[0].Truncated || es[1].Truncated || es[4].Truncated || !strings.Contains(es[4].Content, `"verdict"`) {
+		t.Error("the prompts and the outcome are outside the budget")
 	}
 }
 
@@ -375,5 +379,77 @@ func appendFile(t *testing.T, path, text string) {
 	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString(text); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// gateProvider lets a test hold one model call open, as a slow model or a long
+// retry would.
+type gateProvider struct {
+	inner   *provider.Mock
+	holdOn  int           // which call to hold, counting from 1
+	entered chan struct{} // closed when the held call starts
+	release chan struct{} // closed by the test to let it return
+	calls   int
+	mu      sync.Mutex
+}
+
+func (g *gateProvider) Complete(ctx context.Context, req provider.Request) (*provider.Response, error) {
+	g.mu.Lock()
+	g.calls++
+	n := g.calls
+	g.mu.Unlock()
+	if n == g.holdOn {
+		close(g.entered)
+		<-g.release
+	}
+	return g.inner.Complete(ctx, req)
+}
+
+// TestTranscriptOfARunGivenUpWhileAlive is FR-1.9: the stall sweep fails a run
+// whose loop is still waiting on the model. When the reply arrives, the loop
+// records nothing more, doesn't mark the run succeeded, and the transcript
+// ends with why it was given up on.
+func TestTranscriptOfARunGivenUpWhileAlive(t *testing.T) {
+	h := newHarness(t)
+	specPath := h.setupFeatureWithSpec()
+	ctx := context.Background()
+
+	gate := &gateProvider{inner: h.mock, holdOn: 2, entered: make(chan struct{}), release: make(chan struct{})}
+	h.srv.Dispatcher.Providers = func(string) (provider.Provider, error) { return gate, nil }
+	h.mock.Respond(provider.Response{
+		StopReason: "end_turn", Usage: provider.Usage{Input: 10, Output: 5},
+		Blocks: []provider.Block{provider.TextBlock("Reading.")},
+	})
+	h.mock.RespondOutcome("submit_review", `{"verdict":"approve","reasoning":"late answer"}`, provider.Usage{Input: 10, Output: 5})
+
+	if code, out := h.call("POST", "/api/docs/submit", map[string]string{"path": specPath}); code != 200 {
+		t.Fatalf("submit: %d %v", code, out)
+	}
+	<-gate.entered
+	run := h.runsFor("document", h.docID(specPath))[0]
+	if _, err := h.srv.Store.Pool.Exec(ctx,
+		`UPDATE dispatches SET heartbeat_at = now() - interval '1 hour' WHERE id = $1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.Dispatcher.StallSweep(ctx)
+	close(gate.release)
+
+	// The loop notices on its next check and stops; give it the moment.
+	h.eventually("mock consumed", func() bool { return h.mock.Remaining() == 0 })
+	time.Sleep(200 * time.Millisecond)
+
+	d, _ := store.GetDispatch(ctx, h.srv.Store.Pool, run.ID)
+	if d.State != "failed" {
+		t.Fatalf("a run given up on must stay failed, got %s", d.State)
+	}
+	es := h.transcript(run.ID, 1)
+	if got := kinds(es); strings.Join(got, ",") != "system,prompt,turn,text,nudge,error" {
+		t.Fatalf("entries = %v", got)
+	}
+	if !strings.Contains(es[len(es)-1].Content, "stalled") {
+		t.Errorf("the transcript should end with the stall: %+v", es[len(es)-1])
+	}
+	if h.docState(specPath) != lifecycle.DocReviewing {
+		t.Errorf("the late approval must not be applied; document is %s", h.docState(specPath))
 	}
 }
