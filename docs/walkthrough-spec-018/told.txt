@@ -1,0 +1,69 @@
+# Project
+
+m11demo
+
+# Project decisions and conventions
+
+These are binding: people decided them. If the task, or a document you are given, contradicts one, follow the decision and say so in your outcome; don't work around it.
+
+## Conventions
+
+### Code
+
+- Errors are full sentences a person can act on.
+- No new dependency without a decision.
+
+### Tools
+
+- `go test ./...` must pass before anything is submitted.
+
+## Decisions
+
+- DEC-001: The server, the CLI and all tooling are written in Go. Why: One static binary, and the team's experience.
+- DEC-002: State Store — Supabase-hosted Postgres, plain-Postgres compatible
+- DEC-003: The CLI shrinks to the vision's three components
+- DEC-004: The MCP facet may author the planning layer, but not drive development
+- DEC-005: The boundary is bypassing the orchestrator, not spawning agents
+- DEC-006: A human decides when development starts
+- DEC-007: Who does the work is flexible; who judges it is not
+- DEC-010: Sessions are signed cookies that expire after twelve idle hours; the server keeps no session state. Why: Any server can answer any request.
+- DEC-009 (INIT-001 Authentication): Hash passwords with argon2id, with the library defaults. Why: It is the current recommendation.
+
+# Feature under review
+
+Login form (login), under initiative auth
+
+People sign in with an email address and a password.
+
+# Task
+
+Review the document below. Complete your review by calling the `submit_review` tool with your verdict — approve, request_changes (with comments), or escalate (with reasoning). Do not finish without calling it.
+
+## Validation report
+
+All mechanical checks passed.
+
+## Document under review (docs/work/INIT-001-auth/FEAT-001-spec.md)
+
+---
+id: FEAT-001-spec
+revision: 1
+title: Login form
+type: spec
+owner: auth/login
+---
+
+# Login form
+
+## Overview
+
+People sign in with an email address and a password.
+
+## Behaviour
+
+Valid credentials start a session. Invalid credentials show an error and keep the email address.
+
+## Acceptance criteria
+
+- Valid credentials start a session
+- Invalid credentials show an error and keep the email address

@@ -1,0 +1,180 @@
+{{/* The decisions viewer (SPEC-018 FR-7). One row per decision ID, showing its
+     newest revision's state, what it tells agents, what it supersedes and what
+     superseded it. The owner filter is a branch of the tree: choosing an
+     initiative shows what its dispatches are told, and how big that is
+     against the cap (FR-7.2). */}}
+
+{{define "page-decisions"}}{{template "pagetop" .}}
+{{with .Data}}
+{{$owner := .Owner}}{{$state := .State}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon">
+      <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-decision"/></svg>
+    </span>
+    <div class="page-head-titles">
+      <h1 class="t-page">Decisions</h1>
+      <div class="page-head-meta"><span class="t-meta">{{len .Rows}} shown</span></div>
+    </div>
+    <div class="page-head-actions">
+      <button class="btn btn--primary" type="button" data-open-dialog="dlg-new-decision">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New decision…</button>
+    </div>
+  </div>
+  <p class="page-lede">How the project remembers why. Every accepted decision on a branch of the
+     tree is pushed into the prompt of each agent working there: its ruling and one-line reason,
+     never the whole document. An accepted decision is never edited. It is amended with a dated
+     section, or superseded by a new decision.</p>
+</div>
+
+{{if .Notice}}<div class="banner banner--success u-mt-4" role="status"><svg class="icon icon-md" aria-hidden="true"><use href="#i-approve"/></svg><div>{{.Notice}}</div></div>{{end}}
+{{if .Error}}<div class="banner banner--error u-mt-4" role="alert"><svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg><div>{{.Error}}</div></div>{{end}}
+
+<section class="panel u-mt-4" id="conventions">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-document"/></svg> Project conventions</h2>
+  </div>
+  <div class="panel-body">
+    {{with .Conventions}}
+    <p><a href="/ui/d/{{.Path}}">{{template "ident" (idFor .PublicID .Title)}}{{.Title}}</a> {{template "state-badge" .State}}</p>
+    <p class="t-meta u-mt-2">Once accepted, all of it is pushed into every agent's prompt, ahead of the decisions. It is kept short by its template's word cap.</p>
+    {{else}}
+    <p class="t-meta">This project has no conventions document. It holds the five to fifteen things that change what an agent writes here: code style, architecture, key interfaces and tools. Once a person accepts it, every agent is told it.</p>
+    <form method="post" action="/ui/conventions/new" class="u-mt-4">
+      <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>Start the conventions document</button>
+    </form>
+    {{end}}
+  </div>
+</section>
+
+<div class="filterbar u-mt-4" role="group" aria-label="Filter decisions">
+  <span class="t-label">Show</span>
+  <a class="chip{{if eq $state "accepted"}} chip--on{{end}}" href="/ui/decisions?state=accepted&owner={{$owner}}">Accepted</a>
+  <a class="chip{{if eq $state "open"}} chip--on{{end}}" href="/ui/decisions?state=open&owner={{$owner}}">Drafts and in review</a>
+  <a class="chip{{if eq $state "superseded"}} chip--on{{end}}" href="/ui/decisions?state=superseded&owner={{$owner}}">Superseded</a>
+  <a class="chip{{if eq $state "all"}} chip--on{{end}}" href="/ui/decisions?state=all&owner={{$owner}}">All</a>
+  <span class="t-label u-push">For</span>
+  <a class="chip{{if eq $owner ""}} chip--on{{end}}" href="/ui/decisions?state={{$state}}">Everything</a>
+  <a class="chip{{if eq $owner "project"}} chip--on{{end}}" href="/ui/decisions?state={{$state}}&owner=project">The project</a>
+  {{range .Initiatives}}
+  <a class="chip{{if eq $owner .PublicID}} chip--on{{end}}" href="/ui/decisions?state={{$state}}&owner={{.PublicID}}">{{.PublicID}} {{.Name}}</a>
+  {{end}}
+</div>
+
+{{with .Branch}}
+<section class="panel u-mt-4" id="branch">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg> What a dispatch in {{.Name}} is told</h2>
+  </div>
+  <div class="panel-body">
+    {{if .Block}}
+    <p class="t-meta">About {{.Tokens}} tokens, of a cap of {{.MaxTokens}}. {{len .Included}} decision{{if ne (len .Included) 1}}s{{end}} fit{{if .LeftOut}}, and {{len .LeftOut}} {{if eq (len .LeftOut) 1}}is{{else}}are{{end}} left out for space{{end}}.</p>
+    <pre class="transcript-pre u-mt-2">{{.Block}}</pre>
+    {{else}}
+    <p class="t-meta">Nothing: there are no accepted decisions on this branch, and no accepted conventions. Its prompts are as they were.</p>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+{{if .LeftOut}}
+<div class="banner banner--warning u-mt-4" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-alert"/></svg>
+  <div>Some decisions don't fit in every dispatch: the cap leaves them out, farthest from the work first.
+    {{range $id, $where := .LeftOut}}{{$id}} is left out in {{range $i, $w := $where}}{{if $i}}, {{end}}{{$w}}{{end}}. {{end}}
+    Supersede decisions that no longer matter, or shorten rulings, to bring them back.</div>
+</div>
+{{end}}
+
+{{if .Rows}}
+<section class="panel u-mt-4">
+  <div class="panel-body panel-body--flush">
+    <table class="table" id="decisions">
+      <thead><tr><th scope="col">Decision</th><th scope="col">Belongs to</th><th scope="col">State</th><th scope="col">What agents are told</th><th scope="col">Supersedes</th><th scope="col">Superseded by</th></tr></thead>
+      <tbody>
+      {{range .Rows}}
+      <tr data-decision="{{.Doc.PublicID}}">
+        <td><a href="/ui/d/{{.Doc.Path}}">{{template "ident" (idFor .Doc.PublicID .Doc.Title)}}{{.Doc.Title}}</a>
+          {{if .Amendments}}<p class="t-meta">Amended: {{range $i, $a := .Amendments}}{{if $i}}; {{end}}{{$a}}{{end}}</p>{{end}}</td>
+        <td>{{.OwnerLabel}}</td>
+        <td>{{.State}}</td>
+        <td>{{if .FromTitle}}<span class="t-meta">No ruling is recorded; its title is surfaced.</span><br>{{end}}{{.Line}}
+          {{if .LeftOut}}<p class="t-meta">This decision is left out of some dispatches, for lack of space.</p>{{end}}</td>
+        <td>{{range $i, $x := .Supersedes}}{{if $i}}, {{end}}<a href="/ui/id/{{$x}}">{{$x}}</a>{{end}}</td>
+        <td>{{range $i, $x := .SupersededBy}}{{if $i}}, {{end}}<a href="/ui/id/{{$x}}">{{$x}}</a>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{else}}
+<div class="empty u-mt-6">
+  <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-decision"/></svg></span>
+  <p class="empty-title">No decisions match</p>
+  <p class="empty-text">Start one with New decision, or adopt an existing decision file from the project page, and it keeps its number.</p>
+</div>
+{{end}}
+
+<dialog class="modal" id="dlg-new-decision" aria-labelledby="t-new-decision">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-new-decision"><svg class="icon icon-md" aria-hidden="true"><use href="#i-decision"/></svg> New decision</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/decision/new">
+    <div class="modal-body">
+      <div class="form">
+        <div class="field">
+          <label class="field-label" for="nd-title">What was decided?</label>
+          <input class="input" id="nd-title" name="title" type="text" required>
+          <p class="field-hint">A short title. The decision gets the next DEC- number and opens in the editor on its template.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="nd-owner">Who does it bind?</label>
+          <select class="select" id="nd-owner" name="owner">
+            <option value="project">The whole project</option>
+            {{range .Initiatives}}<option value="{{.PublicID}}"{{if eq $owner .PublicID}} selected{{end}}>{{.PublicID}} {{.Name}}, and everything under it</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="nd-supersedes">Does it supersede any decisions? <span class="opt">optional</span></label>
+          <input class="input" id="nd-supersedes" name="supersedes" type="text" placeholder="DEC-003, DEC-005">
+          <p class="field-hint">They stay accepted until a person accepts this one.</p>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Start the decision</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+{{/* What a decision or the conventions tells agents, on its own page
+     (SPEC-018 FR-4.2): the line exactly as a prompt carries it, its size
+     against the caps, and what it supersedes or was superseded by. */}}
+{{define "doc-surfaced"}}{{with .}}
+<section class="panel u-mt-4" id="surfaced">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg> What agents are told</h2>
+  </div>
+  <div class="panel-body">
+    {{if eq .Kind "conventions"}}
+    <p class="t-meta">{{if .Accepted}}All of it, below its title, is pushed into every agent's prompt.{{else}}Once accepted, all of it below its title is pushed into every agent's prompt.{{end}} It is {{.BodyWords}} words{{if .BodyCap}}, of a cap of {{.BodyCap}}{{end}}.</p>
+    {{else}}
+    {{if .Superseded}}<p class="t-meta">Superseded{{if .SupersededBy}} by {{range $i, $x := .SupersededBy}}{{if $i}}, {{end}}<a href="/ui/id/{{$x}}">{{$x}}</a>{{end}}{{end}}, so agents are no longer told it. Its file is kept as it was.</p>
+    {{else}}
+    <p class="t-meta">{{if .Accepted}}Every agent working on its branch of the project is told this line:{{else}}Once accepted, every agent working on its branch of the project will be told this line:{{end}}</p>
+    <pre class="transcript-pre u-mt-2">{{.Line}}</pre>
+    {{if .FromTitle}}<p class="t-meta u-mt-2">No ruling is recorded, so its title is surfaced. Record its ruling to give agents the rule itself.</p>
+    {{else}}<p class="t-meta u-mt-2">The ruling is {{.RulingWords}} words{{if .RulingCap}} (at most {{.RulingCap}}){{end}}, and the reason {{.ReasonWords}}{{if .ReasonCap}} (at most {{.ReasonCap}}){{end}}.</p>{{end}}
+    {{if .LeftOutOn}}<p class="t-meta u-mt-2">Left out for space in {{range $i, $w := .LeftOutOn}}{{if $i}}, {{end}}{{$w}}{{end}}.</p>{{end}}
+    {{end}}
+    {{if .Supersedes}}<p class="t-meta u-mt-2">{{if .Accepted}}It superseded{{else if .Superseded}}It superseded{{else}}Accepting it supersedes{{end}} {{range $i, $x := .Supersedes}}{{if $i}}, {{end}}<a href="/ui/id/{{$x}}">{{$x}}</a>{{end}}.</p>{{end}}
+    {{end}}
+  </div>
+</section>
+{{end}}{{end}}

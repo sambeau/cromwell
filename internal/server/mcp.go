@@ -80,7 +80,8 @@ type mcpTool struct {
 // SPEC-011 and SPEC-014 (mcpRelayTools, which carry a person's quoted decision
 // and never send or start building), submit_for_review beside them (SPEC-017
 // FR-1: the chat agent hands in its own draft, and the reviewer decides), and
-// the two read-only tools of SPEC-017 FR-4 (mcpObserveTools), and nothing else. A
+// the two read-only tools of SPEC-017 FR-4 (mcpObserveTools), the decision
+// tools of SPEC-018 (mcpDecisionTools: a draft and two reads), and nothing else. A
 // development-side or gate tool would have to be added here to exist at all,
 // which is what makes the line reviewable.
 func (s *Server) mcpTools() []mcpTool {
@@ -168,7 +169,7 @@ func (s *Server) mcpTools() []mcpTool {
 				"decide. A decision file named like DEC-005-….md keeps its number.",
 			Schema: objectSchema(map[string]any{
 				"path":       stringProp("The file's path within the repository, for example \"docs/design/login.md\"."),
-				"doc_type":   stringProp("The kind of document: design, research, note, report, spec, dev_plan, policy or decision."),
+				"doc_type":   stringProp("The kind of document: design, research, note, report, spec, dev_plan, policy, decision or conventions."),
 				"owner_type": stringProp("Which kind of thing owns it: \"project\", \"initiative\" or \"feature\". A decision belongs to the project or an initiative."),
 				"owner_path": stringProp("The path of the owning initiative or feature, or its ID, such as \"FEAT-012\". Omit when the owner is the project."),
 			}, "path", "doc_type", "owner_type"),
@@ -210,7 +211,7 @@ func (s *Server) mcpTools() []mcpTool {
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
-	}, append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...)...)
+	}, append(append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...), s.mcpDecisionTools()...)...)
 }
 
 // mcpToolNames is the sorted list of advertised tool names — the assertion
@@ -304,6 +305,8 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				"with the person, add the file, and submit it for review (submit_for_review): its independent " +
 				"reviewer decides, not you, and a spec written this way is used as it is when the feature is " +
 				"sent. You can read a feature's timeline (get_timeline) and any agent run (get_agent_run). " +
+				"You can start a decision the person has made (create_decision) and read the project's decisions " +
+				"(list_decisions, get_decision); a person accepts a decision, and agents are then told its ruling. " +
 				"You can also carry a person's " +
 				"decisions on documents — a verdict, an issue, a request for an agent review, or " +
 				"letting the reviewer decide on a held specification — and their word that a job is " +

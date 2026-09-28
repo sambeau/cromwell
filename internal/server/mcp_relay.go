@@ -47,10 +47,10 @@ func (s *Server) mcpRelayTools() []mcpTool {
 	return []mcpTool{
 		{
 			Name: "submit_for_review",
-			Description: "Submit a draft you have written — a specification, a dev-plan or a design — for review, " +
+			Description: "Submit a draft you have written — a specification, a dev-plan, a design, a decision or the project conventions — for review, " +
 				"once the person and you think it's ready. It is checked against its template first; if it fails, " +
 				"you are told what to fix. A specification or dev-plan then goes to its independent agent reviewer, " +
-				"whose verdict is its own, never yours; a design waits for a person to approve it. Submitting " +
+				"whose verdict is its own, never yours; a design, a decision or the conventions waits for a person to accept it. Submitting " +
 				"doesn't send anything to development: a person does that from the command centre. For a document " +
 				"already in review, a fresh review is the person's call: relay it with relay_review_request.",
 			Schema: objectSchema(map[string]any{

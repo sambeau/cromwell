@@ -447,6 +447,12 @@ type docActions struct {
 	ReleaseWhy       string
 	Pending          string // a question in the Inbox that blocks the acts
 	AuthorAtWork     bool
+	// A decision's own acts (SPEC-018 FR-3): Revise becomes Append an
+	// amendment, or Record its ruling for a decision with none, beside
+	// Supersede with a new decision.
+	IsDecision   bool
+	RecordRuling bool
+	CanSupersede bool
 }
 
 func (s *Server) docActionsFor(ctx context.Context, doc *store.Document) docActions {
@@ -458,6 +464,14 @@ func (s *Server) docActionsFor(ctx context.Context, doc *store.Document) docActi
 			a.SuccessorURL = "/ui/d/" + succ.Path
 		} else {
 			a.CanRevise = true
+		}
+	}
+	if doc.Type == "decision" {
+		a.IsDecision = true
+		if doc.State == lifecycle.DocApproved {
+			a.CanSupersede = doc.PublicID != ""
+			a.RecordRuling = a.CanRevise && !s.decisionHasRuling(ctx, doc)
+			a.CanRevise = a.CanRevise && doc.PublicID != ""
 		}
 	}
 	if issues, err := store.OpenIssues(ctx, s.Store.Pool, doc.ID); err == nil {
@@ -570,7 +584,7 @@ func (s *Server) handleDocSubmit(w http.ResponseWriter, r *http.Request) {
 		var b strings.Builder
 		b.WriteString("The document doesn't pass validation yet, so it stays a draft. ")
 		for _, is := range report.Issues {
-			b.WriteString(is.Detail)
+			b.WriteString(strings.TrimSuffix(is.Detail, "."))
 			b.WriteString(". ")
 		}
 		s.afterDocAct(w, r, doc, "", errors.New(strings.TrimSpace(b.String())))
@@ -590,6 +604,22 @@ func (s *Server) handleDocRevise(w http.ResponseWriter, r *http.Request) {
 	}
 	if succ, err := s.liveSuccessor(r.Context(), doc.ID); err == nil && succ != nil {
 		s.afterDocAct(w, r, doc, "", errors.New("A revision of this document is already open. Work on that one."))
+		return
+	}
+	// A decision's revision is an amendment, which the page offers and the
+	// editor doesn't (SPEC-018 SD-7).
+	if doc.Type == "decision" {
+		if err := s.refuseIfPending(r.Context(), doc); err != nil {
+			s.afterDocAct(w, r, doc, "", err)
+			return
+		}
+		succ, err := s.reviseDocBy(r.Context(), doc.Path, s.uiActor(),
+			writerAct{Act: store.ActOpenedRevision, Kind: store.WriterPerson, Actor: s.uiActor(), Via: "ui"})
+		if err != nil {
+			s.afterDocAct(w, r, doc, "", err)
+			return
+		}
+		http.Redirect(w, r, "/ui/edit/"+succ.Path, http.StatusSeeOther)
 		return
 	}
 	// The same refusals as the browser editor's revision (SPEC-016 SD-12).

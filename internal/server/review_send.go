@@ -535,7 +535,13 @@ func (s *Server) RaiseIssue(ctx context.Context, docID uuid.UUID, body, section 
 	if s.humanApprovalType(doc.Type) {
 		// A design carries an issue as a note for its human approver (SD-14).
 		if doc.State == lifecycle.DocApproved {
-			return nil, errors.New("This design is approved. A design is changed by revising it, so start a revision and make the change there.")
+			switch doc.Type {
+			case "decision":
+				return nil, errors.New("This decision is accepted, and an accepted decision is never edited. Append a dated amendment, or supersede it with a new decision, from its page.")
+			case "design":
+				return nil, errors.New("This design is approved. A design is changed by revising it, so start a revision and make the change there.")
+			}
+			return nil, fmt.Errorf("This %s is approved. It is changed by revising it, so start a revision and make the change there.", docTypeWords(doc.Type))
 		}
 		return doc, s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			_, e := store.InsertIssue(ctx, tx, doc.ID, act.Actor, section, body, act.Via, act.Quote)

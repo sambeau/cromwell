@@ -100,6 +100,10 @@ func (s *Server) urlForID(ctx context.Context, raw string) (string, error) {
 			// is the useful destination.
 			if cur, err := store.CurrentDocumentByPublicID(ctx, pool, ref.ID); err == nil && cur.State != lifecycle.DocSuperseded {
 				d = cur
+			} else if rec, err := store.SupersededDecisionAtPath(ctx, pool, d.Path); err == nil && rec.PublicID == ref.ID {
+				// ...except a decision another superseded: it is a record in
+				// place, with its page (SPEC-018 SD-6).
+				d = rec
 			} else {
 				return "", nil
 			}

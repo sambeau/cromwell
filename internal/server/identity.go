@@ -328,6 +328,12 @@ func (s *Server) AdoptDocument(ctx context.Context, req AdoptRequest) (*AdoptRes
 		return nil, err
 	}
 
+	if existing == nil && req.State == lifecycle.DocApproved {
+		if err := s.checkSurfacedCaps(req.DocType, raw); err != nil {
+			return nil, err
+		}
+	}
+
 	abs := filepath.Join(s.RepoRoot, path)
 	var doc *store.Document
 	var newRaw string
@@ -429,6 +435,11 @@ func (s *Server) checkAdoptRequest(ctx context.Context, req AdoptRequest) error 
 	if req.DocType == "decision" && req.OwnerType == "feature" {
 		return errors.New("A decision belongs to the project or an initiative, not to a feature.")
 	}
+	if req.DocType == "conventions" {
+		if err := s.secondConventions(ctx, req.OwnerType); err != nil {
+			return err
+		}
+	}
 	switch req.State {
 	case lifecycle.DocDraft:
 	case lifecycle.DocApproved:
@@ -456,9 +467,12 @@ func (s *Server) checkAdoptRequest(ctx context.Context, req AdoptRequest) error 
 }
 
 // approvableByAdoption is whether a type may be adopted as already approved:
-// a design, or a type with no template, which can't be submitted (SD-11).
+// a design, a decision or the conventions, or a type with no template, which
+// can't be submitted (SD-11). Decisions and conventions have templates since
+// SPEC-018, but an existing record of a ruling is still adopted as it stands
+// (SPEC-018 SD-3); their surfaced caps are checked instead.
 func (s *Server) approvableByAdoption(docType string) bool {
-	return docType == "design" || !s.hasTemplate(docType)
+	return docType == "design" || surfacedType(docType) || !s.hasTemplate(docType)
 }
 
 // hasTemplate reports whether a document type has a manifest, and so can be
@@ -483,7 +497,7 @@ func (s *Server) recordAlreadyApproved(ctx context.Context, tx pgx.Tx, doc *stor
 		return err
 	}
 	doc.State = lifecycle.DocApproved
-	return nil
+	return s.acceptSurfaced(ctx, tx, doc, true)
 }
 
 // publishAlreadyApproved gives an approval by adoption an approval's
@@ -504,7 +518,12 @@ func (s *Server) RecordAlreadyApproved(ctx context.Context, docID uuid.UUID, act
 		return nil, err
 	}
 	if !s.canRecordAlreadyApproved(doc) {
-		return nil, errors.New("Only a draft with an ID, of a kind that has no template to review it against, can be recorded as already approved.")
+		return nil, errors.New("Only a draft with an ID, of a kind that has no template to review it against, or an adopted decision, can be recorded as already approved.")
+	}
+	if raw, err := s.readDocFile(doc.Path); err == nil {
+		if err := s.checkSurfacedCaps(doc.Type, raw); err != nil {
+			return nil, err
+		}
 	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		return s.recordAlreadyApproved(ctx, tx, doc, actor, "ui", "recorded")
@@ -521,7 +540,23 @@ func (s *Server) RecordAlreadyApproved(ctx context.Context, docID uuid.UUID, act
 
 // canRecordAlreadyApproved is when FR-5.8's button is offered.
 func (s *Server) canRecordAlreadyApproved(d *store.Document) bool {
-	return d.State == lifecycle.DocDraft && d.PublicID != "" && d.SupersedesID == nil && !s.hasTemplate(d.Type)
+	if d.State != lifecycle.DocDraft || d.PublicID == "" || d.SupersedesID != nil {
+		return false
+	}
+	if d.Type == "decision" {
+		// An adopted decision, which won't have the template's headings;
+		// one started from the template is submitted (SPEC-018 SD-3).
+		return s.wasAdopted(d.ID)
+	}
+	return !s.hasTemplate(d.Type)
+}
+
+// wasAdopted reports whether a document came into Subutai by adoption.
+func (s *Server) wasAdopted(docID uuid.UUID) bool {
+	var n int
+	_ = s.Store.Pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events
+		WHERE kind = 'document.adopted' AND ref_type = 'document' AND ref_id = $1`, docID).Scan(&n)
+	return n > 0
 }
 
 // lockIdentity serialises choosing a document ID for one owner and type
@@ -633,6 +668,16 @@ func (s *Server) adoptIdentity(ctx context.Context, tx pgx.Tx, path, raw string,
 				return "", 0, nameTaken(ctx, tx, path, candidate)
 			}
 			return "", 0, alreadyTaken(ctx, tx, path, candidate)
+		}
+		// Every revision superseded means another decision superseded it:
+		// the file is a record, and adopting it again would bring a retired
+		// ruling back into every prompt (SPEC-018 R18-1).
+		if maxRev > 0 {
+			by := s.supersededByName(ctx, &store.Document{PublicID: candidate})
+			if by == "" {
+				by = "another decision"
+			}
+			return "", 0, fmt.Errorf("%s was superseded by %s and is kept as a record, so %s can't be adopted as %s again. Start a new decision instead.", candidate, by, path, candidate)
 		}
 		r, _ := ident.Parse(candidate)
 		if err := store.AdvanceIdent(ctx, tx, "DEC", r.Number); err != nil {

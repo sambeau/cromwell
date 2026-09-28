@@ -39,8 +39,12 @@ type ReviewPromptInput struct {
 	// vocabulary, anti-patterns, then the skill's procedure. Assembling it in
 	// one place keeps every dispatch purpose on the same shape (SPEC-009
 	// FR-10.4).
-	System           string
-	ProjectName      string
+	System      string
+	ProjectName string
+	// Surfaced is the project's decisions and conventions block for the
+	// document's branch (SPEC-018 FR-6), placed after the project's name;
+	// empty when there is nothing accepted.
+	Surfaced         string
 	AncestorDocs     []AttachedDoc // approved docs on ancestor initiatives
 	Feature          *FeatureContext
 	DocPath          string
@@ -65,6 +69,9 @@ func AssembleReviewPrompt(in ReviewPromptInput) (system, user string) {
 	var u strings.Builder
 	u.WriteString("# Project\n\n")
 	u.WriteString(in.ProjectName + "\n")
+	if in.Surfaced != "" {
+		u.WriteString("\n" + in.Surfaced)
+	}
 
 	if len(in.AncestorDocs) > 0 {
 		u.WriteString("\n# Background documents\n")
