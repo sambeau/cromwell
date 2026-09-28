@@ -24,8 +24,8 @@ Phase A and the first three build milestones are merged:
 - M6: every agent run keeps its transcript, and each feature has a timeline.
 
 Their specs (SPEC-010 to SPEC-012) are approved. M7, the rename to Subutai, is
-built; its spec ([SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md)) awaits
-Sam's approval.
+built, and its spec ([SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md)) is
+approved.
 
 Build: `go build ./cmd/subutai` · Test: `eval "$(scripts/test-db.sh)"` then
 `go test -race -count=1 ./...` (without `SUBUTAI_TEST_DATABASE_URL` the
@@ -66,7 +66,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [SPEC-007](docs/specs/SPEC-007-workflow-surface-stage-a.md) | The workflow surface, Stage A: document-led browsing (**binding**) |
 | [SPEC-008](docs/specs/SPEC-008-mcp-facet-planning-authoring.md) | The MCP facet, slice 1: planning authoring (**binding**) |
 | [SPEC-009](docs/specs/SPEC-009-the-authoring-chain.md) | The authoring chain, Stage 1 (**binding**) |
-| [SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md) | The rename to Subutai, and what stays compatible (draft for Sam's approval) |
+| [SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md) | The rename to Subutai, and what stays compatible (**binding**) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
 | [REVIEW-003](docs/reviews/REVIEW-003-phase-3-planning-package.md) | Consistency review + approval of SPEC-003 |
@@ -120,7 +120,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
     - Send to development ([DEC-006](docs/decisions/DEC-006-humans-start-development.md), SPEC-011);
     - milestone and roadmap editing (SPEC-010);
     - transcripts, the feature timeline and review health (SPEC-012).
-  - **Built:** the rename to Subutai (SPEC-013).
+  - **Built and approved:** the rename to Subutai (SPEC-013).
   - **Next:** checklists, document identity and the editor, executors, bugs,
     spikes, decisions, and GitHub adoption.
 

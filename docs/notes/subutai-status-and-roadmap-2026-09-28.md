@@ -782,7 +782,9 @@ These are small, independent jobs for any idle session:
   secrets included, as accepted. Redaction is the agreed follow-up.
 
 **Approvals, 2026-09-28:** Sam approved SPEC-010, SPEC-011 and SPEC-012 with
-their builds, and accepted every recommended choice in them.
+their builds, and accepted every recommended choice in them. Sam then approved
+SPEC-013 (M7, the rename) with its build, and accepted its four recommended
+choices.
 
 ## 12. Decisions waiting on Sam
 

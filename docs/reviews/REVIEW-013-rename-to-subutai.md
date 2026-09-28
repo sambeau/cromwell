@@ -1,8 +1,8 @@
 # REVIEW-013: Missed-surface check of SPEC-013 and the rename
 
 **Status:** Complete. The author has dealt with every finding
-([SPEC-013 §6](../specs/SPEC-013-rename-to-subutai.md#6-changes-after-review));
-awaiting Sam's decision
+([SPEC-013 §6](../specs/SPEC-013-rename-to-subutai.md#6-changes-after-review)).
+**Sam approved SPEC-013 on 2026-09-28** (§6)
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author, in two
 passes. It reported only; it edited nothing. Approval is Sam's.
@@ -98,3 +98,6 @@ SPEC-013 §2, leaves these. Each is on DoD 2's allowlist:
 
 Approve SPEC-013 with the build. Nothing open blocks it. The four choices in
 DoD 7 are Sam's.
+
+**Decision, 2026-09-28:** Sam approved SPEC-013 with the build, and accepted
+the recommendation on each of the four choices.
