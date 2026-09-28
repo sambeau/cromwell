@@ -682,7 +682,7 @@ was told, did and concluded.
 
 *Done when:* moving a file on disk doesn't detach it.
 
-**M9 — Edit in the browser** · S · needs M8 · lane 1
+**M9 — Edit in the browser** · S · needs M8 · lane 1 · ✅ **done 2026-09-28**, see the [M9 handoff](handoff-M9-2026-09-28.md)
 *Goal: fix documents without leaving the UI.*
 - A Markdown editor with preview, *Save*, and *Save & commit*.
 - Refuse to overwrite a file that changed on disk.
