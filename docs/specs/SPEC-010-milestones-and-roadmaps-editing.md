@@ -1,10 +1,10 @@
 # SPEC-010: Milestones and roadmaps you can edit
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. An independent
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its four choices (DoD 6). It was drafted for Sam's approval as follows. Authored by Claude. An independent
 consistency review, [REVIEW-010](../reviews/REVIEW-010-milestones-and-roadmaps-editing.md),
 found six material and twelve smaller problems in the first draft. All of them
 are dealt with in this revision; §7 says how, finding by finding. The author
-can't be the approval gate, so the decision is Sam's. Sam has said he will
+can't be the approval gate, so the decision is Sam's. Sam has said they will
 approve the spec and the build together. Four choices in it need his explicit
 yes (§5, DoD 6).
 **Date:** 2026-09-28

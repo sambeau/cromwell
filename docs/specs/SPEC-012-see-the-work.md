@@ -1,6 +1,6 @@
 # SPEC-012: See the work
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. An independent
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its nine choices (DoD 6). It was drafted for Sam's approval as follows. Authored by Claude. An independent
 consistency review, [REVIEW-012](../reviews/REVIEW-012-see-the-work.md), found
 four material and thirteen smaller problems in the first draft. All of them
 are dealt with in this revision, and §7 says how, finding by finding. The

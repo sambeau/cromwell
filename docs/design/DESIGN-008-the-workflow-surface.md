@@ -206,6 +206,14 @@ a dead end. Their full working surfaces come in Stage B (§8).
 
 ### 5.1a Milestones and roadmaps belong to an entity
 
+> **Note, 2026-09-28 (SPEC-010, approved by Sam).** Two departures from this
+> section, both accepted. First, a member can be taken out of a milestone from
+> the member's own page ("Add to a milestone…" lists the milestones it is in),
+> as well as from the milestone's modal. Second, the milestone and roadmap pages
+> have their own Edit button, opening the same editors. SPEC-010 also records
+> that a roadmap may hold milestones owned elsewhere, as D-12 already allows
+> for milestone membership.
+
 A milestone and a roadmap each have **two** relationships, and keeping them
 distinct is the whole of this section:
 
@@ -329,6 +337,10 @@ questions:
   the big one. Both are true; showing both is honest.
 
 ### 5.2 What a page looks like
+
+> **Note, 2026-09-28 (SPEC-012, approved by Sam).** A feature page now shows
+> its timeline, a line of major moments, between the page head and the body. It
+> replaces the "Recent activity" list there. See DESIGN-010 §8.
 
 One layout for every entity, so that learning one page teaches you all of them:
 

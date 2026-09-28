@@ -1,7 +1,7 @@
 # SPEC-011: Send to development
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. The author
-can't be the approval gate, so the decision is Sam's. Sam has said he will
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its eight choices (DoD 7). It was drafted for Sam's approval as follows. Authored by Claude. The author
+can't be the approval gate, so the decision is Sam's. Sam has said they will
 approve the spec and the build together. An independent consistency review is
 recorded in [REVIEW-011](../reviews/REVIEW-011-send-to-development.md). It
 found five material and fourteen smaller problems in the first draft; all are

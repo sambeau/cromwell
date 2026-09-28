@@ -773,7 +773,12 @@ These are small, independent jobs for any idle session:
 - a per-task token cap in place of the dollar cap;
 - forecasting from past throughput;
 - vocabulary and anti-patterns for the surviving roles;
-- effort expectations in prompts.
+- effort expectations in prompts;
+- redacting secrets from agent transcripts. SPEC-012 keeps what tools read,
+  secrets included, as accepted. Redaction is the agreed follow-up.
+
+**Approvals, 2026-09-28:** Sam approved SPEC-010, SPEC-011 and SPEC-012 with
+their builds, and accepted every recommended choice in them.
 
 ## 12. Decisions waiting on Sam
 
