@@ -98,8 +98,8 @@
           {{if .Amendments}}<p class="t-meta">Amended: {{range $i, $a := .Amendments}}{{if $i}}; {{end}}{{$a}}{{end}}</p>{{end}}</td>
         <td>{{.OwnerLabel}}</td>
         <td>{{.State}}</td>
-        <td>{{if .FromTitle}}<span class="t-meta">No ruling recorded; its title is surfaced.</span><br>{{end}}{{.Line}}
-          {{if .LeftOut}}<p class="t-meta">Left out of some dispatches for space.</p>{{end}}</td>
+        <td>{{if .FromTitle}}<span class="t-meta">No ruling is recorded; its title is surfaced.</span><br>{{end}}{{.Line}}
+          {{if .LeftOut}}<p class="t-meta">This decision is left out of some dispatches, for lack of space.</p>{{end}}</td>
         <td>{{range $i, $x := .Supersedes}}{{if $i}}, {{end}}<a href="/ui/id/{{$x}}">{{$x}}</a>{{end}}</td>
         <td>{{range $i, $x := .SupersededBy}}{{if $i}}, {{end}}<a href="/ui/id/{{$x}}">{{$x}}</a>{{end}}</td>
       </tr>

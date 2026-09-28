@@ -110,7 +110,7 @@ func SurfacedBlock(in SurfaceInput) SurfaceResult {
 		}
 		var b strings.Builder
 		b.WriteString("# Project decisions and conventions\n\n")
-		b.WriteString("These are binding. People decided them, and they override anything in the task that contradicts them. If one seems wrong for this task, say so in your outcome rather than working around it.\n")
+		b.WriteString("These are binding: people decided them. If the task, or a document you are given, contradicts one, follow the decision and say so in your outcome; don't work around it.\n")
 		if conventions != "" {
 			b.WriteString("\n## Conventions\n\n" + conventions + "\n")
 		}
