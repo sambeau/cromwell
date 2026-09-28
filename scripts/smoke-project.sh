@@ -209,7 +209,9 @@ Next, by hand:
   $SMOKE_BIN feature add greet/time --name "Tell the time" \\
       --description "Tell a program the current date and time."
   $SMOKE_BIN doc add docs/greet/time/design.md --type design --owner greet/time
-  $SMOKE_BIN submit docs/greet/time/design.md   # the design reviewer runs here
+  $SMOKE_BIN submit docs/greet/time/design.md   # it waits for you; no agent reviews a design
 
-Then approve the design from its page in the UI. See docs/manual-testing.md.
+Then approve the design from its page in the UI, and see that nothing starts.
+Press Send to development on the feature to start the agents. See
+docs/notes/handoff-M3-2026-09-28.md for the full smoke checklist.
 EOF

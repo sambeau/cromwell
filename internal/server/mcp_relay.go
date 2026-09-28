@@ -137,6 +137,9 @@ func (s *Server) mcpRelayIssue(r *http.Request, args map[string]any) (any, error
 	if on != nil && on.ID != doc.ID {
 		return s.relayResult(r, on, "the document was approved, so the issue opened this revision of it and is recorded there")
 	}
+	if s.humanApprovalType(doc.Type) {
+		return s.relayResult(r, doc, "recorded the issue as a note for the person who approves this document")
+	}
 	return s.relayResult(r, doc, "recorded the issue; the reviewer can't approve until it is answered")
 }
 

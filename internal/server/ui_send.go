@@ -606,6 +606,9 @@ func (s *Server) handleDocIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	notice := "Your issue was recorded. The reviewer can't approve until it has been answered."
+	if s.humanApprovalType(doc.Type) {
+		notice = "Your issue was recorded as a note for the person who approves this document."
+	}
 	if on != nil && on.ID != doc.ID {
 		// An approved document opened a successor to carry it (SD-7).
 		s.renderDocumentPage(w, r, on.Path, "Your issue opened this revision of the approved document, and was recorded on it.", "")

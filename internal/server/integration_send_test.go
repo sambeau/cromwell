@@ -889,3 +889,18 @@ func TestOnlyTheWebUISends(t *testing.T) {
 		t.Fatal("nothing but the web UI may write the sent mark")
 	}
 }
+
+// TestAnOpenDesignRevisionKeepsG0 is a walkthrough finding: while a revision
+// of an approved design is open, the approved design is still in force, so
+// its features can still be sent.
+func TestAnOpenDesignRevisionKeepsG0(t *testing.T) {
+	h := newHarness(t)
+	h.designedInitiative("alpha")
+	if code, out := h.call("POST", "/api/docs/revise", map[string]string{"path": "docs/design/pf.md"}); code != 201 {
+		t.Fatalf("revise: %d %v", code, out)
+	}
+	f, _ := h.srv.featureByPath(context.Background(), "pf/alpha")
+	if ok, why := h.srv.sendReadiness(context.Background(), f); !ok {
+		t.Fatalf("an open revision must not unapprove the design in force; refused: %s", why)
+	}
+}

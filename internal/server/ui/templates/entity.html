@@ -799,8 +799,12 @@
      page follows — state badge, decision controls, body and comments alike.
      The banners stay outside so an action's notice is not swept away by the
      refresh its own event causes. */}}
+{{/* hx-disinherit: the forms inside must not inherit this block's hx-select
+     and hx-swap, or a boosted form post swaps the whole body for this
+     fragment and loses the page's banners and navigation (found by the
+     SPEC-011 walkthrough). */}}
 <div id="doc-live" hx-get="/ui/d/{{.Document.Path}}" hx-trigger="sse:changed"
-     hx-select="#doc-live" hx-swap="outerHTML">
+     hx-select="#doc-live" hx-swap="outerHTML" hx-disinherit="*">
 <div class="page-head">
   <div class="page-head-top">
     <span class="page-head-icon">

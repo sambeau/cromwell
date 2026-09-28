@@ -499,7 +499,9 @@ func (s *Server) handleHumanDocumentDecision(w http.ResponseWriter, r *http.Requ
 		if fresh, err := store.GetDocument(ctx, s.Store.Pool, doc.ID); err == nil {
 			path = fresh.Path
 		}
-		s.renderDocumentPage(w, r, path, "The document was approved. Work that was waiting on it can now begin.", "")
+		// Approving a design records what we want and starts nothing (DEC-006
+		// decision 1), so the notice says what does start the work.
+		s.renderDocumentPage(w, r, path, "The document was approved. Nothing starts until someone sends its features to development.", "")
 		return
 	}
 	reason := strings.TrimSpace(r.FormValue("reason"))

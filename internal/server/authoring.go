@@ -38,9 +38,18 @@ import (
 // designApproved reports whether an owner's current design document is
 // approved. A missing design is not an error — it is simply not approved,
 // the same reading evaluateContractGate takes of a missing spec.
+//
+// An approved design stays in force while a revision of it is open: the
+// predecessor is superseded only when its successor is approved, so G0 asks
+// whether an approved, unsuperseded design exists rather than reading the
+// newest document, which would be the revision's draft (found by the
+// SPEC-011 walkthrough: Revise made every feature unsendable).
 func (s *Server) designApproved(ctx context.Context, ownerType string, ownerID uuid.UUID) bool {
-	d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "design", ownerType, ownerID)
-	return err == nil && d.State == lifecycle.DocApproved
+	var ok bool
+	err := s.Store.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM documents
+		WHERE type = 'design' AND owner_type = $1 AND owner_id = $2 AND state = 'approved')`,
+		ownerType, ownerID).Scan(&ok)
+	return err == nil && ok
 }
 
 // specReady evaluates G0 for a feature: its own design, or its immediate
