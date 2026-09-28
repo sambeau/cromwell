@@ -80,6 +80,8 @@
               hx-get="/ui/frag/inbox-badge" hx-trigger="sse:changed, load" hx-swap="innerHTML"></span></a>
       <a class="nav-item" href="/ui/documents" {{if eq $a "documents"}}aria-current="page"{{end}}>
         <svg class="icon" aria-hidden="true"><use href="#i-document"/></svg><span>Documents</span></a>
+      <a class="nav-item" href="/ui/decisions" {{if eq $a "decisions"}}aria-current="page"{{end}}>
+        <svg class="icon" aria-hidden="true"><use href="#i-decision"/></svg><span>Decisions</span></a>
       <a class="nav-item" href="/ui/work" {{if eq $a "work"}}aria-current="page"{{end}}>
         <svg class="icon" aria-hidden="true"><use href="#i-tokens"/></svg><span>Work</span></a>
     </div>

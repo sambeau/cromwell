@@ -106,6 +106,9 @@ type docPageData struct {
 	// request-changes controls appear without any checkpoint, because for this
 	// type the human decision is the point rather than the fallback.
 	HumanDecision bool
+	// Surfaced is what a decision or the conventions tells agents (SPEC-018
+	// FR-4.2), nil for other types.
+	Surfaced *surfacedPanel
 	// Actions is what the page may offer beyond the verdict panel: Submit,
 	// Revise, Detach, issues, and the spec-review acts (SPEC-011).
 	Actions docActions
@@ -156,6 +159,7 @@ func (s *Server) documentViewByPath(ctx context.Context, path, notice, errMsg st
 	// only when an open review-escalation checkpoint refs it (SD-4).
 	page.Actions = s.docActionsFor(ctx, doc)
 	page.Identity = s.docIdentityFor(ctx, doc)
+	page.Surfaced = s.surfacedPanelFor(ctx, doc)
 	if prov, _, _, err := s.documentProvenance(ctx, *doc); err == nil {
 		page.Provenance = prov
 	} else {

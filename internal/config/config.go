@@ -71,6 +71,44 @@ type Config struct {
 	// Transcripts bounds what each agent run's transcript stores, and for how
 	// long (SPEC-012 FR-2). Optional: every field has a default.
 	Transcripts TranscriptConfig `yaml:"transcripts"`
+
+	// Surfacing bounds what each dispatch is told of the project's decisions
+	// and conventions (SPEC-018 FR-6.5). Optional.
+	Surfacing SurfacingConfig `yaml:"surfacing"`
+}
+
+// SurfacingConfig is the per-dispatch cap on the surfaced block, in
+// estimated tokens (SPEC-018 SD-8).
+type SurfacingConfig struct {
+	MaxTokens    int `yaml:"max_tokens"`
+	MaxDecisions int `yaml:"max_decisions"`
+}
+
+// Surfacing defaults and floor (SPEC-018 SD-8, FR-6.5). The floor leaves room
+// for a conventions document at its 300-word cap.
+const (
+	DefaultSurfacingMaxTokens    = 1500
+	MinSurfacingMaxTokens        = 600
+	DefaultSurfacingMaxDecisions = 10
+)
+
+// SurfacingMaxDecisions is the configured count cap on decisions per
+// dispatch, or the default (SPEC-018 SD-8): with the conventions' five to
+// fifteen points it keeps the block near the research's nineteen
+// requirements.
+func (c *Config) SurfacingMaxDecisions() int {
+	if c.Surfacing.MaxDecisions <= 0 {
+		return DefaultSurfacingMaxDecisions
+	}
+	return c.Surfacing.MaxDecisions
+}
+
+// SurfacingMaxTokens is the configured cap, or the default.
+func (c *Config) SurfacingMaxTokens() int {
+	if c.Surfacing.MaxTokens == 0 {
+		return DefaultSurfacingMaxTokens
+	}
+	return c.Surfacing.MaxTokens
 }
 
 // SpecReviewConfig is the project's spec-review settings. Agent is a pointer
@@ -237,6 +275,12 @@ func (c *Config) validate() error {
 	}
 	if c.Server.UIActor == "" {
 		c.Server.UIActor = "operator"
+	}
+	if n := c.Surfacing.MaxTokens; n != 0 && n < MinSurfacingMaxTokens {
+		add("surfacing.max_tokens", "%d is too small to hold the conventions and any decisions; use at least %d, or leave it out for the default of %d", n, MinSurfacingMaxTokens, DefaultSurfacingMaxTokens)
+	}
+	if c.Surfacing.MaxDecisions < 0 {
+		add("surfacing.max_decisions", "can't be negative; leave it out for the default of %d", DefaultSurfacingMaxDecisions)
 	}
 	if c.Server.MCPActor == "" {
 		c.Server.MCPActor = "chat-agent"

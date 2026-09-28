@@ -154,6 +154,12 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// authoring-safe under DEC-004 (the M6 handoff's follow-up 1).
 		"get_agent_run",
 		"get_timeline",
+		// SPEC-018 SD-15: starting a decision draft is planning authoring under
+		// DEC-004, and the two reads show what agents are told. A person
+		// accepts a decision; none of these accepts, amends or supersedes.
+		"create_decision",
+		"get_decision",
+		"list_decisions",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -171,6 +177,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-014 FR-7.10: ticking without a person's quoted words isn't an
 		// act the chat agent has.
 		"tick_job", "untick_job", "set_job_ticked",
+		// SPEC-018: accepting, amending and superseding a decision are a
+		// person's acts.
+		"accept_decision", "amend_decision", "supersede_decision",
 		// SPEC-017 NFR-2: the chat agent holds no verdict of its own, and the
 		// dispatched authors' outcome tool is never offered to it.
 		"approve_document", "submit_document", "submit_review",

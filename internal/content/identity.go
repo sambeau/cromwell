@@ -205,3 +205,22 @@ func StripIdentity(raw string) (string, error) {
 	}
 	return raw[:bodyStart] + fm + raw[closeStart:], nil
 }
+
+// AddFrontMatterLines inserts lines at the end of a file's front matter, just
+// before its closing fence, in the file's own line endings. Everything else is
+// kept byte for byte. A file with no front matter is refused: the caller
+// stamps an identity first, which gives it one.
+func AddFrontMatterLines(raw string, lines []string) (string, error) {
+	nl, _, closeStart, found, err := frontMatterSpan(raw)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", errors.New("the file has no front matter to add to")
+	}
+	var insert string
+	for _, l := range lines {
+		insert += l + nl
+	}
+	return raw[:closeStart] + insert + raw[closeStart:], nil
+}

@@ -135,6 +135,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.BackfillProvenance(ctx); err != nil {
 		s.Log.Error("boot provenance backfill", "err", err)
 	}
+	if err := s.BackfillSurfaced(ctx); err != nil {
+		s.Log.Error("boot surfaced-text backfill", "err", err)
+	}
 	if err := s.ReconcileWorktrees(ctx); err != nil {
 		s.Log.Error("boot worktree reconciliation", "err", err)
 	}

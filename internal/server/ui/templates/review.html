@@ -83,8 +83,12 @@
       <form method="post" action="/ui/document/revise">
         <input type="hidden" name="doc_id" value="{{$d.ID}}">
         <button class="btn" type="submit">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Revise</button>
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>{{if .RecordRuling}}Record its ruling{{else if .IsDecision}}Append an amendment{{else}}Revise{{end}}</button>
       </form>
+      {{end}}
+      {{if .CanSupersede}}
+      <button class="btn" type="button" data-open-dialog="dlg-supersede">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-decision"/></svg>Supersede with a new decision</button>
       {{end}}
       {{if .SuccessorURL}}
       <a class="btn" href="{{.SuccessorURL}}">
@@ -100,6 +104,33 @@
     {{if .OpenIssueCount}}<p class="t-meta u-mt-2">{{.OpenIssueCount}} issue{{if gt .OpenIssueCount 1}}s{{end}} raised by a person {{if gt .OpenIssueCount 1}}are{{else}}is{{end}} still open. The reviewer can't approve until each is answered.</p>{{end}}
   </div>
 </section>
+
+{{if .CanSupersede}}
+<dialog class="modal" id="dlg-supersede" aria-labelledby="t-supersede">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-supersede"><svg class="icon icon-md" aria-hidden="true"><use href="#i-decision"/></svg> Supersede {{$d.PublicID}}</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/decision/new">
+    <div class="modal-body">
+      <div class="form">
+        <div class="field">
+          <label class="field-label" for="sup-title">What does the new decision decide?</label>
+          <input class="input" id="sup-title" name="title" type="text" required>
+          <p class="field-hint">A new decision is started as a draft, belonging to the same owner, and names {{$d.PublicID}} as the one it supersedes. {{$d.PublicID}} stays accepted until a person accepts the new one; its file is never changed.</p>
+        </div>
+      </div>
+      <input type="hidden" name="owner_doc" value="{{$d.ID}}">
+      <input type="hidden" name="supersedes" value="{{$d.PublicID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Start the new decision</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
 
 {{if .CanRaiseIssue}}
 <dialog class="modal" id="dlg-issue" aria-labelledby="t-issue">

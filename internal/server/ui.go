@@ -189,6 +189,8 @@ func stateLabel(v any) string {
 		return "In review"
 	case "approved":
 		return "Approved"
+	case "accepted":
+		return "Accepted"
 	case "superseded":
 		return "Superseded"
 	case "open":
@@ -224,7 +226,7 @@ func stateIcon(v any) string {
 		return state
 	case "reviewing":
 		return "review"
-	case "approved":
+	case "approved", "accepted":
 		return "done"
 	case "open":
 		return "ready"
@@ -489,6 +491,8 @@ func docIcon(v any) string {
 		return "doc-devplan"
 	case "research":
 		return "doc-research"
+	case "decision", "conventions":
+		return "decision"
 	default:
 		return "doc-note"
 	}
@@ -602,6 +606,9 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("GET /ui/inbox", s.handleUIInbox)
 	mux.HandleFunc("GET /ui/documents", s.handleUIDocuments)
+	mux.HandleFunc("GET /ui/decisions", s.handleUIDecisions)
+	mux.HandleFunc("POST /ui/decision/new", s.handleDecisionCreate)
+	mux.HandleFunc("POST /ui/conventions/new", s.handleConventionsStart)
 	mux.HandleFunc("GET /ui/work", s.handleUIWork)
 	// The verb-shaped Planning view and the money-denominated Cost view are
 	// superseded by the browsable surface and the Work view (SPEC-007 §0,

@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -65,6 +67,11 @@ func (s *Server) RegisterDocForOwner(ctx context.Context, path, docType, ownerTy
 func (s *Server) registerDocBy(ctx context.Context, path, docType, ownerType string, ownerID *uuid.UUID, actor string, by writerAct) (*store.Document, error) {
 	if _, err := config.LoadManifest(s.CompartmentRoot, docType); err != nil && docType == "spec" {
 		return nil, err // a type without a template can still be registered, but spec must have one
+	}
+	if docType == "conventions" {
+		if err := s.secondConventions(ctx, ownerType); err != nil {
+			return nil, err
+		}
 	}
 	doc, err := s.registerDocWithIdentity(ctx, path, docType, ownerType, ownerID, actor, "", 0, by)
 	if err == nil && docType == "design" {
@@ -149,7 +156,7 @@ func (s *Server) ValidateDoc(ctx context.Context, path string) (*lifecycle.Repor
 	if err != nil {
 		return nil, err
 	}
-	report := lifecycle.Validate(manifest, string(raw), s.linkChecker(doc.Path))
+	report := s.validateDocument(ctx, doc, manifest, raw)
 	return &report, nil
 }
 
@@ -179,7 +186,7 @@ func (s *Server) submitDocWith(ctx context.Context, path, actor string, payload 
 	if err != nil {
 		return nil, nil, err
 	}
-	report := lifecycle.Validate(manifest, string(raw), s.linkChecker(doc.Path))
+	report := s.validateDocument(ctx, doc, manifest, raw)
 
 	from := doc.State
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
@@ -257,9 +264,26 @@ func (s *Server) reviseDocBy(ctx context.Context, path, actor string, by writerA
 		}
 		raw = []byte(stamped)
 	}
+	// A decision is never edited: its revision records a ruling it lacks, or
+	// appends a dated amendment (SPEC-018 SD-5, SD-7).
+	if doc.Type == "decision" {
+		if doc.PublicID == "" {
+			return nil, errors.New("Give this decision an ID first, so its amendment can carry it.")
+		}
+		text, err := decisionRevisionText(string(raw), time.Now())
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", doc.Path, err)
+		}
+		raw = []byte(text)
+	}
 
 	ext := filepath.Ext(doc.Path)
 	workingPath := strings.TrimSuffix(doc.Path, ext) + ".rev" + ext
+	// Another revision's working copy is never written over, and so never
+	// removed by this call's failure (SPEC-018 R18-18).
+	if _, err := os.Stat(filepath.Join(s.RepoRoot, workingPath)); err == nil {
+		return nil, fmt.Errorf("A revision of this document is already being written at %s. Work on that one, or remove the file if it is left over.", workingPath)
+	}
 	if err := os.WriteFile(filepath.Join(s.RepoRoot, workingPath), raw, 0o644); err != nil {
 		return nil, err
 	}
@@ -417,7 +441,7 @@ func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, st
 		CommentsOnly: manifest.HumanApproval(),
 	}
 
-	report := lifecycle.Validate(manifest, string(raw), s.linkChecker(doc.Path))
+	report := s.validateDocument(ctx, doc, manifest, raw)
 	if !report.Valid {
 		var b strings.Builder
 		for _, is := range report.Issues {
@@ -465,6 +489,11 @@ func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, st
 				return "", "", 0, err
 			}
 			for _, ad := range docs {
+				// Decisions and conventions reach the prompt as the surfaced
+				// block, never whole (SPEC-018 SD-11).
+				if surfacedType(ad.Type) {
+					continue
+				}
 				body, err := s.readDocFile(ad.Path)
 				if err != nil {
 					continue // archived or moved; provenance beats absence
@@ -493,6 +522,9 @@ func (s *Server) buildReview(ctx context.Context, d *store.Dispatch) (string, st
 	}
 
 	in.HumanIssues = issuesPromptSection(issues)
+	if in.Surfaced, err = s.surfacedBlock(ctx, s.scopeForDocument(ctx, doc)); err != nil {
+		return "", "", 0, err
+	}
 	system, user := content.AssembleReviewPrompt(in)
 	turnCap := cfg.Dispatch.TurnCap
 	if role.Limits != nil && role.Limits.TurnCap > 0 {

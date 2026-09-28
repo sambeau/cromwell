@@ -352,6 +352,11 @@ func (s *Server) approveDocumentAs(ctx context.Context, a rules.ApproveDocument,
 		if err := store.ClearDocumentHold(ctx, tx, doc.ID); err != nil {
 			return err
 		}
+		// A decision or the conventions records what agents are told, and a
+		// decision supersedes what it names (SPEC-018 SD-16).
+		if err := s.onAccepted(ctx, tx, doc); err != nil {
+			return err
+		}
 		// An approval with no agent review behind it is a person's — directly,
 		// or on an escalation — and settles the open human issues by that
 		// decision (SPEC-011 SD-6).

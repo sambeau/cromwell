@@ -821,7 +821,7 @@
     <div class="page-head-titles">
       <h1 class="t-page">{{template "ident" (idFor .Document.PublicID .Document.Title)}}{{.Document.Title}}</h1>
       <div class="page-head-meta">
-        {{template "state-badge" .Document.State}}
+        {{if and (eq .Document.Type "decision") (eq .Document.State "approved")}}{{template "state-badge" "accepted"}}{{else}}{{template "state-badge" .Document.State}}{{end}}
         <span class="t-meta">{{.Document.Type}}{{if .Document.Revision}}, revision {{.Document.Revision}}{{end}}</span>
         {{if .OwnerCrumb.Label}}
         <span class="t-meta u-row">
@@ -840,6 +840,7 @@
 
 {{template "doc-actions" .}}
 {{template "doc-identity" .}}
+{{template "doc-surfaced" .Surfaced}}
 
 {{if or .ReviewCheckpointID .HumanDecision}}
 <section class="panel u-mt-4">
@@ -851,7 +852,9 @@
     {{end}}
   </div>
   <div class="panel-body">
-    {{if .HumanDecision}}
+    {{if and .HumanDecision (eq .Document.Type "decision")}}
+    <p class="t-meta u-mb-4">A person decides whether to accept this decision. Once accepted, agents working on its branch of the project are told its ruling and reason from their next dispatch{{with .Surfaced}}{{if .Supersedes}}, and the decisions it supersedes are no longer told{{end}}{{end}}. Asking for changes returns it to draft with your reason.</p>
+    {{else if .HumanDecision}}
     <p class="t-meta u-mb-4">Documents of this kind are approved by a person — the agent reviewer only comments, and its comments are below. Approving lets the work downstream start; asking for changes sends the document back to its author with your reason.</p>
     {{else}}
     <p class="t-meta u-mb-4">The agent reviewer could not settle this on its own, so the decision is yours. Approving lets the work downstream start; asking for changes sends your reason back to the author.</p>
@@ -861,7 +864,7 @@
         <input type="hidden" name="doc_id" value="{{.Document.ID}}">
         <input type="hidden" name="decision" value="approve">
         <button class="btn btn--primary" type="submit">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>Approve this document</button>
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>{{if eq .Document.Type "decision"}}Accept this decision{{else}}Approve this document{{end}}</button>
       </form>
       <button class="btn" type="button" data-open-dialog="dlg-changes">
         <svg class="icon icon-sm" aria-hidden="true"><use href="#i-request-changes"/></svg>Ask for changes</button>

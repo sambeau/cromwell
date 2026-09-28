@@ -37,10 +37,11 @@ func (r *Report) add(check, format string, args ...any) {
 type LinkChecker func(target string) bool
 
 // RuleKinds is the registry of manifest rule kinds (DESIGN-004 §7, F-6).
-// Phase 1 shipped min_list_items; phase 2 adds table_parses. New kinds are
-// added here and listed in DESIGN-004.
+// Phase 1 shipped min_list_items; phase 2 adds table_parses; SPEC-018 adds
+// max_words and one_line, which keep surfaced text short by construction.
+// New kinds are added here and listed in DESIGN-004.
 func RuleKinds() map[string]bool {
-	return map[string]bool{"min_list_items": true, "table_parses": true}
+	return map[string]bool{"min_list_items": true, "table_parses": true, "max_words": true, "one_line": true}
 }
 
 // Validate runs the full check suite for a document of the manifest's type.
@@ -135,6 +136,12 @@ func Validate(m *config.Manifest, raw string, resolves LinkChecker) Report {
 			if _, err := ParseTaskTable(sec.Content); err != nil {
 				report.add("rule:table_parses", "%v", err)
 			}
+		case "max_words":
+			checkMaxWords(&report, rule, doc)
+		case "one_line":
+			if v := doc.FrontMatterString(rule.Field); strings.ContainsAny(strings.TrimSpace(v), "\r\n") {
+				report.add("rule:one_line", "The %s must be on one line, because it is pushed into agents' prompts as one; it has a line break.", fieldWords(rule.Field))
+			}
 		default:
 			// Unknown kinds are caught at config load (DESIGN-004 §9);
 			// reaching here means the caller skipped that gate.
@@ -183,4 +190,65 @@ func containsWord(body, word string) bool {
 
 func isWordChar(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+}
+
+// checkMaxWords is the max_words rule (SPEC-018 FR-1.2): a front-matter
+// field, a section, or the whole body is at most rule.Max words.
+func checkMaxWords(report *Report, rule config.Rule, doc *content.Doc) {
+	switch {
+	case rule.Field != "":
+		if n := CountWords(doc.FrontMatterString(rule.Field)); n > rule.Max {
+			report.add("rule:max_words", "The %s is %d words; it can be at most %d, because it is pushed into agents' prompts. %s",
+				fieldWords(rule.Field), n, rule.Max, shortenHint(rule.Field))
+		}
+	case rule.Section != "":
+		sec := doc.SectionByHeading(rule.Section)
+		if sec == nil {
+			return // a missing required section is reported by check 2
+		}
+		if n := CountWords(sec.Content); n > rule.Max {
+			report.add("rule:max_words", "Section %q is %d words; it can be at most %d.", rule.Section, n, rule.Max)
+		}
+	case rule.Body:
+		if n := CountWords(SurfacedBody(doc.Body)); n > rule.Max {
+			report.add("rule:max_words", "This document is %d words below its title; it can be at most %d, because all of it is pushed into every agent's prompt. Keep the five to fifteen points that change what an agent writes.", n, rule.Max)
+		}
+	}
+}
+
+func fieldWords(field string) string {
+	switch field {
+	case "ruling":
+		return "ruling"
+	case "reason":
+		return "reason"
+	}
+	return "front-matter field " + field
+}
+
+func shortenHint(field string) string {
+	switch field {
+	case "ruling":
+		return "Keep the rule itself here, and put the argument in Context."
+	case "reason":
+		return "Give the reason in one line; the full argument belongs in Context."
+	}
+	return ""
+}
+
+// CountWords counts runs of non-space characters.
+func CountWords(s string) int { return len(strings.Fields(s)) }
+
+// SurfacedBody is a document body as it is pushed into prompts: without a
+// leading level-1 heading, and trimmed (SPEC-018 FR-5, FR-6.3).
+func SurfacedBody(body string) string {
+	b := strings.TrimLeft(body, "\r\n\t ")
+	if strings.HasPrefix(b, "# ") {
+		if i := strings.IndexByte(b, '\n'); i >= 0 {
+			b = b[i+1:]
+		} else {
+			b = ""
+		}
+	}
+	return strings.TrimSpace(b)
 }

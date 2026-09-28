@@ -199,7 +199,7 @@ func (s *Server) pendingKindOn(ctx context.Context, kind, refType string, refID 
 // from the editor, or "" when it can (SD-11, SD-12).
 func (s *Server) reviseRefusal(ctx context.Context, doc *store.Document) string {
 	if doc.Type == "decision" {
-		return "An accepted decision is never edited. If the project changes its mind, a new decision supersedes this one, or a dated amendment is appended to it."
+		return "An accepted decision is never edited. Append a dated amendment, or supersede it with a new decision, from its page."
 	}
 	if _, err := config.LoadManifest(s.CompartmentRoot, doc.Type); err != nil {
 		return fmt.Sprintf("A revision of an approved %s can't be submitted for review yet, because documents of this type have no template, so it can't be started here. Until a person can rule on any type of document, change it by writing a new %s.", doc.Type, doc.Type)

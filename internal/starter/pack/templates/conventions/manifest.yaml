@@ -1,0 +1,14 @@
+type: conventions
+# One per project, accepted by a person (SPEC-018 SD-13).
+approved_by: human
+front_matter:
+  required: [title, type, owner]
+sections:
+  order: any
+  required: []
+rules:
+  # The whole body is pushed into every agent's prompt, so it is short by
+  # construction: five to fifteen points that change what an agent writes.
+  - kind: max_words
+    body: true
+    max: 300

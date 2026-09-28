@@ -1,0 +1,26 @@
+type: decision
+# A person accepts a decision, in the web UI or relayed from chat (SPEC-018
+# SD-2). No agent reviewer ships with the pack; a project that wants one adds
+# reviewer_role here, and with approved_by: human it only comments.
+approved_by: human
+front_matter:
+  required: [title, type, owner, ruling, reason]
+sections:
+  order: strict
+  required:
+    - heading: Context
+    - heading: Alternatives considered
+  optional:
+    - heading: Consequences
+rules:
+  # The ruling and reason are pushed into every agent's prompt on the
+  # decision's branch of the tree, so they are short by construction
+  # (SPEC-018 SD-8).
+  - kind: max_words
+    field: ruling
+    max: 75
+  - kind: max_words
+    field: reason
+    max: 25
+  - kind: one_line
+    field: reason

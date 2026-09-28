@@ -111,8 +111,23 @@ func (s *Server) planEstimate(ctx context.Context, d *store.Dispatch) (*dispatch
 		return nil, err
 	}
 
+	scope := surfaceScope{}
+	switch d.RefType {
+	case "feature":
+		scope = s.scopeForFeature(ctx, d.RefID)
+	case "task":
+		if t, err := store.GetTask(ctx, s.Store.Pool, d.RefID); err == nil {
+			scope = s.scopeForFeature(ctx, t.FeatureID)
+		}
+	}
+	block, err := s.surfacedBlock(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+
 	var b strings.Builder
-	b.WriteString("# Work to estimate\n\n")
+	withSurfaced(&b, s.projectName(), block)
+	b.WriteString("\n# Work to estimate\n\n")
 	fmt.Fprintf(&b, "%s (%s)\n\n%s\n", name, d.RefType, description)
 	if len(corpus) == 0 {
 		b.WriteString("\n# Reference points\n\nNone: no similar completed work is in the calibration corpus yet. Estimate from judgement.\n")
@@ -157,6 +172,9 @@ func (s *Server) entityDescription(ctx context.Context, refType string, refID uu
 	}
 	return "", "", fmt.Errorf("estimate: unsupported ref_type %q", refType)
 }
+
+// projectName is the project as prompts name it.
+func (s *Server) projectName() string { return filepath.Base(s.RepoRoot) }
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
@@ -220,13 +238,23 @@ func (s *Server) planImplement(ctx context.Context, d *store.Dispatch) (*dispatc
 		return nil, err
 	}
 
+	block, err := s.surfacedBlock(ctx, s.scopeForFeature(ctx, task.FeatureID))
+	if err != nil {
+		return nil, err
+	}
+
+	// Shared first, volatile last (SPEC-018 SD-10, prefix-cache research §6):
+	// what every dispatch on the branch shares, then what every task of the
+	// feature shares, then the constant instructions, and the task itself in
+	// the recency slot.
 	var b strings.Builder
-	b.WriteString("# Task to implement\n\n")
-	fmt.Fprintf(&b, "%s: %s\n\n%s\n", task.LocalID, task.Title, task.Description)
+	withSurfaced(&b, s.projectName(), block)
 	b.WriteString("\n# Specification (the contract)\n\n" + spec + "\n")
 	b.WriteString("\n# Dev-plan (how the feature is built)\n\n" + devPlan + "\n")
 	b.WriteString("\n# How to work\n\n")
-	b.WriteString("You are working in an isolated git worktree. Use read_file (with hash_tag for editing), edit_file, write_file, list_files, and run_command (only the project's allowed commands). Implement exactly this task — not the whole feature. When the code is complete and builds, call submit_implementation.\n")
+	b.WriteString("You are working in an isolated git worktree. Use read_file (with hash_tag for editing), edit_file, write_file, list_files, and run_command (only the project's allowed commands). Implement exactly the task below — not the whole feature. When the code is complete and builds, call submit_implementation.\n")
+	b.WriteString("\n# Task to implement\n\n")
+	fmt.Fprintf(&b, "%s: %s\n\n%s\n", task.LocalID, task.Title, task.Description)
 
 	turnCap := cfg.Dispatch.TurnCap
 	if role.Limits != nil && role.Limits.TurnCap > 0 {
@@ -264,11 +292,18 @@ func (s *Server) planCodeReview(ctx context.Context, d *store.Dispatch) (*dispat
 	}
 	diff := s.taskDiff(tctx.WorktreeRoot, task.BaseCommit)
 
+	block, err := s.surfacedBlock(ctx, s.scopeForFeature(ctx, task.FeatureID))
+	if err != nil {
+		return nil, err
+	}
+
+	// The shared contract first, then the task and its diff (SD-10).
 	var b strings.Builder
-	b.WriteString("# Task under review\n\n")
-	fmt.Fprintf(&b, "%s: %s\n\n%s\n", task.LocalID, task.Title, task.Description)
+	withSurfaced(&b, s.projectName(), block)
 	b.WriteString("\n# Specification\n\n" + spec + "\n")
 	b.WriteString("\n# Dev-plan\n\n" + devPlan + "\n")
+	b.WriteString("\n# Task under review\n\n")
+	fmt.Fprintf(&b, "%s: %s\n\n%s\n", task.LocalID, task.Title, task.Description)
 	b.WriteString("\n# The diff to review\n\n```diff\n" + diff + "\n```\n")
 	b.WriteString("\nJudge whether this diff correctly and completely implements the task against the spec and dev-plan. You may read surrounding files. Complete your review by calling submit_review.\n")
 
@@ -308,9 +343,15 @@ func (s *Server) planVerify(ctx context.Context, d *store.Dispatch) (*dispatch.P
 		return nil, err
 	}
 
+	block, err := s.surfacedBlock(ctx, s.scopeForFeature(ctx, feature.ID))
+	if err != nil {
+		return nil, err
+	}
+
 	var b strings.Builder
-	b.WriteString("# Feature to verify\n\n" + feature.Name + "\n")
+	withSurfaced(&b, s.projectName(), block)
 	b.WriteString("\n# Specification (with acceptance criteria)\n\n" + spec + "\n")
+	b.WriteString("\n# Feature to verify\n\n" + feature.Name + "\n")
 	b.WriteString("\n# Your task\n\n")
 	b.WriteString("The implementation is complete and on the worktree branch. Check the code against each acceptance criterion in the specification. You did not write this code; judge the result against the contract, not any implementation story. You may read files and run the project's allowed commands (e.g. the tests). Report each criterion met/unmet with evidence, then call submit_verification.\n")
 
@@ -469,16 +510,19 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 		return nil, err
 	}
 
-	var b strings.Builder
-	b.WriteString("# Project\n\n" + filepath.Base(s.RepoRoot) + "\n")
-	b.WriteString("\n# The feature to write for\n\n")
-	fmt.Fprintf(&b, "%s (%s), under initiative %s\n", f.Name, f.Slug, path)
-	if f.Description != "" {
-		b.WriteString("\n" + strings.TrimSpace(f.Description) + "\n")
+	block, err := s.surfacedBlock(ctx, s.scopeForFeature(ctx, f.ID))
+	if err != nil {
+		return nil, err
 	}
 
-	// The approved designs this document is a translation of: the feature's
-	// own, then its ancestors', each with provenance (vision §10).
+	// Shared first (SD-10): the branch's decisions, then the designs — the
+	// initiative's is the same for every feature under it — then the
+	// structure, and the feature itself last.
+	var b strings.Builder
+	withSurfaced(&b, s.projectName(), block)
+
+	// The approved designs this document is a translation of: the
+	// initiative's, then the feature's own, each with provenance (vision §10).
 	designs, err := s.approvedDesigns(ctx, f)
 	if err != nil {
 		return nil, err
@@ -523,6 +567,11 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 				r.Section, strings.Join(r.Columns, ", "))
 		}
 	}
+	b.WriteString("\n# The feature to write for\n\n")
+	fmt.Fprintf(&b, "%s (%s), under initiative %s\n", f.Name, f.Slug, path)
+	if f.Description != "" {
+		b.WriteString("\n" + strings.TrimSpace(f.Description) + "\n")
+	}
 	// A draft that came back — from its reviewer, or with a person's issue —
 	// is revised, not rewritten from nothing (SPEC-011 FR-3.2).
 	revising, err := s.revisionContext(ctx, &b, f.ID, docType)
@@ -551,8 +600,9 @@ func (s *Server) planAuthor(ctx context.Context, d *store.Dispatch) (*dispatch.P
 }
 
 // approvedDesigns returns the approved design documents that bear on a
-// feature: its own, then its ancestor initiatives', outermost last so the
-// nearest design reads closest to the task.
+// feature: its initiative's, then its own, so the design every feature under
+// the initiative shares comes first and the nearest reads closest to the task
+// (SPEC-018 SD-10).
 func (s *Server) approvedDesigns(ctx context.Context, f *store.Feature) ([]docBody, error) {
 	var out []docBody
 	add := func(ownerType string, id uuid.UUID) error {
@@ -567,10 +617,10 @@ func (s *Server) approvedDesigns(ctx context.Context, f *store.Feature) ([]docBo
 		out = append(out, docBody{Path: d.Path, Body: strings.TrimSpace(string(body))})
 		return nil
 	}
-	if err := add("feature", f.ID); err != nil {
+	if err := add("initiative", f.InitiativeID); err != nil {
 		return nil, err
 	}
-	return out, add("initiative", f.InitiativeID)
+	return out, add("feature", f.ID)
 }
 
 type docBody struct{ Path, Body string }

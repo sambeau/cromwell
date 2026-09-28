@@ -204,12 +204,38 @@ type SectionRef struct {
 // validation engine, and Load verifies kinds against the set the caller
 // passes in. Fields beyond kind/section are per-kind: min for
 // min_list_items, columns for table_parses (documentary — the columns are
-// fixed by the rule).
+// fixed by the rule), and for max_words one of field, section or body with
+// max, and for one_line a field (SPEC-018 FR-1.2).
 type Rule struct {
 	Kind    string   `yaml:"kind"`
 	Section string   `yaml:"section"`
+	Field   string   `yaml:"field"`
+	Body    bool     `yaml:"body"`
 	Min     int      `yaml:"min"`
+	Max     int      `yaml:"max"`
 	Columns []string `yaml:"columns"`
+}
+
+// MaxWords returns the max_words cap a manifest sets on a front-matter
+// field, or 0 when it sets none.
+func (m *Manifest) MaxWords(field string) int {
+	for _, r := range m.Rules {
+		if r.Kind == "max_words" && r.Field == field {
+			return r.Max
+		}
+	}
+	return 0
+}
+
+// MaxBodyWords returns the max_words cap a manifest sets on the whole body,
+// or 0 when it sets none.
+func (m *Manifest) MaxBodyWords() int {
+	for _, r := range m.Rules {
+		if r.Kind == "max_words" && r.Body {
+			return r.Max
+		}
+	}
+	return 0
 }
 
 // LoadManifest reads templates/<docType>/manifest.yaml fresh (O-6).
@@ -239,6 +265,28 @@ func LoadManifest(root, docType string) (*Manifest, error) {
 	// FR-10.2), and a design with no reviewer role simply waits for a person.
 	if m.ReviewerRole == "" && m.ApprovedBy == "agent" {
 		errs = append(errs, errf(rel, "reviewer_role", "required when the agent approves this type"))
+	}
+	for i, r := range m.Rules {
+		where := fmt.Sprintf("rules[%d]", i)
+		switch r.Kind {
+		case "max_words":
+			targets := 0
+			for _, set := range []bool{r.Field != "", r.Section != "", r.Body} {
+				if set {
+					targets++
+				}
+			}
+			if targets != 1 {
+				errs = append(errs, errf(rel, where, "max_words needs exactly one of field, section or body"))
+			}
+			if r.Max <= 0 {
+				errs = append(errs, errf(rel, where+".max", "max_words needs a max above 0"))
+			}
+		case "one_line":
+			if r.Field == "" {
+				errs = append(errs, errf(rel, where+".field", "one_line needs a field"))
+			}
+		}
 	}
 	switch m.Sections.Order {
 	case "strict", "any":

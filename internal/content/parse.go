@@ -30,6 +30,9 @@ type Doc struct {
 	FrontMatter map[string]any
 	Sections    []Section
 	Raw         string
+	// Body is everything below the front matter, with line endings
+	// normalised to LF and any byte-order mark removed.
+	Body string
 }
 
 // Hash returns the content hash recorded in documents.content_hash.
@@ -54,7 +57,7 @@ func Parse(raw string) (*Doc, error) {
 		return nil, fmt.Errorf("front matter: %w", err)
 	}
 
-	doc := &Doc{FrontMatter: meta, Raw: raw}
+	doc := &Doc{FrontMatter: meta, Raw: raw, Body: body}
 	var current *Section
 	flush := func() {
 		if current != nil {
@@ -119,6 +122,30 @@ func (d *Doc) FrontMatterString(key string) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// FrontMatterList returns a front-matter value as a list of strings: a YAML
+// sequence, or a single scalar as a list of one. Empty entries are dropped.
+func (d *Doc) FrontMatterList(key string) []string {
+	v, ok := d.FrontMatter[key]
+	if !ok || v == nil {
+		return nil
+	}
+	var out []string
+	add := func(x any) {
+		if s := strings.TrimSpace(fmt.Sprintf("%v", x)); s != "" {
+			out = append(out, s)
+		}
+	}
+	switch t := v.(type) {
+	case []any:
+		for _, x := range t {
+			add(x)
+		}
+	default:
+		add(t)
+	}
+	return out
 }
 
 // Links returns the targets of inline Markdown links [text](target),

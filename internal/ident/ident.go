@@ -40,8 +40,8 @@ var Kinds = []Kind{
 }
 
 // DocTypes are the document types an ID can name, in database form
-// (migration 0001's document_type, plus 0010's decision).
-var DocTypes = []string{"spec", "dev_plan", "design", "research", "report", "note", "policy", "decision"}
+// (migration 0001's document_type, plus 0010's decision and 0012's conventions).
+var DocTypes = []string{"spec", "dev_plan", "design", "research", "report", "note", "policy", "decision", "conventions"}
 
 // IsDocType reports whether t is a document type.
 func IsDocType(t string) bool {
