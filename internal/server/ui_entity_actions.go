@@ -60,6 +60,8 @@ func (s *Server) renderEntity(w http.ResponseWriter, r *http.Request, refType st
 		s.render(w, "page-entity", s.page(r.Context(), "browse", page))
 	case "milestone":
 		s.renderMilestonePage(w, r, id, notice, errMsg)
+	case "checklist":
+		s.renderChecklistPage(w, r, id, notice, errMsg)
 	default:
 		s.uiError(w, errUnknownRef(refType))
 	}

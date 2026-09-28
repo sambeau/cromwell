@@ -251,7 +251,7 @@ func TestUIPlanEditing(t *testing.T) {
 	// FR-5: G4 refuses while nothing is done — disabled with the reason, and a
 	// post is refused in the same words.
 	_, ed = h.getUI("/ui/m/" + beta.ID.String() + "/edit")
-	mustContain(t, "ship disabled", ed, "its one feature isn&#39;t done")
+	mustContain(t, "ship disabled", ed, "the one item in it isn&#39;t done")
 	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String()}, true)
 	mustContain(t, "G4 refusal", frag, "can&#39;t be marked as shipped yet")
 	if h.milestoneNamed("Auth beta").LockedAt != nil {
@@ -309,7 +309,7 @@ func TestUIPlanEditing(t *testing.T) {
 		"milestone_id": beta.ID.String(), "member_type": "feature", "member_id": fx.invoices.String()}, true)
 	mustContain(t, "editable again", frag, "Invoices was added to Auth beta.")
 	_, frag = h.postPlan("/ui/milestone/lock", map[string]string{"milestone_id": beta.ID.String()}, true)
-	mustContain(t, "shipped again", frag, "the 2 features it covers, 1 of them done")
+	mustContain(t, "shipped again", frag, "the 2 items it covers, 1 of them done")
 	// Reopening something open is refused in a sentence.
 	_, frag = h.postPlan("/ui/milestone/unlock", map[string]string{"milestone_id": ga.ID.String()}, true)
 	mustContain(t, "nothing to reopen", frag, "isn&#39;t marked as shipped, so there is nothing to reopen")
@@ -445,7 +445,7 @@ func TestMCPPlanTools(t *testing.T) {
 	// FR-7.10: marking as shipped over MCP. G4 applies to the agent exactly as
 	// to a person — refused, in its own sentence, while nothing is done.
 	callErr("mark_milestone_shipped", map[string]any{"milestone": betaID},
-		"This milestone can't be marked as shipped yet, because its one feature isn't done.")
+		"This milestone can't be marked as shipped yet, because the one item in it isn't done.")
 	if h.milestoneNamed("Auth beta").LockedAt != nil {
 		t.Fatal("G4 refused, but the milestone was marked as shipped")
 	}

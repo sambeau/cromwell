@@ -522,8 +522,14 @@ func (s *Server) memberFromForm(ctx context.Context, r *http.Request) (string, u
 			return "", uuid.Nil, "", err
 		}
 		return memberType, memberID, m.Name, nil
+	case "checklist":
+		c, err := store.GetChecklist(ctx, s.Store.Pool, memberID)
+		if err != nil {
+			return "", uuid.Nil, "", err
+		}
+		return memberType, memberID, c.Name, nil
 	}
-	return "", uuid.Nil, "", fmt.Errorf("a milestone can hold features, initiatives and other milestones, not %q", memberType)
+	return "", uuid.Nil, "", fmt.Errorf("a milestone can hold features, initiatives, checklists and other milestones, not %q", memberType)
 }
 
 func (s *Server) handleMilestoneMemberAdd(w http.ResponseWriter, r *http.Request) {
@@ -617,13 +623,22 @@ func (s *Server) handleMilestoneLock(w http.ResponseWriter, r *http.Request) {
 		s.respondMilestone(w, r, milestoneID, "", planError(err))
 		return
 	}
-	held := fmt.Sprintf("the %d features it covers, %d of them done", prog.Total, prog.Done)
+	held := fmt.Sprintf("the %d items it covers, %d of them done", prog.Total, prog.Done)
 	if prog.Total == 1 {
-		held = "its one feature, which is done"
+		held = "its one item, which is done"
+	}
+	// What wasn't done is recorded as not shipped, not dropped (DESIGN-010 §6,
+	// SPEC-014 SD-4).
+	missing := ""
+	switch n := prog.Total - prog.Done; {
+	case n == 1:
+		missing = " The one not done is recorded as not shipped."
+	case n > 1:
+		missing = fmt.Sprintf(" The %d not done are recorded as not shipped.", n)
 	}
 	s.respondMilestone(w, r, milestoneID,
 		"This milestone is marked as shipped. Its record holds "+held+
-			", and later work won't change it. You can reopen it if this was a mistake.", "")
+			", and later work won't change it."+missing+" You can reopen it if this was a mistake.", "")
 }
 
 func (s *Server) handleMilestoneUnlock(w http.ResponseWriter, r *http.Request) {
