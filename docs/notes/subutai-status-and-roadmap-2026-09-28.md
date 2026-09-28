@@ -630,7 +630,7 @@ the recommended defaults.
 pressing *Send* produces a reviewed spec, plan, tasks and an estimate, then
 stops. The cascade smoke (§7) runs in the same session.
 
-**M4 — Milestones and roadmaps you can edit** · M · no dependencies · lane 2
+**M4 — Milestones and roadmaps you can edit** · M · no dependencies · lane 2 · ✅ **done 2026-09-28**
 *Goal: plan the project from the web UI and from chat.*
 - Create a milestone or roadmap from a project or initiative page.
 - Add and remove members from either end.
@@ -640,7 +640,8 @@ stops. The cascade smoke (§7) runs in the same session.
   (DESIGN-010 §17a item 2, accepted).
 
 *Done when:* a person can build a two-milestone roadmap for an initiative
-entirely in the browser, and the chat agent can do the same.
+entirely in the browser, and the chat agent can do the same. **Done:** see the
+[M4 handoff](handoff-M4-2026-09-28.md); SPEC-010 awaits Sam's approval.
 
 **M5 — Checklists and jobs** · S · needs M4 · lane 2
 *Goal: human chores count towards milestones.*

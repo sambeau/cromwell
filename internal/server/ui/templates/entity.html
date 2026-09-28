@@ -162,36 +162,9 @@
 {{end}}
 
 {{/* This entity's own local plan — the milestones and roadmaps parented here
-     (FR-8.1). Only the ones directly parented to this entity appear: each level
-     owns its own plan, and you never reach down into a child's from here. */}}
-{{if or .OwnedMilestones .OwnedRoadmaps}}
-<details class="section" id="planning" open>
-  <summary>
-    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
-    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-milestone"/></svg>
-    <span class="section-title">This {{if eq .Kind "project"}}project{{else}}{{.Kind}}{{end}}&#39;s own plan</span>
-    <span class="section-summary"><span class="count-pill">{{add (len .OwnedMilestones) (len .OwnedRoadmaps)}}</span></span>
-  </summary>
-  <div class="section-body">
-    <p class="t-meta u-mb-4">Milestones and roadmaps planned at this level. A milestone may include work from anywhere in the project, not only from here.</p>
-
-    {{range .OwnedRoadmaps}}
-    {{/* A block, not a card: this already sits inside one. */}}
-    <div class="u-mt-6 u-mb-6">
-      <div class="u-row u-mb-4">
-        <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
-        <a class="t-row-title" href="{{.URL}}">{{.Name}}</a>
-        <span class="u-push t-meta">In intended order</span>
-      </div>
-        {{with .Milestones}}{{template "roadmap-spine" .}}
-        {{else}}<p class="empty--inline">No milestones have been placed on this roadmap yet.</p>{{end}}
-    </div>
-    {{end}}
-
-    {{range .OwnedMilestones}}{{template "milestone-panel" .}}{{end}}
-  </div>
-</details>
-{{end}}
+     (FR-8.1), editable from here (SPEC-010). Only the project and initiatives
+     own plans; only the ones directly parented here appear. */}}
+{{if or (eq .Kind "project") (eq .Kind "initiative")}}{{template "plan-section" .}}{{end}}
 
 {{/* The "Part of these milestones" section is gone (round 4 §2): an entity's
      milestone membership is now a field in the rail, named once. The *other*
@@ -355,6 +328,18 @@
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New initiative</button>
     {{end}}
 
+    {{if or (eq .Kind "project") (eq .Kind "initiative")}}
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-open-dialog="dlg-new-milestone">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-milestone"/></svg>New milestone here</button>
+    <button class="menu-item" type="button" data-open-dialog="dlg-new-roadmap">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-roadmap"/></svg>New roadmap here</button>
+    {{end}}
+    {{if or (eq .Kind "feature") (eq .Kind "initiative")}}
+    <button class="menu-item" type="button" data-open-dialog="dlg-milestones">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-add-to-milestone"/></svg>Add to a milestone…</button>
+    {{end}}
+
     {{if .Editable}}
     <div class="menu-sep"></div>
     <button class="menu-item" type="button" data-open-dialog="dlg-edit">
@@ -381,6 +366,8 @@
      method the other surfaces use — the UI gains no authority (D-8). */}}
 
 {{define "entity-modals"}}
+{{if or (eq .Kind "project") (eq .Kind "initiative")}}{{template "plan-create-modals" .}}{{end}}
+{{if or (eq .Kind "feature") (eq .Kind "initiative")}}{{template "member-milestones-modal" .Membership}}{{end}}
 <dialog class="modal" id="dlg-estimate" aria-labelledby="t-estimate">
   <div class="modal-head">
     <h2 class="modal-title" id="t-estimate"><svg class="icon icon-md" aria-hidden="true"><use href="#i-estimate"/></svg> Estimate the size of this work</h2>
@@ -641,11 +628,28 @@
           <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
           <span>Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a></span>
         </span>
+        {{if .Milestone.TargetDate}}<span class="t-meta">Aiming for {{.Milestone.TargetDate.Format "2 January 2006"}}</span>{{end}}
       </div>
+    </div>
+    <div class="page-head-actions">
+      <button class="btn btn--primary btn--sm" type="button"
+              hx-get="/ui/m/{{.Milestone.ID}}/edit" hx-target="#modal-slot" hx-swap="innerHTML">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>{{if .Locked}}Open the editor{{else}}Edit this milestone{{end}}</button>
+      <button class="btn btn--sm" type="button" data-open-dialog="dlg-milestones">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-add-to-milestone"/></svg>Add to a milestone…</button>
     </div>
   </div>
   {{if .Milestone.Description}}<p class="page-lede">{{.Milestone.Description}}</p>{{end}}
 </div>
+
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
 
 <section class="panel u-mt-4">
   <div class="panel-head">
@@ -687,6 +691,7 @@
     {{end}}
   </div>
 </section>
+{{template "member-milestones-modal" .Membership}}
 {{end}}
 {{template "pagebottom" .}}{{end}}
 {{/* ---------- Roadmap: an ordered, numbered spine of milestones ---------- */}}
@@ -706,6 +711,11 @@
           <span>Planned in <a href="{{.Owner.URL}}">{{.Owner.Label}}</a></span>
         </span>
       </div>
+    </div>
+    <div class="page-head-actions">
+      <button class="btn btn--primary btn--sm" type="button"
+              hx-get="/ui/r/{{.Roadmap.ID}}/edit" hx-target="#modal-slot" hx-swap="innerHTML">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Edit this roadmap</button>
     </div>
   </div>
   <p class="page-lede">The milestones on this roadmap, in the order they are intended to happen. Progress is shown both as a count of items and as a share of estimated tokens.</p>

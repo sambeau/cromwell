@@ -19,6 +19,7 @@ import (
 // memberRow is one member of a milestone in its checklist display: a label
 // linking to the member's page and whether it is finished (D-10).
 type memberRow struct {
+	ID    uuid.UUID // with Kind, what a removal form posts (SPEC-010 FR-3.2)
 	Label string
 	URL   string
 	Done  bool
@@ -31,6 +32,12 @@ type milestonePage struct {
 	Owner     crumb // link to the owning entity's page
 	Members   []memberRow
 	Locked    bool
+	// A milestone can itself be a member of another (SPEC-010 FR-3.1): the
+	// milestones it is directly in, and the ones it could join.
+	MemberOf         []milestoneCard
+	MilestoneChoices []milestoneChoiceGroup
+	Notice           string
+	Error            string
 }
 
 func (s *Server) handleUIMilestonePage(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +46,12 @@ func (s *Server) handleUIMilestonePage(w http.ResponseWriter, r *http.Request) {
 		s.uiNotFound(w, r, "milestone", r.PathValue("id"))
 		return
 	}
+	s.renderMilestonePage(w, r, id, "", "")
+}
+
+// renderMilestonePage renders a milestone's page, with a notice or error when
+// it is the response to an action taken on it.
+func (s *Server) renderMilestonePage(w http.ResponseWriter, r *http.Request, id uuid.UUID, notice, errMsg string) {
 	ctx := r.Context()
 	m, err := store.GetMilestone(ctx, s.Store.Pool, id)
 	if err != nil {
@@ -55,9 +68,20 @@ func (s *Server) handleUIMilestonePage(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
+	memberOf, err := s.memberOfCards(ctx, "milestone", m.ID)
+	if err != nil {
+		s.uiError(w, err)
+		return
+	}
+	choices, err := s.milestoneChoices(ctx, "milestone", m.ID, memberOf)
+	if err != nil {
+		s.uiError(w, err)
+		return
+	}
 	page := milestonePage{
 		Milestone: *m, Card: card, Owner: s.ownerCrumb(ctx, m.OwnerType, m.OwnerID),
 		Members: rows, Locked: m.LockedAt != nil,
+		MemberOf: memberOf, MilestoneChoices: choices, Notice: notice, Error: errMsg,
 	}
 	s.render(w, "page-milestone", s.page(r.Context(), "browse", page))
 }
@@ -82,7 +106,7 @@ func (s *Server) milestoneMemberRows(ctx context.Context, milestoneID uuid.UUID)
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, memberRow{Label: f.Name, URL: "/ui/f/" + path,
+			out = append(out, memberRow{ID: f.ID, Label: f.Name, URL: "/ui/f/" + path,
 				Done: f.State == "done", Kind: "feature"})
 		case "initiative":
 			in, err := store.GetInitiative(ctx, s.Store.Pool, mem.MemberID)
@@ -97,14 +121,14 @@ func (s *Server) milestoneMemberRows(ctx context.Context, milestoneID uuid.UUID)
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, memberRow{Label: in.Name, URL: "/ui/i/" + path,
+			out = append(out, memberRow{ID: in.ID, Label: in.Name, URL: "/ui/i/" + path,
 				Done: n == 0, Kind: "initiative"})
 		case "milestone":
 			sub, err := store.GetMilestone(ctx, s.Store.Pool, mem.MemberID)
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, memberRow{Label: sub.Name, URL: "/ui/m/" + sub.ID.String(),
+			out = append(out, memberRow{ID: sub.ID, Label: sub.Name, URL: "/ui/m/" + sub.ID.String(),
 				Done: sub.LockedAt != nil, Kind: "milestone"})
 		}
 	}

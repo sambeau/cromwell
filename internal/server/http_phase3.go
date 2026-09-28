@@ -223,7 +223,7 @@ func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 	var m *store.Milestone
 	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		m, err = store.CreateMilestone(ctx, tx, req.Name, "", target, actor(r))
+		m, err = store.CreateMilestone(ctx, tx, "project", nil, req.Name, "", target, actor(r))
 		return err
 	})
 	if err != nil {
@@ -367,7 +367,7 @@ func (s *Server) handleCreateRoadmap(w http.ResponseWriter, r *http.Request) {
 	var rm *store.Roadmap
 	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		rm, err = store.CreateRoadmap(ctx, tx, req.Name, actor(r))
+		rm, err = store.CreateRoadmap(ctx, tx, "project", nil, req.Name, actor(r))
 		return err
 	})
 	if err != nil {

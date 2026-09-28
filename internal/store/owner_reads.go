@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -156,3 +157,101 @@ func MilestonesForMember(ctx context.Context, q Querier, memberType string, memb
 
 // prefixedMilestoneCols is milestoneCols qualified to the m alias, for joins.
 const prefixedMilestoneCols = `m.id, m.name, m.description, m.target_date, m.state, m.locked_at, m.owner_type, m.owner_id, m.created_at`
+
+// MemberCandidate is one thing that could be added to a milestone, as the
+// milestone-side picker shows it (SPEC-010 FR-3.3): its kind, id, name, and —
+// for initiatives and features — its readable path.
+type MemberCandidate struct {
+	Kind string // "initiative" | "feature" | "milestone" (checklists join in M5)
+	ID   uuid.UUID
+	Name string
+	Path string
+}
+
+// MemberCandidates lists what could be added to a milestone. With an empty
+// query it is limited to scopeRoot's subtree — the initiative, everything under
+// it, and the milestones planned there — or the whole project when scopeRoot is
+// nil. With a query it searches the whole project by case-insensitive substring
+// over name and path (DESIGN-008 §5.1a: subtree by default, search to reach
+// anything).
+//
+// It is a plain name-and-path query, not the full-text index: that index is
+// over document sections, so it would match entities by the prose of their
+// documents rather than by what they are called (SPEC-010 SD-7).
+//
+// Each member type is one branch of the union; checklists (M5) add a fourth
+// branch without changing the shape (FR-3.4). Current direct members, archived
+// initiatives, abandoned features, the milestone itself and any milestone that
+// already contains it (FR-1.5) are left out. It returns at most limit rows and
+// reports whether there were more.
+func MemberCandidates(ctx context.Context, q Querier, milestoneID uuid.UUID, scopeRoot *uuid.UUID, query string, limit int) ([]MemberCandidate, bool, error) {
+	pattern := "%" + likeEscape(strings.TrimSpace(query)) + "%"
+	rows, err := q.Query(ctx, `
+		WITH RECURSIVE tree AS (
+			SELECT id, name, archived, slug::text AS path FROM initiatives WHERE parent_id IS NULL
+			UNION ALL
+			SELECT i.id, i.name, i.archived, t.path || '/' || i.slug
+			FROM initiatives i JOIN tree t ON i.parent_id = t.id
+		),
+		root AS (SELECT path FROM tree WHERE id = $2),
+		scoped AS (
+			SELECT t.* FROM tree t
+			WHERE $3 <> '' OR $2::uuid IS NULL
+			   OR t.path = (SELECT path FROM root)
+			   OR starts_with(t.path, (SELECT path FROM root) || '/')
+		),
+		around AS (
+			-- milestones that contain this one, which it may not contain back
+			SELECT milestone_id AS id FROM milestone_members
+			WHERE member_type = 'milestone' AND member_id = $1
+			UNION
+			SELECT mm.milestone_id FROM milestone_members mm
+			JOIN around a ON mm.member_type = 'milestone' AND mm.member_id = a.id
+		),
+		candidates AS (
+			SELECT 'initiative' AS kind, s.id, s.name, s.path FROM scoped s
+			WHERE NOT s.archived
+			UNION ALL
+			SELECT 'feature', f.id, f.name, s.path || '/' || f.slug
+			FROM features f JOIN scoped s ON f.initiative_id = s.id
+			WHERE NOT s.archived AND f.state <> 'abandoned'
+			UNION ALL
+			SELECT 'milestone', m.id, m.name, ''
+			FROM milestones m
+			WHERE m.id <> $1 AND m.id NOT IN (SELECT id FROM around)
+			  AND ($3 <> '' OR $2::uuid IS NULL OR m.owner_id IN (SELECT id FROM scoped))
+		)
+		SELECT c.kind, c.id, c.name, c.path FROM candidates c
+		WHERE ($3 = '' OR c.name ILIKE $4 ESCAPE '\' OR c.path ILIKE $4 ESCAPE '\')
+		  AND NOT EXISTS (
+			SELECT 1 FROM milestone_members mm
+			WHERE mm.milestone_id = $1 AND mm.member_type::text = c.kind AND mm.member_id = c.id)
+		ORDER BY (c.kind = 'milestone'), c.path, c.name
+		LIMIT $5`, milestoneID, scopeRoot, strings.TrimSpace(query), pattern, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var out []MemberCandidate
+	for rows.Next() {
+		var c MemberCandidate
+		if err := rows.Scan(&c.Kind, &c.ID, &c.Name, &c.Path); err != nil {
+			return nil, false, err
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(out) > limit
+	if more {
+		out = out[:limit]
+	}
+	return out, more, nil
+}
+
+// likeEscape makes a search term literal inside a LIKE pattern, so a % or _
+// someone types matches itself.
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
