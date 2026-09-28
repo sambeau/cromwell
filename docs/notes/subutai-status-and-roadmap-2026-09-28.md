@@ -788,7 +788,11 @@ identity) were approved the same way. SPEC-015's choice 12 lets the identity
 lines be written into an approved document, the one sanctioned exception to
 DESIGN-003 L-2. Sam then approved
 SPEC-013 (M7, the rename) with its build, and accepted its four recommended
-choices.
+choices. SPEC-016 (M9, editing in the browser) was approved with its build and
+all eighteen choices. Two of them depart from approved designs, and dated
+notes record them: approved decisions and untemplated documents aren't revised
+in the editor (DESIGN-010 §7), and whoever edits a document under review
+withdraws it (DESIGN-003 §2).
 
 ## 12. Decisions waiting on Sam
 
