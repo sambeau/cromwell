@@ -76,8 +76,9 @@ type mcpTool struct {
 // mcpTools builds the tool registry. This function IS the DEC-004 boundary: the
 // set it returns is exactly the authoring writes (FR-2) and the authoring reads
 // (FR-3), plus the milestone and roadmap tools of SPEC-010 (mcpPlanTools), plus
-// the four relay tools of SPEC-011 (mcpRelayTools, which carry a person's
-// quoted decision and never send or start building), and nothing else. A
+// the checklist tools of SPEC-014 (mcpChecklistTools), plus the relay tools of
+// SPEC-011 and SPEC-014 (mcpRelayTools, which carry a person's quoted decision
+// and never send or start building), and nothing else. A
 // development-side or gate tool would have to be added here to exist at all,
 // which is what makes the line reviewable.
 func (s *Server) mcpTools() []mcpTool {
@@ -186,7 +187,7 @@ func (s *Server) mcpTools() []mcpTool {
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
-	}, append(s.mcpPlanTools(), s.mcpRelayTools()...)...)
+	}, append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...)...)
 }
 
 // mcpToolNames is the sorted list of advertised tool names — the assertion
@@ -271,9 +272,11 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			"instructions": "Subutai's planning surface. You can create and shape initiatives, " +
 				"features, titles, descriptions and document attachments, and plan with milestones " +
 				"and roadmaps: create them, fill them, order them, and mark a milestone as shipped " +
-				"when the person says it has gone out. You can also carry a person's " +
+				"when the person says it has gone out. You can keep checklists of jobs only a person " +
+				"can do, and put them in milestones. You can also carry a person's " +
 				"decisions on documents — a verdict, an issue, a request for an agent review, or " +
-				"letting the reviewer decide on a held specification — always quoting their words; " +
+				"letting the reviewer decide on a held specification — and their word that a job is " +
+				"done (relay_tick_job), always quoting their words; " +
 				"you hold no verdict of your own. You cannot send work to development, start " +
 				"building, override a gate or answer the Inbox — a person does " +
 				"those from the command centre.",
