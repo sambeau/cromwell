@@ -380,18 +380,27 @@ func roleSystemPrompt(role *config.Role, skillBody string) string {
 // contractBodies returns the feature's current approved spec and dev-plan
 // bodies (empty string if a document is absent — the caller decides whether
 // that matters for the purpose).
+//
+// "Approved" matters: once a revision is open, the newest live spec is its
+// draft, which a person may be editing in the browser. Work in flight is
+// given the approved contract until the revision is approved (SPEC-016
+// R16-5). A feature with no approved document falls back to its newest.
 func (s *Server) contractBodies(ctx context.Context, featureID uuid.UUID) (spec, devPlan string, err error) {
-	if d, e := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", featureID); e == nil {
-		if body, re := s.readDocFile(d.Path); re == nil {
-			spec = string(body)
+	return s.contractBody(ctx, featureID, "spec"), s.contractBody(ctx, featureID, "dev_plan"), nil
+}
+
+func (s *Server) contractBody(ctx context.Context, featureID uuid.UUID, docType string) string {
+	d, err := store.CurrentApprovedDocForOwner(ctx, s.Store.Pool, docType, "feature", featureID)
+	if err != nil {
+		if d, err = store.CurrentDocForOwner(ctx, s.Store.Pool, docType, "feature", featureID); err != nil {
+			return ""
 		}
 	}
-	if d, e := store.CurrentDocForOwner(ctx, s.Store.Pool, "dev_plan", "feature", featureID); e == nil {
-		if body, re := s.readDocFile(d.Path); re == nil {
-			devPlan = string(body)
-		}
+	body, err := s.readDocFile(d.Path)
+	if err != nil {
+		return ""
 	}
-	return spec, devPlan, nil
+	return string(body)
 }
 
 // taskDiff returns the task's whole contribution: the diff from the branch

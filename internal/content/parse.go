@@ -42,7 +42,10 @@ func Hash(raw []byte) string {
 // malformed front matter is an error — the validation engine reports it as
 // check 1 rather than panicking downstream.
 func Parse(raw string) (*Doc, error) {
-	fm, body, err := config.SplitFrontMatter(raw)
+	// A file saved with CRLF line endings or a byte-order mark parses like
+	// any other (SPEC-016 R16-7). Raw keeps the file as it is.
+	norm := strings.ReplaceAll(strings.TrimPrefix(raw, "\uFEFF"), "\r\n", "\n")
+	fm, body, err := config.SplitFrontMatter(norm)
 	if err != nil {
 		return nil, fmt.Errorf("front matter: %w", err)
 	}

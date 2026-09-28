@@ -423,12 +423,23 @@ func (s *Server) takeOverCanonicalPath(successorPath, canonicalPath, archived st
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return err
 	}
+	// The successor's working copy may never have been committed, or may
+	// hold saved text the index doesn't (an edit saved in the browser, say):
+	// stage it first, so the move carries the approved text. The commit
+	// names its paths, so nothing else that happens to be staged is swept
+	// in (SPEC-016 R16-1).
+	paths := []string{canonicalPath, archived}
+	if _, err := gitIn(s.RepoRoot, "cat-file", "-e", "HEAD:"+filepath.ToSlash(successorPath)); err == nil {
+		paths = append(paths, successorPath)
+	}
+	commit := append([]string{"git", "commit", "--only", "-m",
+		fmt.Sprintf("subutai: revision of %s approved; predecessor archived", canonicalPath),
+		"--author", "subutai <subutai@localhost>", "--"}, paths...)
 	steps := [][]string{
+		{"git", "add", "--", successorPath},
 		{"git", "mv", canonicalPath, archived},
 		{"git", "mv", successorPath, canonicalPath},
-		{"git", "commit", "-m",
-			fmt.Sprintf("subutai: revision of %s approved; predecessor archived", canonicalPath),
-			"--author", "subutai <subutai@localhost>"},
+		commit,
 	}
 	for _, argv := range steps {
 		cmd := exec.Command(argv[0], argv[1:]...)
@@ -606,9 +617,13 @@ func (s *Server) reindexDocument(ctx context.Context, docID uuid.UUID) error {
 	parsed, err := content.Parse(string(raw))
 	if err != nil {
 		// Unparseable drafts stay registered but unindexed; validation at
-		// submit reports the problem to the author.
+		// submit reports the problem to the author. The hash is still
+		// recorded, so the watcher stops treating the file as changed
+		// (SPEC-016 R16-7).
 		s.Log.Warn("reindex: parse failed", "path", doc.Path, "err", err)
-		return nil
+		return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			return store.RecordContentHash(ctx, tx, doc.ID, content.Hash(raw))
+		})
 	}
 	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.ReplaceSections(ctx, tx, doc.ID, content.Hash(raw), parsed.Sections); err != nil {

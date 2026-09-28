@@ -75,6 +75,9 @@ func RegisterDocument(ctx context.Context, tx pgx.Tx, docType, ownerType string,
 	if supersedes != nil {
 		kind = "document.revision_created"
 		payload["supersedes"] = supersedes.String()
+		// The working copy's hash, so the browser editor can tell Subutai's
+		// own uncommitted file from someone else's (SPEC-016 SD-5).
+		payload["hash"] = contentHash
 	}
 	if err := Audit(ctx, tx, actor, kind, "document", &d.ID, payload); err != nil {
 		return nil, err
@@ -140,6 +143,13 @@ func UpdateDocumentPath(ctx context.Context, tx pgx.Tx, id uuid.UUID, path strin
 
 // ReplaceSections rebuilds a document's section index (delete + insert,
 // DESIGN-001 §5) and stamps content_hash / indexed_at.
+// RecordContentHash records a document's file hash without touching its
+// sections: for a file that changed but can't be parsed (SPEC-016 R16-7).
+func RecordContentHash(ctx context.Context, tx pgx.Tx, docID uuid.UUID, contentHash string) error {
+	_, err := tx.Exec(ctx, `UPDATE documents SET content_hash = $2, indexed_at = now() WHERE id = $1`, docID, contentHash)
+	return err
+}
+
 func ReplaceSections(ctx context.Context, tx pgx.Tx, docID uuid.UUID, contentHash string, sections []content.Section) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM document_sections WHERE document_id = $1`, docID); err != nil {
 		return err
