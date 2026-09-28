@@ -234,3 +234,25 @@ func TestTimelinePlacesRunsByTheirQueueRow(t *testing.T) {
 		t.Error("a later queue row doesn't move the run")
 	}
 }
+
+// TestRelayedVerdictIsAPersons is SPEC-017 FR-2.7: an approval the chat agent
+// relayed is the person's, not the chat agent's; the chat agent's own acts
+// stay its own.
+func TestRelayedVerdictIsAPersons(t *testing.T) {
+	spec := uuid.New()
+	written := docEv(0, "document.registered", "spec", spec, nil)
+	written.Actor = "chat-agent"
+	relayed := docEv(1, "document.transition", "spec", spec,
+		map[string]any{"event": "approve", "verdict_by": "person", "via": "mcp"})
+	relayed.Actor = "chat-agent"
+	ms := Build([]Event{written, relayed}, nil, Options{ChatActor: "chat-agent"})
+	if len(ms) != 2 {
+		t.Fatalf("moments = %s", labels(ms))
+	}
+	if ms[0].By != ByChat || ms[0].Relayed {
+		t.Errorf("the chat agent's own act: by %s, relayed %v", ms[0].By, ms[0].Relayed)
+	}
+	if ms[1].By != ByPerson || !ms[1].Relayed || ms[1].Actor != "" {
+		t.Errorf("a relayed approval: by %s, relayed %v, actor %q", ms[1].By, ms[1].Relayed, ms[1].Actor)
+	}
+}

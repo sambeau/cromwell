@@ -433,3 +433,24 @@ anti_patterns:
 		t.Error("an anti-pattern with no because must be rejected")
 	}
 }
+
+// SPEC-017 SD-12: the chat agent and the web UI are told apart by their
+// actor names, so one name for both is refused, naming the field.
+func TestActorNamesMustDiffer(t *testing.T) {
+	for _, tc := range []struct{ server, want string }{
+		{"server:\n  ui_actor: sam\n  mcp_actor: sam\n", "server.mcp_actor"},
+		{"server:\n  mcp_actor: operator\n", "server.mcp_actor"},
+	} {
+		root := t.TempDir()
+		write(t, root, "config.yaml", validConfig+tc.server)
+		_, err := LoadConfig(root)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "must differ") {
+			t.Errorf("%q: want a refusal naming %s; got %v", tc.server, tc.want, err)
+		}
+	}
+	root := t.TempDir()
+	write(t, root, "config.yaml", validConfig+"server:\n  ui_actor: sam\n  mcp_actor: claude\n")
+	if _, err := LoadConfig(root); err != nil {
+		t.Errorf("different names are fine: %v", err)
+	}
+}
