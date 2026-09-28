@@ -1,8 +1,10 @@
 # SPEC-017: Chat as a proper seat
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. The author
-can't be the approval gate, so the decision is Sam's. Sam has said they will
-approve the spec and the build together. An independent review is recorded in
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the
+recommendation accepted on each of its eleven choices (DoD 8). Choice 1's
+dated notes are in DEC-006 Amendment 1 and DESIGN-010 §5c. It was drafted for
+Sam's approval as follows. Authored by Claude. The author can't be the
+approval gate, so the decision is Sam's. An independent review is recorded in
 [REVIEW-017](../reviews/REVIEW-017-chat-as-a-proper-seat.md). It found five
 material and nine smaller problems in the first draft. All are dealt with in
 this revision, and §7 says how, finding by finding. Eleven choices need Sam's
@@ -807,8 +809,9 @@ was dealt with, in the spec and in the build.
 4. A handoff note, `docs/notes/handoff-M10-2026-09-28.md`.
 5. The roadmap's §11 marks M10 done, with a pointer to the handoff.
 6. REVIEW-017 is recorded and its findings are dealt with (§7).
-7. Sam approves this spec with the build.
-8. **Eleven choices need Sam's explicit yes:**
+7. Sam approves this spec with the build. **Done, 2026-09-28.**
+8. **Eleven choices need Sam's explicit yes.** *All eleven accepted, Sam,
+   2026-09-28.*
    1. `submit_for_review` needs no quote, because submitting is planning
       under DEC-005 and DESIGN-010 §5c's "submit work". What it can start is
       listed, and a revision on a feature being built is refused (SD-1). If

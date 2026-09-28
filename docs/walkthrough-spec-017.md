@@ -1,8 +1,8 @@
 # Walkthrough — SPEC-017, chat as a proper seat
 
 **Date:** 2026-09-28
-**Spec:** [SPEC-017](specs/SPEC-017-chat-as-a-proper-seat.md), draft for
-Sam's approval
+**Spec:** [SPEC-017](specs/SPEC-017-chat-as-a-proper-seat.md), approved by
+Sam, 2026-09-28
 **Review:** [REVIEW-017](reviews/REVIEW-017-chat-as-a-proper-seat.md)
 **Handoff:** [M10 handoff](notes/handoff-M10-2026-09-28.md)
 

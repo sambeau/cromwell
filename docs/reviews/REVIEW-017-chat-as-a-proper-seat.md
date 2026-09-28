@@ -1,7 +1,7 @@
 # REVIEW-017: Consistency Review of SPEC-017 (Chat as a proper seat)
 
-**Status:** Complete, and disposed of by the author (§6). Awaiting Sam's
-decision.
+**Status:** Complete, and disposed of by the author (§6). Sam approved
+SPEC-017 and the build on 2026-09-28, with all eleven choices.
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author. Approval is
 Sam's.

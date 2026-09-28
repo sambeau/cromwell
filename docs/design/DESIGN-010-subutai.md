@@ -4,7 +4,9 @@
 locking became a reversible *Mark as shipped*, which the chat agent may also
 do (§5c, §6, §17a item 2; SPEC-010 SD-11; DEC-004 Amendment 1). *And again
 with M5:* dated notes in §5c, §6 and §17a item 4 record how checklists and
-jobs were built (SPEC-014). This is Draft 2, consistency-
+jobs were built (SPEC-014). *And with M10:* a dated note in §5c records that
+the chat agent submits its own drafts without a quote (SPEC-017). This is
+Draft 2, consistency-
 reviewed (§19). The seven proposals in §17a were accepted with it. Drafted by
 Claude; the author isn't the approval gate, and wasn't.
 **Date:** 2026-09-28 (Draft 1: 2026-07-31)
@@ -436,6 +438,14 @@ by *what an act does*, not which channel it comes through.
 
   Each relay quotes the human's words and is audited as arriving via chat.
 - **It may claim and submit work** under DEC-007.
+
+  > **Note, 2026-09-28 (Sam, accepted with [SPEC-017](../specs/SPEC-017-chat-as-a-proper-seat.md) SD-1).**
+  > Submitting work includes a spec or plan the chat agent wrote with a
+  > person: `submit_for_review` hands it to the independent reviewer without
+  > quoting anyone, and the reviewer decides. It refuses a revision of a
+  > feature being built. Asking for a *fresh* review of a document already in
+  > review stays a relay, with the person's words (DEC-006 Amendment 1, note
+  > of the same date).
 - **It may never:**
   - press Send to development or Start building;
   - override a gate, including by answering a checkpoint that would;
