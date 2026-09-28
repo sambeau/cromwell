@@ -55,6 +55,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [SPEC-007](docs/specs/SPEC-007-workflow-surface-stage-a.md) | The workflow surface, Stage A: document-led browsing (**binding**) |
 | [SPEC-008](docs/specs/SPEC-008-mcp-facet-planning-authoring.md) | The MCP facet, slice 1: planning authoring (**binding**) |
 | [SPEC-009](docs/specs/SPEC-009-the-authoring-chain.md) | The authoring chain, Stage 1 (**binding**; its trigger and cascade rewrite are changed by SPEC-011) |
+| [SPEC-010](docs/specs/SPEC-010-milestones-and-roadmaps-editing.md) | Milestones and roadmaps you can edit, in the web UI and over MCP (**draft, for Sam's approval**) |
 | [SPEC-011](docs/specs/SPEC-011-send-to-development.md) | Send to development: the button, spec review with human issues and the hold, chat relays (**draft, for Sam's approval**) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
@@ -62,6 +63,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [REVIEW-004](docs/reviews/REVIEW-004-phase-4-web-command-centre-package.md) | Consistency review + approval of DESIGN-007 and SPEC-004 |
 | [REVIEW-006](docs/reviews/REVIEW-006-command-centre-mutations-package.md) | Consistency review + approval of SPEC-006 |
 | [REVIEW-009](docs/reviews/REVIEW-009-authoring-chain-package.md) | Consistency review + approval of SPEC-009 |
+| [REVIEW-010](docs/reviews/REVIEW-010-milestones-and-roadmaps-editing.md) | Consistency review of SPEC-010, and the author's response |
 | [REVIEW-011](docs/reviews/REVIEW-011-send-to-development.md) | Consistency review of SPEC-011, and the author's response |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
@@ -70,6 +72,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [walkthrough-spec-006](docs/walkthrough-spec-006.md) | SPEC-006: the command centre's mutation slice |
 | [walkthrough-spec-007-008](docs/walkthrough-spec-007-008.md) | SPEC-007 and SPEC-008: the workflow surface and the MCP facet |
 | [walkthrough-spec-009-stage1](docs/walkthrough-spec-009-stage1.md) | SPEC-009 Stage 1: approval to gate 2, live, for 15,976 tokens |
+| [walkthrough-spec-010](docs/walkthrough-spec-010.md) | SPEC-010: a two-milestone roadmap built in the browser, and over MCP except the lock |
 | [walkthrough-spec-011](docs/walkthrough-spec-011.md) | SPEC-011: Send to development in the browser and over MCP, with no AI provider |
 | [manual testing](docs/manual-testing.md) | Running Cromwell by hand, and rebuilding the smoke project |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
@@ -91,7 +94,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
   and merge — a task carried from approved contract to merged code by agents.
 - **Phase 3 — planning and tracking** (SPEC-003) ✅ **delivered**: token
   sizing, estimates with confidence tiers, calibration from actuals,
-  milestones and roadmaps.
+  milestones and roadmaps (made from the CLI until SPEC-010).
 - **Phase 4 — the web command centre** (SPEC-004, SPEC-006) ✅ **delivered**:
   read-everywhere views and checkpoint responses, then the planning and review
   actions from the browser.
@@ -102,6 +105,12 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 - **The authoring chain** (SPEC-009 Stage 1) ✅ **delivered**: agents write
   and review the spec and dev-plan, decompose the tasks, and stop at gate 2;
   proven live for 15,976 tokens, when approving a design was still the trigger.
+- **Milestones and roadmaps you can edit** (SPEC-010, roadmap M4) ✅ **built,
+  awaiting Sam's approval**: create milestones and roadmaps on the project or
+  an initiative, add and remove members from either end, order a roadmap, and
+  lock a milestone (showing G4's reason when it refuses), all from the web UI.
+  Ten MCP tools let the chat agent do the same, except locking. See the
+  [M4 handoff](docs/notes/handoff-M4-2026-09-28.md).
 - **Send to development** (SPEC-011, roadmap M3) ✅ **built, awaiting Sam's
   approval and live smoke**: approving a design starts nothing. A person
   presses **Send to development** on a feature, or on several from their
