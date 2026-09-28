@@ -177,6 +177,14 @@ func serve() error {
 	if err != nil {
 		return err
 	}
+	// Keep the post-commit hook pointing at this binary (SPEC-013 §3.4).
+	if exe, err := os.Executable(); err == nil {
+		if note, err := starter.RefreshHook(root, exe); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: cannot update .git/hooks/post-commit:", err)
+		} else if note != "" {
+			fmt.Fprintln(os.Stderr, note)
+		}
+	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

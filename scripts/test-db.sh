@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Start a throwaway PostgreSQL for the integration tests, and print the
-# SUBUTAI_TEST_DATABASE_URL that points at it.
+# SUBUTAI_TEST_DATABASE_URL that points at it. Until the next release the
+# line also exports CROMWELL_TEST_DATABASE_URL, Subutai's old name, so a
+# branch from before the rename finds the database too (SPEC-013 §3.3).
 #
 #   eval "$(scripts/test-db.sh)"
 #   go test -race -count=1 ./...
@@ -9,7 +11,8 @@
 # Needs the PostgreSQL server binaries (initdb, pg_ctl) installed locally.
 # The cluster trusts local connections, so it is for tests only.
 #
-# Environment (all optional):
+# Environment (all optional; the CROMWELL_TEST_* names are read, with a
+# warning, until the next release):
 #   SUBUTAI_TEST_PGDATA  data directory      (default /var/tmp/pgdata)
 #   SUBUTAI_TEST_PGPORT  TCP port            (default 54329)
 #   SUBUTAI_TEST_PGBIN   directory of initdb (default: found automatically)
@@ -17,12 +20,21 @@
 # All progress goes to stderr; stdout carries only the export line.
 set -euo pipefail
 
+log() { echo "test-db: $*" >&2; }
+
+# compat(M7): read CROMWELL_TEST_<name> when SUBUTAI_TEST_<name> is unset.
+for name in PGDATA PGPORT PGBIN; do
+	new="SUBUTAI_TEST_$name" old="CROMWELL_TEST_$name"
+	if [ -z "${!new:-}" ] && [ -n "${!old:-}" ]; then
+		log "warning: $old is Subutai's old name for $new; rename it. The old name is read until the next release."
+		printf -v "$new" '%s' "${!old}"
+	fi
+done
+
 PGDATA_DIR="${SUBUTAI_TEST_PGDATA:-/var/tmp/pgdata}"
 PGPORT="${SUBUTAI_TEST_PGPORT:-54329}"
 SOCKDIR="$(dirname "$PGDATA_DIR")"
 URL="postgres://postgres@localhost:${PGPORT}/postgres?sslmode=disable"
-
-log() { echo "test-db: $*" >&2; }
 
 find_pgbin() {
 	if [ -n "${SUBUTAI_TEST_PGBIN:-}" ]; then
@@ -89,4 +101,5 @@ else
 		-o "-p $PGPORT -k $SOCKDIR" start >/dev/null
 fi
 
-echo "export SUBUTAI_TEST_DATABASE_URL=\"$URL\""
+# compat(M7): one line, both names, until the next release.
+echo "export SUBUTAI_TEST_DATABASE_URL=\"$URL\" CROMWELL_TEST_DATABASE_URL=\"$URL\""

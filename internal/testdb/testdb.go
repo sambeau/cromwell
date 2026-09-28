@@ -6,19 +6,22 @@ package testdb
 import (
 	"context"
 	"net/url"
-	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+
+	"subutai/internal/compat"
 )
 
 // URL returns a connection string to a dedicated database named dbname,
 // creating it on the server behind SUBUTAI_TEST_DATABASE_URL if needed.
+// Cromwell's CROMWELL_TEST_DATABASE_URL is read when the new name is unset
+// (SPEC-013 §3.3).
 func URL(t *testing.T, dbname string) string {
 	t.Helper()
-	base := os.Getenv("SUBUTAI_TEST_DATABASE_URL")
+	base := compat.Getenv("SUBUTAI_TEST_DATABASE_URL")
 	if base == "" {
-		t.Skip("SUBUTAI_TEST_DATABASE_URL not set; skipping integration test")
+		t.Skip("neither SUBUTAI_TEST_DATABASE_URL nor CROMWELL_TEST_DATABASE_URL is set; skipping integration test")
 	}
 	u, err := url.Parse(base)
 	if err != nil {

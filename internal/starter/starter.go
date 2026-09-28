@@ -5,17 +5,23 @@
 package starter
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/compat"
 	"subutai/internal/config"
 	"subutai/internal/store"
 )
@@ -101,12 +107,66 @@ const hookScript = `#!/bin/sh
 exec %q hook post-commit --repo %q >/dev/null 2>&1 || true
 `
 
+// hookShape matches a hook that init wrote, from either product, and
+// captures the product and the two %q-quoted arguments. Recognising
+// Cromwell's version is compat(M7).
+var hookShape = regexp.MustCompile(`\A#!/bin/sh\n` +
+	`# Installed by (subutai|cromwell) init: notify the server of document changes\n` +
+	`# \(FR-4\.2\)\. Silent no-op when the server is not running\.\n` +
+	`exec ("(?:[^"\\]|\\.)*") hook post-commit --repo ("(?:[^"\\]|\\.)*") >/dev/null 2>&1 \|\| true\n\z`)
+
+// RefreshHook keeps the post-commit hook init installed pointing at the
+// running binary (SPEC-013 §3.4). It rewrites the hook only when init wrote
+// it (its exact shape), and only when it is Cromwell's, names an executable
+// that no longer exists, or names another repository. A hook a person has
+// edited, or removed, is left alone. It never points the hook at a binary
+// in Go's build cache, which is gone when `go run` exits.
+//
+// The note says what happened, for the caller to print; it is empty when
+// there is nothing to say.
+func RefreshHook(repoRoot, executable string) (note string, err error) {
+	hookPath := filepath.Join(repoRoot, ".git", "hooks", "post-commit")
+	data, err := os.ReadFile(hookPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	m := hookShape.FindSubmatch(data)
+	if m == nil {
+		if bytes.Contains(data, []byte("hook post-commit")) {
+			return fmt.Sprintf("warning: .git/hooks/post-commit has been edited, so it was left alone; "+
+				"if it runs an old binary, change its exec line to run %s", executable), nil
+		}
+		return "", nil
+	}
+	product := string(m[1])
+	oldExe, err1 := strconv.Unquote(string(m[2]))
+	oldRepo, err2 := strconv.Unquote(string(m[3]))
+	if err1 != nil || err2 != nil {
+		return "", nil
+	}
+	_, statErr := os.Stat(oldExe)
+	stale := product == "cromwell" || statErr != nil || oldRepo != repoRoot
+	if !stale {
+		return "", nil
+	}
+	if strings.Contains(executable, string(filepath.Separator)+"go-build") {
+		return fmt.Sprintf("warning: .git/hooks/post-commit runs %s; serve from a built binary to update it", oldExe), nil
+	}
+	if err := os.WriteFile(hookPath, []byte(fmt.Sprintf(hookScript, executable, repoRoot)), 0o755); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("updated .git/hooks/post-commit to run %s", executable), nil
+}
+
 // Init runs once per project. It refuses to run twice (D-3) and applies all
 // migrations transactionally.
 func Init(ctx context.Context, repoRoot, executable string) error {
-	compRoot := filepath.Join(repoRoot, ".subutai")
-	if _, err := os.Stat(compRoot); err == nil {
-		return fmt.Errorf(".subutai/ already exists at %s; init runs once per project (use upgrade when it exists in a later phase)", compRoot)
+	compRoot := filepath.Join(repoRoot, compat.Folder)
+	if compat.HasFolder(repoRoot) {
+		return fmt.Errorf("%s already has a project folder (.subutai/ or .cromwell/); init runs once per project (use upgrade when it exists in a later phase)", repoRoot)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, ".git")); err != nil {
 		return fmt.Errorf("%s is not a git repository (subutai manages documents in git)", repoRoot)
@@ -114,7 +174,7 @@ func Init(ctx context.Context, repoRoot, executable string) error {
 
 	// The database must be reachable before we write anything, so a failed
 	// init leaves no partial .subutai/ behind (FR-1.2).
-	dbURL := os.Getenv("SUBUTAI_DATABASE_URL")
+	dbURL := compat.Getenv("SUBUTAI_DATABASE_URL")
 	if dbURL == "" {
 		return fmt.Errorf("SUBUTAI_DATABASE_URL is not set (secrets live in the environment, never in files — NFR-4)")
 	}

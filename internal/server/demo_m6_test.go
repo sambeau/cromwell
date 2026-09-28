@@ -20,13 +20,14 @@ import (
 	"github.com/google/uuid"
 
 	"subutai/internal/bus"
+	"subutai/internal/compat"
 	"subutai/internal/lifecycle"
 	"subutai/internal/provider"
 	"subutai/internal/store"
 )
 
 func TestDemoM6(t *testing.T) {
-	dir := os.Getenv("SUBUTAI_M6_DEMO")
+	dir := compat.Getenv("SUBUTAI_M6_DEMO")
 	if dir == "" {
 		t.Skip("set SUBUTAI_M6_DEMO to a directory to run the SPEC-012 demo")
 	}

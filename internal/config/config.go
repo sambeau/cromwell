@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"subutai/internal/compat"
 )
 
 // Error is a config-compartment error: deterministic, never retried;
@@ -208,6 +210,10 @@ func LoadConfig(root string) (*Config, error) {
 	if err := strictUnmarshal(configFile, data, &c); err != nil {
 		return nil, err
 	}
+	if c.Server.Socket == "" {
+		// The default follows the folder being read (SPEC-013 §3.2).
+		c.Server.Socket = compat.DefaultSocket(filepath.Base(root))
+	}
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
@@ -225,9 +231,6 @@ func (c *Config) validate() error {
 	}
 	if c.Database.URLEnv == "" {
 		add("database.url_env", "required: name of the env var holding the Postgres URL")
-	}
-	if c.Server.Socket == "" {
-		c.Server.Socket = ".subutai/run/subutai.sock"
 	}
 	if c.Server.HeartbeatSeconds == 0 {
 		c.Server.HeartbeatSeconds = 30
@@ -324,9 +327,20 @@ func (c *Config) validate() error {
 }
 
 // DatabaseURL resolves the connection string from the environment (F-2).
+// A url_env naming SUBUTAI_DATABASE_URL or CROMWELL_DATABASE_URL reads the
+// pair, the new name first (SPEC-013 §3.3).
 func (c *Config) DatabaseURL() (string, error) {
-	v := os.Getenv(c.Database.URLEnv)
+	current, legacy, twins := compat.Twins(c.Database.URLEnv)
+	if twins && c.Database.URLEnv == legacy { // compat(M7)
+		compat.Warn(fmt.Sprintf("config.yaml's database.url_env names %s, Subutai's old name; "+
+			"change it to %s.", legacy, current))
+	}
+	v := compat.Getenv(c.Database.URLEnv)
 	if v == "" {
+		if twins {
+			return "", errf(configFile, "database.url_env",
+				"environment variable %s is not set", current)
+		}
 		return "", errf(configFile, "database.url_env",
 			"environment variable %s is not set", c.Database.URLEnv)
 	}
@@ -339,7 +353,7 @@ func (c *Config) APIKey(provider string) (string, error) {
 	if !ok {
 		return "", errf(configFile, "providers", "unknown provider %q", provider)
 	}
-	v := os.Getenv(p.APIKeyEnv)
+	v := compat.Getenv(p.APIKeyEnv)
 	if v == "" {
 		return "", errf(configFile, "providers."+provider+".api_key_env",
 			"environment variable %s is not set", p.APIKeyEnv)

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"subutai/internal/compat"
 	"subutai/internal/config"
 )
 
@@ -25,14 +26,15 @@ type Client struct {
 	actor string
 }
 
-// FindRepoRoot walks up from dir to the directory containing .subutai/.
+// FindRepoRoot walks up from dir to the directory containing .subutai/, or
+// Cromwell's .cromwell/ (SPEC-013 §3.2).
 func FindRepoRoot(dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(abs, ".subutai")); err == nil {
+		if compat.HasFolder(abs) {
 			return abs, nil
 		}
 		parent := filepath.Dir(abs)
@@ -46,7 +48,7 @@ func FindRepoRoot(dir string) (string, error) {
 // New builds a client for the project at repoRoot, reading the socket path
 // from config.yaml (the CLI reads config files, never the database).
 func New(repoRoot string) (*Client, error) {
-	cfg, err := config.LoadConfig(filepath.Join(repoRoot, ".subutai"))
+	cfg, err := config.LoadConfig(filepath.Join(repoRoot, compat.ProjectFolder(repoRoot)))
 	if err != nil {
 		return nil, err
 	}

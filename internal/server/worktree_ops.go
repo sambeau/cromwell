@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"subutai/internal/bus"
+	"subutai/internal/compat"
 	"subutai/internal/lifecycle"
 	"subutai/internal/store"
 )
@@ -24,7 +25,7 @@ func (s *Server) publishFeatureStarted(featureID uuid.UUID) {
 // gitignored in the main repo so the server-authored commits never sweep
 // worktree files in.
 func (s *Server) worktreesRoot() string {
-	return filepath.Join(s.RepoRoot, ".subutai", "worktrees")
+	return filepath.Join(s.CompartmentRoot, "worktrees")
 }
 
 // StartFeature transitions a ready feature to active and creates its worktree
@@ -53,7 +54,7 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 		return nil, fmt.Errorf("This feature's specification or dev-plan is being revised, so building can't start until the revision is approved.")
 	}
 	branch := "subutai/" + path
-	relPath := filepath.Join(".subutai", "worktrees", store.ShortID("feat", f.ID))
+	relPath := filepath.Join(filepath.Base(s.CompartmentRoot), "worktrees", store.ShortID("feat", f.ID))
 
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionFeature(ctx, tx, f, lifecycle.FeatStart, actor, nil); err != nil {
@@ -90,7 +91,7 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 
 // addWorktree creates a linked worktree at relPath on a new branch off HEAD.
 func (s *Server) addWorktree(relPath, branch string) error {
-	abs := filepath.Join(s.RepoRoot, relPath)
+	abs := s.worktreeAbs(relPath)
 	if err := os.MkdirAll(s.worktreesRoot(), 0o755); err != nil {
 		return err
 	}
@@ -158,6 +159,16 @@ func (s *Server) ReconcileWorktrees(ctx context.Context) error {
 		wt := worktrees[i]
 		abs := s.worktreeAbs(wt.Path)
 		if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
+			// A worktree made under .cromwell/ moved with the folder when it
+			// was renamed; git still records the old path until it is
+			// repaired (SPEC-013 §3.2). compat(M7)
+			if _, moved := compat.WorktreePath(s.RepoRoot, filepath.Base(s.CompartmentRoot), wt.Path); moved {
+				if _, err := gitIn(s.RepoRoot, "worktree", "repair", abs); err != nil {
+					s.Log.Error("worktree repair after folder rename", "feature", wt.FeatureID, "err", err)
+				} else {
+					s.Log.Info("worktree found in the renamed folder and repaired", "feature", wt.FeatureID, "path", abs)
+				}
+			}
 			continue // worktree present
 		}
 		f, err := store.GetFeature(ctx, s.Store.Pool, wt.FeatureID)

@@ -246,6 +246,7 @@ func TestEnvIndirection(t *testing.T) {
 		t.Errorf("DatabaseURL = %q, %v", url, err)
 	}
 	os.Unsetenv("SUBUTAI_DATABASE_URL")
+	t.Setenv("CROMWELL_DATABASE_URL", "")
 	if _, err := c.DatabaseURL(); err == nil || !strings.Contains(err.Error(), "SUBUTAI_DATABASE_URL") {
 		t.Errorf("unset env should error naming the variable: %v", err)
 	}
@@ -253,6 +254,57 @@ func TestEnvIndirection(t *testing.T) {
 	key, err := c.APIKey("anthropic")
 	if err != nil || key != "sk-test" {
 		t.Errorf("APIKey = %q, %v", key, err)
+	}
+}
+
+// SPEC-013 §3.3: url_env naming either twin reads the pair, the new name
+// first, so an old project works with a new shell and a new one with an old
+// shell.
+func TestDatabaseURLTwins(t *testing.T) {
+	for _, urlEnv := range []string{"SUBUTAI_DATABASE_URL", "CROMWELL_DATABASE_URL"} {
+		c := &Config{}
+		c.Database.URLEnv = urlEnv
+		t.Setenv("SUBUTAI_DATABASE_URL", "")
+		t.Setenv("CROMWELL_DATABASE_URL", "postgres://old")
+		if got, err := c.DatabaseURL(); err != nil || got != "postgres://old" {
+			t.Errorf("url_env %s, old variable set: %q, %v", urlEnv, got, err)
+		}
+		t.Setenv("SUBUTAI_DATABASE_URL", "postgres://new")
+		if got, err := c.DatabaseURL(); err != nil || got != "postgres://new" {
+			t.Errorf("url_env %s, both set: the new name should win, got %q, %v", urlEnv, got, err)
+		}
+		t.Setenv("CROMWELL_DATABASE_URL", "")
+		if got, err := c.DatabaseURL(); err != nil || got != "postgres://new" {
+			t.Errorf("url_env %s, new variable set: %q, %v", urlEnv, got, err)
+		}
+	}
+	// Any other name is read as written, with no twin.
+	c := &Config{}
+	c.Database.URLEnv = "MY_DB"
+	t.Setenv("SUBUTAI_DATABASE_URL", "postgres://new")
+	if _, err := c.DatabaseURL(); err == nil || !strings.Contains(err.Error(), "MY_DB") {
+		t.Errorf("url_env MY_DB unset should error naming it: %v", err)
+	}
+}
+
+// SPEC-013 §3.2: the default socket follows the folder being read.
+func TestDefaultSocketFollowsTheFolder(t *testing.T) {
+	for folder, want := range map[string]string{
+		".subutai":  ".subutai/run/subutai.sock",
+		".cromwell": ".cromwell/run/cromwell.sock",
+	} {
+		root := filepath.Join(t.TempDir(), folder)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		write(t, root, "config.yaml", validConfig)
+		c, err := LoadConfig(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Server.Socket != want {
+			t.Errorf("%s: default socket %q, want %q", folder, c.Server.Socket, want)
+		}
 	}
 }
 

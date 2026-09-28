@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/compat"
 	"subutai/internal/config"
 	"subutai/internal/lifecycle"
 	"subutai/internal/rules"
@@ -568,7 +569,8 @@ func (s *Server) worktreeAbs(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(s.RepoRoot, path)
+	abs, _ := compat.WorktreePath(s.RepoRoot, filepath.Base(s.CompartmentRoot), path)
+	return abs
 }
 
 func (s *Server) commitWorktree(root, message string) error {

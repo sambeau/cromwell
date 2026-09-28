@@ -23,6 +23,10 @@ func actor(r *http.Request) string {
 	if a := r.Header.Get("X-Subutai-Actor"); a != "" {
 		return a
 	}
+	// A Cromwell binary sends its old name (SPEC-013 §3.1). compat(M7)
+	if a := r.Header.Get("X-Cromwell-Actor"); a != "" {
+		return a
+	}
 	return "unknown"
 }
 

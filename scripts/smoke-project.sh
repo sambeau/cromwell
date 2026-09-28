@@ -49,6 +49,12 @@ log() { echo "smoke-project: $*" >&2; }
 
 # --- The database -----------------------------------------------------------
 
+# compat(M7): Subutai's old name for the test server, until the next release.
+if [ -z "${SUBUTAI_TEST_DATABASE_URL:-}" ] && [ -n "${CROMWELL_TEST_DATABASE_URL:-}" ]; then
+	log "warning: CROMWELL_TEST_DATABASE_URL is Subutai's old name for SUBUTAI_TEST_DATABASE_URL; rename it. The old name is read until the next release."
+	SUBUTAI_TEST_DATABASE_URL="$CROMWELL_TEST_DATABASE_URL"
+fi
+
 if [ -z "${SMOKE_DATABASE_URL:-}" ]; then
 	[ -n "${SUBUTAI_TEST_DATABASE_URL:-}" ] ||
 		die "set SMOKE_DATABASE_URL, or run: eval \"\$(scripts/test-db.sh)\""

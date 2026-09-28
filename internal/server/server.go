@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"subutai/internal/bus"
+	"subutai/internal/compat"
 	"subutai/internal/config"
 	"subutai/internal/dispatch"
 	"subutai/internal/lifecycle"
@@ -27,7 +28,7 @@ import (
 
 type Server struct {
 	RepoRoot        string // git repo root; document paths are relative to it
-	CompartmentRoot string // .subutai/
+	CompartmentRoot string // .subutai/, or Cromwell's .cromwell/ (SPEC-013 §3.2)
 	Store           *store.Store
 	Bus             *bus.Bus
 	Dispatcher      *dispatch.Dispatcher
@@ -46,7 +47,7 @@ type Server struct {
 // server. Any config error aborts startup naming file and field
 // (DESIGN-004 §9).
 func New(ctx context.Context, repoRoot string, log *slog.Logger) (*Server, error) {
-	compRoot := filepath.Join(repoRoot, ".subutai")
+	compRoot := filepath.Join(repoRoot, compat.ProjectFolder(repoRoot))
 	comp, err := config.Load(compRoot, lifecycle.RuleKinds())
 	if err != nil {
 		return nil, fmt.Errorf("configuration invalid; refusing to start:\n%w", err)
