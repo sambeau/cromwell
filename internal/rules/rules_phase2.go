@@ -268,6 +268,7 @@ func decideDispatchSucceededPhase2(purpose string, dispatchID uuid.UUID, actor s
 		}
 		return []Action{FileAuthoredDocument{
 			FeatureID: snap.RefFeature.ID, DocType: docType, Body: out.Body, Actor: actor,
+			DispatchID: dispatchID,
 		}}, true
 
 	case "implement-task":
@@ -364,6 +365,9 @@ type FileAuthoredDocument struct {
 	DocType   string
 	Body      string
 	Actor     string
+	// DispatchID is the run that wrote it, recorded as its writer
+	// (SPEC-017 FR-2.2).
+	DispatchID uuid.UUID
 }
 
 func (FileAuthoredDocument) ActionKind() string { return "file_authored_document" }

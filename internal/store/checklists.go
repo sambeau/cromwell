@@ -28,13 +28,15 @@ type Checklist struct {
 	OwnerType   string
 	OwnerID     *uuid.UUID
 	CreatedAt   time.Time
+	// PublicID is the minted ID, "CL-002" (SPEC-015 FR-1.2, SPEC-017 FR-3).
+	PublicID string
 }
 
-const checklistCols = `id, name, description, owner_type, owner_id, created_at`
+const checklistCols = `id, name, description, owner_type, owner_id, created_at, COALESCE(public_id, '')`
 
 func scanChecklist(row pgx.Row) (*Checklist, error) {
 	var c Checklist
-	err := row.Scan(&c.ID, &c.Name, &c.Description, &c.OwnerType, &c.OwnerID, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.Name, &c.Description, &c.OwnerType, &c.OwnerID, &c.CreatedAt, &c.PublicID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -119,8 +121,8 @@ func CreateChecklist(ctx context.Context, tx pgx.Tx, ownerType string, ownerID *
 	c := &Checklist{ID: NewID(), Name: name, Description: description, OwnerType: ownerType, OwnerID: ownerID}
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO checklists (id, name, description, owner_type, owner_id)
-		VALUES ($1, $2, $3, $4, $5) RETURNING created_at`,
-		c.ID, name, description, ownerType, ownerID).Scan(&c.CreatedAt); err != nil {
+		VALUES ($1, $2, $3, $4, $5) RETURNING created_at, COALESCE(public_id, '')`,
+		c.ID, name, description, ownerType, ownerID).Scan(&c.CreatedAt, &c.PublicID); err != nil {
 		return nil, err
 	}
 	if err := Audit(ctx, tx, actor, "checklist.created", "checklist", &c.ID,
@@ -128,6 +130,11 @@ func CreateChecklist(ctx context.Context, tx pgx.Tx, ownerType string, ownerID *
 		return nil, err
 	}
 	return c, nil
+}
+
+// ChecklistByPublicID finds a checklist by its ID, "CL-002".
+func ChecklistByPublicID(ctx context.Context, q Querier, publicID string) (*Checklist, error) {
+	return scanChecklist(q.QueryRow(ctx, `SELECT `+checklistCols+` FROM checklists WHERE public_id = $1`, publicID))
 }
 
 func GetChecklist(ctx context.Context, q Querier, id uuid.UUID) (*Checklist, error) {

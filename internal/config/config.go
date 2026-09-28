@@ -241,6 +241,12 @@ func (c *Config) validate() error {
 	if c.Server.MCPActor == "" {
 		c.Server.MCPActor = "chat-agent"
 	}
+	// The two names are how the record tells the chat agent from a person
+	// (SPEC-017 R17-6): with one name for both, every person's act would read
+	// as the chat agent's, and every relay as a person's own.
+	if c.Server.MCPActor == c.Server.UIActor {
+		add("server.mcp_actor", "must differ from server.ui_actor (%q): the chat agent and the people using the web UI are recorded by these names, and one name for both would make them impossible to tell apart", c.Server.UIActor)
+	}
 	switch c.Budget.Period {
 	case "monthly", "weekly", "total":
 	case "":
