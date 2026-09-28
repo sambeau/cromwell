@@ -48,6 +48,10 @@ type Server struct {
 	// both run the search.
 	moveScanMu   sync.Mutex
 	lastMoveScan string
+
+	// editMu serialises the browser editor's saves, so a second save sees
+	// the first's write as a change on disk (SPEC-016 FR-3.2).
+	editMu sync.Mutex
 }
 
 // New validates the compartment, connects the store, and assembles the

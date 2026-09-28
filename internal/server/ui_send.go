@@ -565,6 +565,11 @@ func (s *Server) handleDocRevise(w http.ResponseWriter, r *http.Request) {
 		s.afterDocAct(w, r, doc, "", errors.New("A revision of this document is already open. Work on that one."))
 		return
 	}
+	// The same refusals as the browser editor's revision (SPEC-016 SD-12).
+	if why := s.reviseRefusal(r.Context(), doc); why != "" {
+		s.afterDocAct(w, r, doc, "", errors.New(why))
+		return
+	}
 	succ, err := s.ReviseDoc(r.Context(), doc.Path, s.uiActor())
 	if err != nil {
 		s.afterDocAct(w, r, doc, "", err)

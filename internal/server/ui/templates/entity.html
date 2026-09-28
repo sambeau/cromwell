@@ -835,12 +835,7 @@
   </div>
 </div>
 
-{{/* This document is edited in the author's own editor and committed to git;
-     the page re-renders itself when the file changes (§5.5). */}}
-<div class="banner banner--info">
-  <svg class="icon icon-md" aria-hidden="true"><use href="#i-info"/></svg>
-  <div><b>This document is written in your own editor.</b>Edit the file in git and this page updates itself — Subutai reads it, it does not own it.</div>
-</div>
+{{template "doc-edit" .}}
 
 {{template "doc-actions" .}}
 {{template "doc-identity" .}}
