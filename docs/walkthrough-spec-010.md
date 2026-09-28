@@ -1,12 +1,12 @@
 # Walkthrough: milestones and roadmaps you can edit (SPEC-010)
 
 **Date:** 2026-09-28
-**Spec:** [SPEC-010](specs/SPEC-010-milestones-and-roadmaps-editing.md), draft
-for Sam's approval
+**Spec:** [SPEC-010](specs/SPEC-010-milestones-and-roadmaps-editing.md),
+approved by Sam on 2026-09-28
 **Status:** Definition of done items 2 to 5 run in this session. The browser
 half was rerun after Sam decided that locking becomes a reversible "Mark as
 shipped", and the MCP half again after the chat agent gained the two shipping
-tools. Sam still has to approve the spec and the build.
+tools. Sam approved the spec and the build on 2026-09-28.
 **Set-up:** a fresh build of `./cmd/cromwell`, a throwaway project made with
 `cromwell init` in `/var/tmp/m4demo`, served on `127.0.0.1:8810` against
 Postgres 16. There was **no AI provider**: `ANTHROPIC_API_KEY` was a dummy, and

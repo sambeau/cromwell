@@ -1,17 +1,16 @@
 # SPEC-010: Milestones and roadmaps you can edit
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. An independent
-consistency review, [REVIEW-010](../reviews/REVIEW-010-milestones-and-roadmaps-editing.md),
-found six material and twelve smaller problems in the first draft. All of them
-are dealt with in this revision; §7 says how, finding by finding. The author
-can't be the approval gate, so the decision is Sam's. Sam has said he will
-approve the spec and the build together.
+**Status:** **Approved and binding — Sam, 2026-09-28**, together with the
+build. Authored by Claude; the approval decision was Sam's, as the author can't
+be the approval gate. An independent consistency review,
+[REVIEW-010](../reviews/REVIEW-010-milestones-and-roadmaps-editing.md), found
+six material and twelve smaller problems in the first draft. All of them are
+dealt with in this revision; §7 says how, finding by finding.
 **Revised after Sam's decisions (2026-09-28):** locking a milestone is now
 called **marking it as shipped**, and it **can be undone** (SD-11, FR-5). Sam
 then accepted the other three choices as recommended (SD-5, SD-6, SD-10), and
 [DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28)
-records the one that needed a decision. §8 records what changed. Approval of
-the spec and build is still Sam's.
+records the one that needed a decision. §8 records what changed.
 **Date:** 2026-09-28
 **Roadmap milestone:** M4 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md) §11
@@ -642,7 +641,7 @@ SPEC-008's `attachError` does, so the agent can relay them.
    as [DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28).
    At Sam's request, the ship and reopen tools were then added (FR-7.10).
 
-Nothing else waits on Sam except approving the spec and the build.
+**Sam approved the spec and the build on 2026-09-28.** Nothing waits on him.
 
 ## 6. Open questions carried forward
 

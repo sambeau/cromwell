@@ -2,7 +2,7 @@
 
 **Status:** Complete. The author has dealt with every finding (§6, and
 [SPEC-010 §7](../specs/SPEC-010-milestones-and-roadmaps-editing.md#7-changes-after-review));
-awaiting Sam's decision
+**SPEC-010 approved by Sam, 2026-09-28**
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author. Approval is
 Sam's, recorded in §5.
@@ -486,7 +486,7 @@ chat agent may mark as shipped and reopen, under DEC-004 Amendment 1, with
 two tools added for it (SPEC-010 FR-7.10). (2) Both deviations from DESIGN-008 §5.1a are
 accepted, with a dated note in the design. (3) Milestones and roadmaps are
 planning layer, recorded in DEC-004 Amendment 1. (4) Roadmap entries may cross
-owners. Approval of SPEC-010 itself is still pending._
+owners. **SPEC-010 and the build approved, 2026-09-28.**_
 
 ## 6. Author's response (2026-09-28)
 
