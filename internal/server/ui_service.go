@@ -109,7 +109,7 @@ func (s *Server) DashboardSummary(ctx context.Context, recentLimit int) (*Dashbo
 				return nil, err
 			}
 			sum.TopInitiatives = append(sum.TopInitiatives, entityWork{
-				Name: in.Name, URL: "/ui/i/" + path, Size: roll})
+				PublicID: in.PublicID, Name: in.Name, URL: "/ui/i/" + path, Size: roll})
 		}
 		feats, err := store.FeaturesForInitiative(ctx, s.Store.Pool, in.ID)
 		if err != nil {
@@ -122,7 +122,7 @@ func (s *Server) DashboardSummary(ctx context.Context, recentLimit int) (*Dashbo
 			}
 			state := string(f.State)
 			groups[state] = append(groups[state], entityWork{
-				Name: f.Name, URL: "/ui/f/" + path + "/" + f.Slug, Size: roll})
+				PublicID: f.PublicID, Name: f.Name, URL: "/ui/f/" + path + "/" + f.Slug, Size: roll})
 		}
 	}
 	for _, state := range []string{"idea", "ready", "active", "review", "done", "abandoned"} {

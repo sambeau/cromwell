@@ -257,6 +257,14 @@ type entityDocPage struct {
 func (s *Server) handleUIDocumentPage(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
 	view, err := s.documentViewByPath(r.Context(), path, "", "")
+	if err == store.ErrNotFound {
+		// A document that moved leaves its old address pointing at its new
+		// one (SPEC-015 FR-4.5).
+		if to := s.movedFrom(r.Context(), path); to != "" {
+			http.Redirect(w, r, "/ui/d/"+to, http.StatusFound)
+			return
+		}
+	}
 	if err != nil {
 		s.notFoundOrErr(w, r, "document", path, err)
 		return

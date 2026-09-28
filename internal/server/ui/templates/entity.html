@@ -19,7 +19,7 @@
       <svg class="icon icon-md icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
     </span>
     <div class="page-head-titles">
-      <h1 class="t-page">{{.Title}}</h1>
+      <h1 class="t-page">{{template "ident" .PublicID}}{{.Title}}</h1>
       <div class="page-head-meta">
         {{if .State}}{{template "state-badge" .State}}{{end}}
         {{/* Ring without the tier word: the rail explains the tier in a sentence,
@@ -75,7 +75,7 @@
       <div class="panel-head">
         <h2 class="panel-title">
           <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .BodyDoc.Type}}"/></svg>
-          <a href="{{.BodyDoc.URL}}">{{.BodyDoc.Title}}</a>
+          <a href="{{.BodyDoc.URL}}">{{template "ident" .BodyDoc.PublicID}}{{.BodyDoc.Title}}</a>
         </h2>
         <div class="panel-head-actions">
           {{template "state-badge" .BodyDoc.State}}
@@ -121,7 +121,7 @@
         <a class="row {{if .State}}row--edge{{end}}" {{if .State}}data-state="{{.State}}"{{end}} href="{{.URL}}">
           <svg class="icon icon-sm icon-entity" data-entity="{{.Kind}}" aria-hidden="true"><use href="#i-{{.Kind}}"/></svg>
           <span class="row-main">
-            <span class="row-title">{{.Name}}</span>
+            <span class="row-title">{{template "ident" .PublicID}}{{.Name}}</span>
             {{if .Description}}<span class="row-sub">{{.Description}}</span>{{end}}
           </span>
           <span class="row-end">
@@ -152,7 +152,7 @@
       <div class="row">
         <svg class="icon icon-sm icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Type}}"/></svg>
         <span class="row-main">
-          <span class="row-title"><a href="{{.URL}}">{{.Title}}</a></span>
+          <span class="row-title"><a href="{{.URL}}">{{template "ident" .PublicID}}{{.Title}}</a></span>
           <span class="row-sub">{{.Type}}</span>
         </span>
         <span class="row-end">
@@ -324,6 +324,8 @@
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-estimate"/></svg>{{if .Size.Estimated}}Change the estimate{{else}}Estimate the size{{end}}</button>
     <button class="menu-item" type="button" data-open-dialog="dlg-attach">
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-attach"/></svg>Attach a document</button>
+    <button class="menu-item" type="button" data-open-dialog="dlg-adopt">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-attach"/></svg>Adopt a file…</button>
 
     {{if eq .Kind "initiative"}}
     <div class="menu-sep"></div>
@@ -377,6 +379,7 @@
      method the other surfaces use — the UI gains no authority (D-8). */}}
 
 {{define "entity-modals"}}
+{{template "adopt-modal" .}}
 {{if or (eq .Kind "project") (eq .Kind "initiative")}}{{template "plan-create-modals" .}}{{end}}
 {{if or (eq .Kind "feature") (eq .Kind "initiative")}}{{template "member-milestones-modal" .Membership}}{{end}}
 <dialog class="modal" id="dlg-estimate" aria-labelledby="t-estimate">
@@ -506,6 +509,7 @@
           <label class="field-label" for="nf-desc">Description <span class="opt">optional</span></label>
           <input class="input" id="nf-desc" name="description" placeholder="What is it, in one sentence?">
         </div>
+        {{template "start-design-field" "nf"}}
       </div>
       <input type="hidden" name="initiative_id" value="{{.ID}}">
     </div>
@@ -540,6 +544,7 @@
           <label class="field-label" for="ni-desc">Description <span class="opt">optional</span></label>
           <input class="input" id="ni-desc" name="description" placeholder="What is it, in one sentence?">
         </div>
+        {{template "start-design-field" "ni"}}
       </div>
       {{if ne .Kind "project"}}<input type="hidden" name="parent_id" value="{{.ID}}">{{end}}
     </div>
@@ -632,7 +637,7 @@
       <svg class="icon icon-md icon-entity" data-entity="milestone" aria-hidden="true"><use href="#i-milestone"/></svg>
     </span>
     <div class="page-head-titles">
-      <h1 class="t-page">{{.Milestone.Name}}</h1>
+      <h1 class="t-page">{{template "ident" .Milestone.PublicID}}{{.Milestone.Name}}</h1>
       <div class="page-head-meta">
         {{if .Locked}}{{template "state-badge" "locked"}}{{else}}{{template "state-badge" "open"}}{{end}}
         <span class="t-meta u-row">
@@ -715,7 +720,7 @@
       <svg class="icon icon-md icon-entity" data-entity="roadmap" aria-hidden="true"><use href="#i-roadmap"/></svg>
     </span>
     <div class="page-head-titles">
-      <h1 class="t-page">{{.Roadmap.Name}}</h1>
+      <h1 class="t-page">{{template "ident" .Roadmap.PublicID}}{{.Roadmap.Name}}</h1>
       <div class="page-head-meta">
         <span class="t-meta u-row">
           <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
@@ -760,7 +765,7 @@
       <svg class="icon icon-md icon-entity" data-entity="task" aria-hidden="true"><use href="#i-task"/></svg>
     </span>
     <div class="page-head-titles">
-      <h1 class="t-page">{{.Task.Title}}</h1>
+      <h1 class="t-page">{{template "ident" .Task.PublicID}}{{.Task.Title}}</h1>
       <div class="page-head-meta">
         {{template "state-badge" .Task.State}}
         {{if .FeatureURL}}
@@ -814,10 +819,10 @@
       <svg class="icon icon-md icon-entity" data-entity="document" aria-hidden="true"><use href="#i-{{docIcon .Document.Type}}"/></svg>
     </span>
     <div class="page-head-titles">
-      <h1 class="t-page">{{.Document.Title}}</h1>
+      <h1 class="t-page">{{template "ident" .Document.PublicID}}{{.Document.Title}}</h1>
       <div class="page-head-meta">
         {{template "state-badge" .Document.State}}
-        <span class="t-meta">{{.Document.Type}}</span>
+        <span class="t-meta">{{.Document.Type}}{{if .Document.Revision}}, revision {{.Document.Revision}}{{end}}</span>
         {{if .OwnerCrumb.Label}}
         <span class="t-meta u-row">
           <svg class="icon icon-xs" aria-hidden="true"><use href="#i-owner"/></svg>
@@ -838,6 +843,7 @@
 </div>
 
 {{template "doc-actions" .}}
+{{template "doc-identity" .}}
 
 {{if or .ReviewCheckpointID .HumanDecision}}
 <section class="panel u-mt-4">

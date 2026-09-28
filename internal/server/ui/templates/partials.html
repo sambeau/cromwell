@@ -143,7 +143,7 @@
 
 {{define "crumbs"}}
 <div class="crumbs">
-  {{range $i, $c := .}}{{if $i}}<svg class="icon icon-xs crumb-sep" aria-hidden="true"><use href="#i-crumb-sep"/></svg>{{end}}{{if $c.Here}}<span class="crumb" aria-current="page">{{if $c.Kind}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{$c.Kind}}"/></svg>{{end}}{{$c.Label}}</span>{{else}}<a class="crumb" href="{{$c.URL}}">{{if $c.Kind}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{$c.Kind}}"/></svg>{{end}}{{$c.Label}}</a>{{end}}{{end}}
+  {{range $i, $c := .}}{{if $i}}<svg class="icon icon-xs crumb-sep" aria-hidden="true"><use href="#i-crumb-sep"/></svg>{{end}}{{if $c.Here}}<span class="crumb" aria-current="page">{{if $c.Kind}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{$c.Kind}}"/></svg>{{end}}{{template "ident" $c.ID}}{{$c.Label}}</span>{{else}}<a class="crumb" href="{{$c.URL}}">{{if $c.Kind}}<svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{$c.Kind}}"/></svg>{{end}}{{template "ident" $c.ID}}{{$c.Label}}</a>{{end}}{{end}}
 </div>
 {{end}}
 

@@ -2214,3 +2214,16 @@ dialog.modal::backdrop { background: var(--c-overlay); }
 .stats--reviewer { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .review-flag { display: flex; align-items: center; gap: var(--sp-2); color: var(--c-amber-text); font-size: var(--fs-sm); }
 .review-flag .icon { color: var(--c-amber-mark); }
+
+/* A minted ID before a name (SPEC-015 SD-17): small, muted and monospaced,
+   there to cite without competing with the name it precedes. */
+.ident {
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  font-weight: var(--fw-medium);
+  color: var(--c-text-3);
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: 0.08em;
+  margin-right: 0.45em;
+}
