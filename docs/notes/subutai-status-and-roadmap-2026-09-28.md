@@ -603,8 +603,8 @@ the recommended defaults.
 - Add the *Send to development* button on features and initiatives, with the
   send screen: features, models, token forecast and free slots.
 - Spec writing waits for the button.
-- Add optional human spec approval.
-- Add a chat relay for design approval.
+- Human issues on specs (must-address), and an optional hold for a human.
+- Chat relay tools for human verdicts, issues and review requests.
 - Add Submit, Revise and Detach on the document page.
 
 *Done when:* a live run shows that approving a design starts nothing, and that
@@ -755,7 +755,9 @@ These are small, independent jobs for any idle session:
 
 ## 12. Decisions waiting on Sam
 
-**All fourteen are accepted, as recommended (Sam, 2026-09-28).** Decisions 1 to
+**All fourteen are accepted, as recommended (Sam, 2026-09-28).** Decisions 3,
+4 and 6 were then amended the same day by
+[DEC-006 Amendment 1](../decisions/DEC-006-humans-start-development.md#amendment-1--reviews-and-relay-2026-09-28). Decisions 1 to
 6 are recorded in [DEC-006](../decisions/DEC-006-humans-start-development.md).
 The rest take effect in the milestones named. The table is kept as the record,
 and new decisions get added below it as they arise.
@@ -764,10 +766,10 @@ and new decisions get added below it as they arise.
 |---|---|---|---|
 | 1 | DEC-006 as in §6 | Accept | M3 |
 | 2 | Button names | *Send to development* (gate 1) and *Start building* (gate 2) | M3 |
-| 3 | Human spec approval: default on or off? | Off, switchable per project and per send | M3 |
-| 4 | Can the agent spec review be switched off? | Allow it per project, but default it on. It's cheap insurance | M3 |
+| 3 | Human spec approval: default on or off? | *Amended:* agent review is the normal approver. Humans point out issues at any time. Holding a spec for a human is optional, off by default, per project or per send | M3 |
+| 4 | Can the agent spec review be switched off? | *Amended:* yes per project, but then every spec waits for a human. There is always at least one reviewer | M3 |
 | 5 | After a design revision, rewrite specs automatically? | Yes, for features already sent. Otherwise wait for a send | M3 |
-| 6 | May chat relay design approval and tick jobs? | Yes, audited as "via chat". Neither is a judgement of agent work | M3, M5 |
+| 6 | May chat relay design approval and tick jobs? | *Amended:* chat may relay any human verdict, issue, review request or job tick, quoting the human. Never Send, Start building or a gate override | M3, M5 |
 | 7 | Milestone and roadmap editing: modal or page? | Modal from the owner's page, as DESIGN-008 already says | M4 |
 | 8 | Do jobs carry a note, owner or due date? | A note and who ticked it, for now. Owner and date later | M5 |
 | 9 | ID and folder scheme | Prefixed IDs, identity in front matter, folders only as the default for new documents | M8 |

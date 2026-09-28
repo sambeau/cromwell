@@ -1,7 +1,9 @@
 # DEC-006: A human decides when development starts
 
 **Status:** **Accepted — Sam, 2026-09-28.** Drafted by Claude. The author
-can't be the approval gate, and wasn't.
+can't be the approval gate, and wasn't. **Amended the same day:**
+[Amendment 1](#amendment-1--reviews-and-relay-2026-09-28) replaces decisions 5,
+6 and 8.
 **Date drafted:** 2026-09-28
 **Date accepted:** 2026-09-28
 **Decided by:** Sam
@@ -60,7 +62,7 @@ starts when a human presses Send to development.**
    1. It writes the spec.
    2. It reviews the spec. The reviewer checks it is faithful to the design,
       which is SPEC-009's fidelity bar.
-   3. Human spec approval, if it is on.
+   3. Human spec approval, if it is on. *(Amended: see Amendment 1.)*
    4. It writes the development plan.
    5. It reviews the plan.
    6. It decomposes the plan into tasks and estimates the work.
@@ -69,7 +71,7 @@ starts when a human presses Send to development.**
    human act that begins implementation. **A step whose document already
    exists is skipped**, so a spec or plan written in chat is used as it is.
 
-5. **Human spec approval is optional, and off by default.**
+5. *(Replaced by Amendment 1.)* **Human spec approval is optional, and off by default.**
    - A project setting turns it on for every spec, and the send screen can turn
      it on for a single send.
    - When it is on, the agent review still runs and its findings still appear.
@@ -80,7 +82,7 @@ starts when a human presses Send to development.**
    - Human spec approval is a UI act. The chat agent can't relay it, because it
      is a verdict on an agent's work.
 
-6. **The agent spec review is on by default, and a project may turn it off.**
+6. *(Replaced by Amendment 1.)* **The agent spec review is on by default, and a project may turn it off.**
    - If a project turns off both the agent review and human approval, a spec
      that passes validation is approved without review.
    - The send screen says so in plain words ("this spec will not be reviewed"),
@@ -94,7 +96,7 @@ starts when a human presses Send to development.**
    - For an unsent feature, the retired spec simply leaves the feature without
      one until someone sends it.
 
-8. **The chat agent may relay a human's act when that act starts nothing.**
+8. *(Replaced by Amendment 1.)* **The chat agent may relay a human's act when that act starts nothing.**
    - This is a third kind of MCP permission, alongside DEC-005's planning
      authoring and requests the orchestrator decides on.
    - Two acts qualify: **approving or sending back a design**, and **ticking a
@@ -256,11 +258,158 @@ when it wasn't, and someone notices before they press Send.
 
 - **Withdrawing a send** before its spec is written. Abandon exists, but
   "un-send" might be wanted. Decide it when the button is built.
-- **Whether a project may turn off both reviews.** Decision 6 allows it,
-  visibly. If that proves a foot-gun, requiring at least one review is a small
-  follow-up.
+- ~~**Whether a project may turn off both reviews.**~~ Settled by Amendment 1:
+  it may not. There is always at least one reviewer.
 - **The design reviewer's future.** The 31 July discussion leaned towards
   retiring it. This decision leaves it as it is: it comments and never rules.
 - **Who may do a stage's work**, including a human or the chat AI implementing
   a task. That is [DEC-007](../notes/subutai-status-and-roadmap-2026-09-28.md#6-dec-006-and-dec-007-in-detail),
   accepted in principle on 2026-09-28, and its document is still to be written.
+
+## Amendment 1 — reviews and relay (2026-09-28)
+
+**Status:** **Accepted — Sam, 2026-09-28.** Drafted by Claude.
+**Replaces:** decisions 5, 6 and 8 above. Everything else in DEC-006 stands.
+
+### Why
+
+Sam raised two things after DEC-006 was accepted.
+
+- **The logic behind "UI-only" spec approval didn't hold up.** When a human
+  approves in chat, the human is the judge and the chat agent only carries the
+  message. That is no different in principle from pressing a button, and agents
+  approve specs all the time as independent reviewers. What matters is what an
+  act *does*, not which channel it arrives through.
+- **Decision 6 let a spec through with no review at all.** A project that
+  turned off the agent review and left human approval at its default would
+  have been in that position without meaning to be.
+
+Sam's ruling also sets out the human's role more clearly than DEC-006 did.
+
+- **Specs are reviewed, normally by an agent.** After a design is approved, a
+  human normally has little input until manual testing.
+- **A human can review a spec, but mainly to point out errors and issues, not
+  to be the arbiter of truth.** Anyone who wants a say in algorithms, data
+  structures or architecture should say it in the design, because that is
+  where it belongs.
+- **The start button is about *when*, not *whether*.** A human controls it
+  because of resources: agent time, parallel jobs and token budget. It is not
+  there to approve the spec. Earlier models happened to tie starting
+  orchestration to approving the spec. This decision keeps those two things
+  apart.
+
+### Decision 5 (replaced): every spec is reviewed, normally by an agent
+
+- **The agent spec review is the normal reviewer and approver.** Its verdict
+  moves the spec on without waiting for a human. It checks the spec is faithful
+  to the design, which is SPEC-009's fidelity bar.
+- **A human may point out issues on a spec at any time before building
+  starts.** This can be done in the UI or by telling the chat agent.
+  - A human issue must be dealt with. The spec goes back to the spec agent, and
+    the reviewer can't approve until it has said how each human issue was
+    addressed, or why it doesn't apply.
+  - If the spec is already approved, raising an issue reopens it for revision.
+    Its development plan is retired automatically, as SPEC-009 FR-9.4a already
+    does.
+- **A human may also approve a spec directly, or ask for an agent review.**
+  Both routes are there when wanted, and neither is expected.
+- **Holding a spec for a human is optional, and off by default.** It can be
+  switched on for a project or for one send. When it is on, the spec waits
+  after the agent review, and the human does one of three things:
+  - approves it;
+  - raises issues, which sends it back as above;
+  - hands it back with *let the reviewer decide*, after which the agent's
+    verdict stands.
+
+### Decision 6 (replaced): there is always at least one reviewer
+
+- A project may turn off the agent spec review. If it does, the hold is
+  switched on automatically for that project, so every spec waits for a human.
+  **No setting lets a spec through unreviewed.**
+- The send screen says who will review each spec.
+
+### Decision 8 (replaced): the chat agent carries a human's decision, and never makes one of its own
+
+- **The chat agent may relay:**
+  - a human's verdict on any document (approve, or send back);
+  - a human's issues on a document;
+  - a request for an agent review;
+  - *let the reviewer decide* on a held spec;
+  - a ticked job, once checklists exist.
+- **The chat agent may not relay** Send to development, Start building, or
+  anything that overrides a gate, including a checkpoint answer that does.
+  These commit resources or remove a safeguard, so they stay web UI acts.
+- **Every relay carries the human's words, quoted.** It is audited `via: mcp`
+  with the quote stored alongside. That doesn't prove the human said it, but it
+  makes a mistaken relay easy to spot.
+- **The chat agent has no verdict of its own.** No tool lets it approve, send
+  back or review on its own judgement. That is enforced by leaving the tools
+  out, as DEC-005 does.
+- Adding a relay tool that isn't on this list needs a decision.
+
+### Rationale
+
+**Carrying a judgement isn't judging.** DEC-007's rule is that nobody judges
+their own work, and the chat agent has often helped write the documents it
+would be judging. That rule is about who *holds* the verdict. When the human
+holds it, the chat agent is only the messenger, and the rule is kept.
+
+**The line is drawn by consequence, not by channel.** The real risk with any
+tool the chat agent has is that it gets used without the human's say-so. That
+is the kanbanzai pattern of an agent under pressure to make progress. So the
+question for each act is how bad and how recoverable a misuse would be.
+
+- **Everything on the relay list is small and recoverable.** The worst case is
+  a spec approved that the human didn't approve. That costs one plan-writing
+  run of about 8,000 tokens, which still stops at Start building. Sending the
+  spec back retires the plan automatically.
+- **The acts kept in the UI either spend resources or remove a safeguard.**
+  Those are exactly the acts the buttons exist to protect.
+
+**Humans raise issues; reviewers judge the translation.** The human's thinking
+goes into the design. The spec is a careful translation of it, and checking a
+translation against its source is what an independent agent reviewer is good
+at, and cheap for. Making a human the arbiter of every spec spends their
+attention twice and makes them a bottleneck. Letting them raise an issue at
+any point keeps their knowledge in play without that cost.
+
+**At least one reviewer, always.** It keeps the principle DESIGN-010 is built
+on, that nothing an agent produces goes forward unjudged. And it removes a
+configuration that could be reached by accident.
+
+### Consequences
+
+- Decision 4's third step reads: *held for a human, if the hold is on*.
+- **Human issues become must-address findings in the spec review loop.** The
+  implementation spec will say how an issue is marked as addressed. The
+  existing comment and severity machinery (migration 0006, audit C-1) is the
+  natural home for it.
+- **The MCP relay tools**, each taking the human's quoted words:
+  - give a verdict on a document;
+  - raise an issue on a document;
+  - request a review;
+  - release a held spec;
+  - tick a job (with checklists, M5).
+
+  `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` names each one, and it
+  still fails on anything else.
+- **The project settings are:**
+  - the agent spec review, on by default;
+  - the hold for a human, off by default, and forced on when the agent review
+    is off;
+  - a per-send override of the hold.
+- **Decisions 3, 4 and 6** in the
+  [roadmap's decision table](../notes/subutai-status-and-roadmap-2026-09-28.md#12-decisions-waiting-on-sam)
+  are restated to match.
+
+### Alternatives considered
+
+- **Keep spec approval UI-only.** Rejected. The distinction was about the
+  channel, not the act. It would also have made chat a second-class route for
+  the one kind of human input DEC-006 most wants: pointing out issues.
+- **Require a human to approve every spec by default.** Rejected. It makes the
+  human the arbiter of a translation, and a bottleneck, after the thinking has
+  already happened in the design.
+- **Keep decision 6 as written, allowing unreviewed specs.** Rejected. It could
+  be reached by accident, and it breaks the "nothing unjudged" principle for a
+  saving of about 2,900 tokens a spec.
