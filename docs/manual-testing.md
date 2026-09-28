@@ -203,16 +203,20 @@ It makes no AI calls. It:
   against a database called `cromwell_smoke`;
 - puts every role on one model, by default `deepseek-chat` through DeepSeek's
   Anthropic-compatible gateway, keyed by `DEEPSEEK_API_KEY`;
-- turns on the `write-spec` and `write-dev-plan` assignments, so approving a
-  design writes the spec and an approved spec writes the dev-plan;
+- turns on the `write-spec` and `write-dev-plan` assignments, so that once a
+  feature is sent to development its spec, and then its dev-plan, are written
+  for it;
 - checks the design template is installed (`init` ships it);
 - commits a one-sentence example design, `docs/greet/time/design.md`, in the
   template's shape;
 - serves the UI on `127.0.0.1:8801`.
 
 It prints the commands to run next: start the server, create `greet` and
-`greet/time`, register the design, and submit it. Submitting is the first step
-that costs money, because the design reviewer runs.
+`greet/time`, register the design, and submit it. Submitting costs nothing: no
+agent reviews a design, so it waits for you to approve it on its page, and
+approving it starts nothing either. The first step that costs money is pressing
+**Send to development** on the feature (SPEC-011). The full smoke checklist is
+in the [M3 handoff](notes/handoff-M3-2026-09-28.md).
 
 To use another model or provider, set these before running it:
 
