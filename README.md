@@ -33,7 +33,8 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DEC-003](docs/decisions/DEC-003-cli-scope.md) | The CLI shrinks to `init`, `serve`, `status` and `hook`; the rest moves to the UI and MCP ([removal checklist](docs/notes/dec-003-cli-removal-checklist.md)) |
 | [DEC-004](docs/decisions/DEC-004-mcp-planning-authoring.md) | The MCP facet may author the planning layer, but not drive development |
 | [DEC-005](docs/decisions/DEC-005-the-orchestration-boundary.md) | The boundary is bypassing the orchestrator, not spawning agents (supersedes DEC-004 in part) |
-| [DEC-006](docs/decisions/DEC-006-humans-start-development.md) | Subutai: approving a design starts nothing; a human presses **Send to development** |
+| [DEC-006](docs/decisions/DEC-006-humans-start-development.md) | Subutai: approving a design starts nothing; a human presses **Send to development**. Amendment 1: how specs are reviewed, and what chat may relay |
+| [DEC-007](docs/decisions/DEC-007-the-judgement-boundary.md) | Who does the work is flexible; who judges it is not (supersedes DEC-005 in part) |
 | [DESIGN-001](docs/design/DESIGN-001-data-model-and-schema.md) | Data model and Postgres schema |
 | [DESIGN-002](docs/design/DESIGN-002-orchestrator.md) | The orchestrator: events, dispatch, tool host, governance |
 | [DESIGN-003](docs/design/DESIGN-003-document-lifecycle-and-gates.md) | Document lifecycle, feature lifecycle, gate catalogue |
@@ -43,7 +44,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DESIGN-007](docs/design/DESIGN-007-web-command-centre.md) | Phase 4: the web command centre |
 | [DESIGN-008](docs/design/DESIGN-008-the-workflow-surface.md) | The workflow surface: browsable, document-led pages, and the MCP facet |
 | [DESIGN-009](docs/design/DESIGN-009-the-authoring-half.md) | The authoring half: agents write specs and dev-plans from an approved design |
-| [DESIGN-010](docs/design/DESIGN-010-subutai.md) | Subutai: the revised workflow (draft, being rewritten) |
+| [DESIGN-010](docs/design/DESIGN-010-subutai.md) | Subutai: the revised workflow (Draft 2, awaiting approval) |
 | [SPEC-001](docs/specs/SPEC-001-phase-1-vertical-slice.md) | Phase 1: the vertical slice (**binding**) |
 | [SPEC-002](docs/specs/SPEC-002-phase-2-implementation-loop.md) | Phase 2: the implementation loop (**binding**) |
 | [SPEC-003](docs/specs/SPEC-003-phase-3-planning-and-tracking.md) | Phase 3 (first slice): sizing, calibration, milestones (**binding**) |
