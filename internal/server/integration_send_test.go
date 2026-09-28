@@ -250,6 +250,12 @@ func TestAgentReviewOffHoldsEverySpec(t *testing.T) {
 	h.eventually("spec held with no review", h.docStateIs("pf/alpha", "spec", lifecycle.DocReviewing))
 	h.quiet()
 	spec := h.currentDoc("pf/alpha", "spec")
+	// The orchestrator writes the hold just after the spec enters review, and
+	// no dispatch marks it, so wait for the hold itself.
+	h.eventually("the spec's hold", func() bool {
+		_, err := store.GetDocumentHold(context.Background(), h.srv.Store.Pool, spec.ID)
+		return err == nil
+	})
 	n, _ := store.CountDispatchesForRef(context.Background(), h.srv.Store.Pool, "document", spec.ID, "review-spec")
 	if n != 0 {
 		t.Fatalf("agent review is off, so no review may be queued; got %d", n)
