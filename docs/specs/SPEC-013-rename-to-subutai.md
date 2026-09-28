@@ -1,6 +1,6 @@
 # SPEC-013: Rename to Subutai
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. An independent
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its four choices (DoD 7). It was drafted for Sam's approval as follows. Authored by Claude. An independent
 check of this spec and of the finished diff, looking for surfaces it missed, is
 recorded in [REVIEW-013](../reviews/REVIEW-013-rename-to-subutai.md). It found
 three material and nine smaller problems in the first draft; all are dealt with
