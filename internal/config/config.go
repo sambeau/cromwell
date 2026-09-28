@@ -1,4 +1,4 @@
-// Package config loads the .cromwell/ compartment (DESIGN-004): project
+// Package config loads the .subutai/ compartment (DESIGN-004): project
 // config, roles, skills, template manifests, and the pack lock. Parsing is
 // strict — unknown keys are errors (F-1) — and every error names the file,
 // the field where possible, and the reason (DESIGN-004 §9). Secrets are
@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"subutai/internal/compat"
 )
 
 // Error is a config-compartment error: deterministic, never retried;
@@ -44,7 +46,7 @@ func strictUnmarshal(file string, data []byte, out any) error {
 	return nil
 }
 
-// Config is .cromwell/config.yaml (DESIGN-004 §4).
+// Config is .subutai/config.yaml (DESIGN-004 §4).
 type Config struct {
 	Version   int                 `yaml:"version"`
 	Database  DatabaseConfig      `yaml:"database"`
@@ -196,7 +198,7 @@ type Command struct {
 
 const configFile = "config.yaml"
 
-// LoadConfig reads and validates .cromwell/config.yaml. Defaults are applied
+// LoadConfig reads and validates .subutai/config.yaml. Defaults are applied
 // for optional operational settings; structural fields are required.
 func LoadConfig(root string) (*Config, error) {
 	file := filepath.Join(root, configFile)
@@ -207,6 +209,10 @@ func LoadConfig(root string) (*Config, error) {
 	var c Config
 	if err := strictUnmarshal(configFile, data, &c); err != nil {
 		return nil, err
+	}
+	if c.Server.Socket == "" {
+		// The default follows the folder being read (SPEC-013 §3.2).
+		c.Server.Socket = compat.DefaultSocket(filepath.Base(root))
 	}
 	if err := c.validate(); err != nil {
 		return nil, err
@@ -225,9 +231,6 @@ func (c *Config) validate() error {
 	}
 	if c.Database.URLEnv == "" {
 		add("database.url_env", "required: name of the env var holding the Postgres URL")
-	}
-	if c.Server.Socket == "" {
-		c.Server.Socket = ".cromwell/run/cromwell.sock"
 	}
 	if c.Server.HeartbeatSeconds == 0 {
 		c.Server.HeartbeatSeconds = 30
@@ -324,9 +327,20 @@ func (c *Config) validate() error {
 }
 
 // DatabaseURL resolves the connection string from the environment (F-2).
+// A url_env naming SUBUTAI_DATABASE_URL or CROMWELL_DATABASE_URL reads the
+// pair, the new name first (SPEC-013 §3.3, compat(M7)).
 func (c *Config) DatabaseURL() (string, error) {
-	v := os.Getenv(c.Database.URLEnv)
+	current, legacy, twins := compat.Twins(c.Database.URLEnv)
+	if twins && c.Database.URLEnv == legacy { // compat(M7)
+		compat.Warn(fmt.Sprintf("config.yaml's database.url_env names %s, Subutai's old name; "+
+			"change it to %s.", legacy, current))
+	}
+	v := compat.Getenv(c.Database.URLEnv)
 	if v == "" {
+		if twins {
+			return "", errf(configFile, "database.url_env",
+				"environment variable %s is not set", current)
+		}
 		return "", errf(configFile, "database.url_env",
 			"environment variable %s is not set", c.Database.URLEnv)
 	}

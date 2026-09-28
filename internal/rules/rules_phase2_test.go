@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
+	"subutai/internal/bus"
+	"subutai/internal/lifecycle"
 )
 
 func TestDevPlanApprovalDecomposesThenGates(t *testing.T) {

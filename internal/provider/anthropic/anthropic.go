@@ -11,7 +11,7 @@ import (
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
-	"cromwell/internal/provider"
+	"subutai/internal/provider"
 )
 
 type Client struct {

@@ -6,7 +6,7 @@
 #   scripts/smoke-project.sh
 #
 # What it builds, in $SMOKE_DIR:
-#   - a git repository, initialised with `cromwell init`;
+#   - a git repository, initialised with `subutai init`;
 #   - every role on $SMOKE_MODEL, served by $SMOKE_PROVIDER at $SMOKE_BASE_URL;
 #   - the write-spec and write-dev-plan assignments enabled;
 #   - the design template (shipped by init) and a one-sentence example design,
@@ -14,11 +14,11 @@
 #   - the web UI on $SMOKE_HTTP.
 #
 # Environment (all optional):
-#   SMOKE_DIR           project directory          (default /tmp/cromwell-smoke)
-#   SMOKE_BIN           where to build cromwell    (default /tmp/cromwell)
+#   SMOKE_DIR           project directory          (default /tmp/subutai-smoke)
+#   SMOKE_BIN           where to build subutai     (default /tmp/subutai)
 #   SMOKE_DATABASE_URL  Postgres URL for the project; must be local.
-#                       Default: CROMWELL_TEST_DATABASE_URL's server, with the
-#                       database cromwell_smoke.
+#                       Default: SUBUTAI_TEST_DATABASE_URL's server, with the
+#                       database subutai_smoke.
 #   SMOKE_PROVIDER      provider name in config    (default deepseek)
 #   SMOKE_BASE_URL      Anthropic-compatible endpoint; empty for Anthropic's own
 #                       (default https://api.deepseek.com/anthropic)
@@ -27,14 +27,14 @@
 #   SMOKE_PRICE_IN      USD per million input tokens  (default 0.27)
 #   SMOKE_PRICE_OUT     USD per million output tokens (default 1.10)
 #   SMOKE_HTTP          web UI listen address      (default 127.0.0.1:8801)
-#   SMOKE_SOCKET        CLI socket; keep it short  (default /tmp/cromwell-smoke.sock)
+#   SMOKE_SOCKET        CLI socket; keep it short  (default /tmp/subutai-smoke.sock)
 #   SMOKE_FORCE=1       remove an existing project and recreate its database
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
-SMOKE_DIR="${SMOKE_DIR:-/tmp/cromwell-smoke}"
-SMOKE_BIN="${SMOKE_BIN:-/tmp/cromwell}"
+SMOKE_DIR="${SMOKE_DIR:-/tmp/subutai-smoke}"
+SMOKE_BIN="${SMOKE_BIN:-/tmp/subutai}"
 SMOKE_PROVIDER="${SMOKE_PROVIDER:-deepseek}"
 SMOKE_BASE_URL="${SMOKE_BASE_URL-https://api.deepseek.com/anthropic}"
 SMOKE_API_KEY_ENV="${SMOKE_API_KEY_ENV:-DEEPSEEK_API_KEY}"
@@ -42,20 +42,26 @@ SMOKE_MODEL="${SMOKE_MODEL:-deepseek-chat}"
 SMOKE_PRICE_IN="${SMOKE_PRICE_IN:-0.27}"
 SMOKE_PRICE_OUT="${SMOKE_PRICE_OUT:-1.10}"
 SMOKE_HTTP="${SMOKE_HTTP:-127.0.0.1:8801}"
-SMOKE_SOCKET="${SMOKE_SOCKET:-/tmp/cromwell-smoke.sock}"
+SMOKE_SOCKET="${SMOKE_SOCKET:-/tmp/subutai-smoke.sock}"
 
 die() { echo "smoke-project: $*" >&2; exit 1; }
 log() { echo "smoke-project: $*" >&2; }
 
 # --- The database -----------------------------------------------------------
 
+# compat(M7): Subutai's old name for the test server, until the next release.
+if [ -z "${SUBUTAI_TEST_DATABASE_URL:-}" ] && [ -n "${CROMWELL_TEST_DATABASE_URL:-}" ]; then
+	log "warning: CROMWELL_TEST_DATABASE_URL is Subutai's old name for SUBUTAI_TEST_DATABASE_URL; rename it. The old name is read until the next release."
+	SUBUTAI_TEST_DATABASE_URL="$CROMWELL_TEST_DATABASE_URL"
+fi
+
 if [ -z "${SMOKE_DATABASE_URL:-}" ]; then
-	[ -n "${CROMWELL_TEST_DATABASE_URL:-}" ] ||
+	[ -n "${SUBUTAI_TEST_DATABASE_URL:-}" ] ||
 		die "set SMOKE_DATABASE_URL, or run: eval \"\$(scripts/test-db.sh)\""
-	base="${CROMWELL_TEST_DATABASE_URL%%\?*}"
+	base="${SUBUTAI_TEST_DATABASE_URL%%\?*}"
 	query=""
-	case "$CROMWELL_TEST_DATABASE_URL" in *\?*) query="?${CROMWELL_TEST_DATABASE_URL#*\?}" ;; esac
-	SMOKE_DATABASE_URL="${base%/*}/cromwell_smoke${query}"
+	case "$SUBUTAI_TEST_DATABASE_URL" in *\?*) query="?${SUBUTAI_TEST_DATABASE_URL#*\?}" ;; esac
+	SMOKE_DATABASE_URL="${base%/*}/subutai_smoke${query}"
 fi
 
 # Never a remote database: the smoke project drops and recreates its own.
@@ -88,7 +94,7 @@ psql -q "$admin_url" -c "CREATE DATABASE \"$dbname\""
 # --- Build and init ---------------------------------------------------------
 
 log "building $SMOKE_BIN"
-(cd "$REPO" && go build -o "$SMOKE_BIN" ./cmd/cromwell)
+(cd "$REPO" && go build -o "$SMOKE_BIN" ./cmd/subutai)
 
 mkdir -p "$SMOKE_DIR"
 cd "$SMOKE_DIR"
@@ -97,18 +103,18 @@ git config user.name >/dev/null || git config user.name "Smoke Operator"
 git config user.email >/dev/null || git config user.email "smoke@example.com"
 git commit -qm "init" --allow-empty
 
-CROMWELL_DATABASE_URL="$SMOKE_DATABASE_URL" "$SMOKE_BIN" init >&2
+SUBUTAI_DATABASE_URL="$SMOKE_DATABASE_URL" "$SMOKE_BIN" init >&2
 
 # --- Config: one provider, one model, the chain switched on -----------------
 
 base_url_line=""
 [ -n "$SMOKE_BASE_URL" ] && base_url_line="    base_url: $SMOKE_BASE_URL"
 
-cat >.cromwell/config.yaml <<YAML
+cat >.subutai/config.yaml <<YAML
 version: 1
 
 database:
-  url_env: CROMWELL_DATABASE_URL
+  url_env: SUBUTAI_DATABASE_URL
 
 server:
   http: $SMOKE_HTTP
@@ -156,11 +162,11 @@ commands:
     output_cap_bytes: 65536
 YAML
 
-for role in .cromwell/roles/*.yaml; do
+for role in .subutai/roles/*.yaml; do
 	sed -i.bak "s/^model: .*/model: $SMOKE_MODEL/" "$role" && rm -f "$role.bak"
 done
 
-[ -f .cromwell/templates/design/manifest.yaml ] ||
+[ -f .subutai/templates/design/manifest.yaml ] ||
 	die "init did not install the design template"
 
 # --- The example design: one sentence, in the template's shape --------------
@@ -190,7 +196,7 @@ and time.
   workflow, not the code.
 MD
 
-git add .cromwell docs
+git add .subutai docs
 git commit -qm "smoke project: config and example design"
 
 cat >&2 <<EOF
@@ -199,11 +205,11 @@ Smoke project ready in $SMOKE_DIR (database $dbname).
 
 Next, by hand:
 
-  export CROMWELL_DATABASE_URL="$SMOKE_DATABASE_URL"
+  export SUBUTAI_DATABASE_URL="$SMOKE_DATABASE_URL"
   export $SMOKE_API_KEY_ENV=...          # the provider key; costs real money
   cd $SMOKE_DIR && $SMOKE_BIN serve      # UI at http://$SMOKE_HTTP/ui
 
-  # in a second terminal, same CROMWELL_DATABASE_URL:
+  # in a second terminal, same SUBUTAI_DATABASE_URL:
   cd $SMOKE_DIR
   $SMOKE_BIN initiative add greet --name "Greetings"
   $SMOKE_BIN feature add greet/time --name "Tell the time" \\

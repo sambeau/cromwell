@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/compat"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // publishFeatureStarted signals the rule engine to dispatch the feature's
@@ -24,7 +26,7 @@ func (s *Server) publishFeatureStarted(featureID uuid.UUID) {
 // gitignored in the main repo so the server-authored commits never sweep
 // worktree files in.
 func (s *Server) worktreesRoot() string {
-	return filepath.Join(s.RepoRoot, ".cromwell", "worktrees")
+	return filepath.Join(s.CompartmentRoot, "worktrees")
 }
 
 // StartFeature transitions a ready feature to active and creates its worktree
@@ -52,8 +54,8 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 	if !s.currentDocApproved(ctx, "spec", f.ID) || !s.currentDocApproved(ctx, "dev_plan", f.ID) {
 		return nil, fmt.Errorf("This feature's specification or dev-plan is being revised, so building can't start until the revision is approved.")
 	}
-	branch := "cromwell/" + path
-	relPath := filepath.Join(".cromwell", "worktrees", store.ShortID("feat", f.ID))
+	branch := "subutai/" + path
+	relPath := filepath.Join(filepath.Base(s.CompartmentRoot), "worktrees", store.ShortID("feat", f.ID))
 
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionFeature(ctx, tx, f, lifecycle.FeatStart, actor, nil); err != nil {
@@ -90,7 +92,7 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 
 // addWorktree creates a linked worktree at relPath on a new branch off HEAD.
 func (s *Server) addWorktree(relPath, branch string) error {
-	abs := filepath.Join(s.RepoRoot, relPath)
+	abs := s.worktreeAbs(relPath)
 	if err := os.MkdirAll(s.worktreesRoot(), 0o755); err != nil {
 		return err
 	}
@@ -146,6 +148,21 @@ func (s *Server) pruneMergedWorktrees(ctx context.Context) {
 	_, _ = gitIn(s.RepoRoot, "worktree", "prune")
 }
 
+// gitKnowsWorktree reports whether git lists a worktree at abs, so a
+// repaired worktree isn't repaired again on every start.
+func (s *Server) gitKnowsWorktree(abs string) bool {
+	out, err := gitIn(s.RepoRoot, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && filepath.Clean(p) == filepath.Clean(abs) {
+			return true
+		}
+	}
+	return false
+}
+
 // ReconcileWorktrees repairs worktree state on boot (DESIGN-006 §7): a live
 // worktree row whose directory is gone (crash before the git op) for a
 // non-terminal feature is re-created.
@@ -158,6 +175,16 @@ func (s *Server) ReconcileWorktrees(ctx context.Context) error {
 		wt := worktrees[i]
 		abs := s.worktreeAbs(wt.Path)
 		if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
+			// A worktree made under .cromwell/ moved with the folder when it
+			// was renamed; git still records the old path until it is
+			// repaired (SPEC-013 §3.2). compat(M7)
+			if _, moved := compat.WorktreePath(s.RepoRoot, filepath.Base(s.CompartmentRoot), wt.Path); moved && !s.gitKnowsWorktree(abs) {
+				if _, err := gitIn(s.RepoRoot, "worktree", "repair", abs); err != nil {
+					s.Log.Error("worktree repair after folder rename", "feature", wt.FeatureID, "err", err)
+				} else {
+					s.Log.Info("worktree found in the renamed folder and repaired", "feature", wt.FeatureID, "path", abs)
+				}
+			}
 			continue // worktree present
 		}
 		f, err := store.GetFeature(ctx, s.Store.Pool, wt.FeatureID)

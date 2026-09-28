@@ -10,10 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/config"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/rules"
-	"cromwell/internal/store"
+	"subutai/internal/compat"
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
+	"subutai/internal/rules"
+	"subutai/internal/store"
 )
 
 // executePhase2 handles the implementation-loop actions. Returns (handled).
@@ -229,7 +230,7 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 	// is nothing to commit, the implementer produced no diff — a failure the
 	// code reviewer should see, so we still proceed with an empty commit
 	// marker rather than silently dropping the task.
-	commitMsg := fmt.Sprintf("cromwell: %s — %s\n\n%s", task.LocalID, task.Title, summary)
+	commitMsg := fmt.Sprintf("subutai: %s — %s\n\n%s", task.LocalID, task.Title, summary)
 	if err := s.commitWorktree(root, commitMsg); err != nil {
 		return fmt.Errorf("committing task work: %w", err)
 	}
@@ -568,7 +569,8 @@ func (s *Server) worktreeAbs(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(s.RepoRoot, path)
+	abs, _ := compat.WorktreePath(s.RepoRoot, filepath.Base(s.CompartmentRoot), path)
+	return abs
 }
 
 func (s *Server) commitWorktree(root, message string) error {
@@ -577,7 +579,7 @@ func (s *Server) commitWorktree(root, message string) error {
 	}
 	// --allow-empty so a task that (wrongly) produced no diff still commits,
 	// surfacing to the code reviewer rather than vanishing.
-	cmd := exec.Command("git", "commit", "--allow-empty", "-m", message, "--author", "cromwell <cromwell@localhost>")
+	cmd := exec.Command("git", "commit", "--allow-empty", "-m", message, "--author", "subutai <subutai@localhost>")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git commit: %v: %s", err, out)

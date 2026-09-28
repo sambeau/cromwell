@@ -17,11 +17,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/config"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/rules"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
+	"subutai/internal/rules"
+	"subutai/internal/store"
 )
 
 // relayAct is who acted and how, carried onto every audit row this file writes.

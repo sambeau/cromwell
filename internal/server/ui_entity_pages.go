@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/store"
+	"subutai/internal/store"
 )
 
 // The plain read-only pages for milestones, roadmaps, tasks and documents, so

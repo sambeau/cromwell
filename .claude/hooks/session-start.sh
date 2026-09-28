@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SessionStart hook for Claude Code cloud sessions: start the test database
-# and export CROMWELL_TEST_DATABASE_URL, so `go test -race ./...` runs the
+# and export SUBUTAI_TEST_DATABASE_URL (and, until the next release, its old
+# name CROMWELL_TEST_DATABASE_URL; compat(M7)), so `go test -race ./...` runs the
 # integration tests rather than skipping them.
 #
 # Does nothing on a developer's own machine, and nothing when the PostgreSQL

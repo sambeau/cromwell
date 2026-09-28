@@ -76,7 +76,7 @@ func Audit(ctx context.Context, tx pgx.Tx, actor, kind, refType string, refID *u
 	return err
 }
 
-// AuditEvent is a row from the audit stream (cromwell log).
+// AuditEvent is a row from the audit stream (subutai log).
 type AuditEvent struct {
 	ID         uuid.UUID
 	OccurredAt time.Time

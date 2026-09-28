@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
+	"subutai/internal/bus"
 )
 
 func TestEstimateOutcomeRecordsEstimate(t *testing.T) {

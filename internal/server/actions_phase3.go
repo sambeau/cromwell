@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/rules"
-	"cromwell/internal/sizing"
-	"cromwell/internal/store"
+	"subutai/internal/rules"
+	"subutai/internal/sizing"
+	"subutai/internal/store"
 )
 
 // Phase-3 action execution (SPEC-003): recording an AI estimate, and the

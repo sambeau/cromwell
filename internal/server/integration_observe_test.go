@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 // runsFor returns every run on a ref, oldest first.
@@ -310,7 +310,7 @@ func TestTranscriptLimits(t *testing.T) {
 func TestTranscriptBudget(t *testing.T) {
 	h := newHarness(t)
 	specPath := h.setupFeatureWithSpec()
-	cfgPath := h.root + "/.cromwell/config.yaml"
+	cfgPath := h.root + "/.subutai/config.yaml"
 	appendFile(t, cfgPath, "transcripts:\n  max_attempt_bytes: 10\n")
 
 	h.approveDoc(specPath)

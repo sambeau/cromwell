@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 // legacyDesignReviewer turns the test project into one made before SPEC-011:
@@ -22,7 +22,7 @@ import (
 // exist. Such a project keeps its reviewer (SD-8).
 func (h *harness) legacyDesignReviewer() {
 	h.t.Helper()
-	comp := filepath.Join(h.root, ".cromwell")
+	comp := filepath.Join(h.root, ".subutai")
 	write := func(rel, body string) {
 		p := filepath.Join(comp, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -250,6 +250,12 @@ func TestAgentReviewOffHoldsEverySpec(t *testing.T) {
 	h.eventually("spec held with no review", h.docStateIs("pf/alpha", "spec", lifecycle.DocReviewing))
 	h.quiet()
 	spec := h.currentDoc("pf/alpha", "spec")
+	// The orchestrator writes the hold just after the spec enters review, and
+	// no dispatch marks it, so wait for the hold itself.
+	h.eventually("the spec's hold", func() bool {
+		_, err := store.GetDocumentHold(context.Background(), h.srv.Store.Pool, spec.ID)
+		return err == nil
+	})
 	n, _ := store.CountDispatchesForRef(context.Background(), h.srv.Store.Pool, "document", spec.ID, "review-spec")
 	if n != 0 {
 		t.Fatalf("agent review is off, so no review may be queued; got %d", n)
@@ -684,7 +690,7 @@ func TestDocumentPageSubmitReviseDetach(t *testing.T) {
 
 func TestDesignReviewerRetiredAndChainEnabled(t *testing.T) {
 	h := newHarness(t)
-	comp := filepath.Join(h.root, ".cromwell")
+	comp := filepath.Join(h.root, ".subutai")
 	if _, err := os.Stat(filepath.Join(comp, "roles/design-reviewer.yaml")); !os.IsNotExist(err) {
 		t.Error("the starter pack must not ship the design reviewer")
 	}

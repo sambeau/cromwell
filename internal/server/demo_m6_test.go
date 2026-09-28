@@ -1,6 +1,6 @@
 package server
 
-// The SPEC-012 demo harness (DoD 2). Skipped unless CROMWELL_M6_DEMO names a
+// The SPEC-012 demo harness (DoD 2). Skipped unless SUBUTAI_M6_DEMO names a
 // directory: it then drives one feature through the whole loop with the mock
 // provider — a spec review whose first attempt fails part-way and is retried,
 // a code review that sends the task back once, and a verification — seeds a
@@ -19,16 +19,17 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/compat"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 func TestDemoM6(t *testing.T) {
-	dir := os.Getenv("CROMWELL_M6_DEMO")
+	dir := compat.Getenv("SUBUTAI_M6_DEMO")
 	if dir == "" {
-		t.Skip("set CROMWELL_M6_DEMO to a directory to run the SPEC-012 demo")
+		t.Skip("set SUBUTAI_M6_DEMO to a directory to run the SPEC-012 demo")
 	}
 	h := newHarness(t)
 	ctx := context.Background()

@@ -22,11 +22,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/starter"
-	"cromwell/internal/store"
-	"cromwell/internal/testdb"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/starter"
+	"subutai/internal/store"
+	"subutai/internal/testdb"
 )
 
 type harness struct {
@@ -40,8 +40,8 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	url := testdb.URL(t, "cromwell_server_test")
-	t.Setenv("CROMWELL_DATABASE_URL", url)
+	url := testdb.URL(t, "subutai_server_test")
+	t.Setenv("SUBUTAI_DATABASE_URL", url)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-unused") // mock provider; key never used
 
 	// Fresh database.
@@ -120,7 +120,7 @@ func (h *harness) call(method, path string, body any) (int, map[string]any) {
 		reader = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, h.api.URL+path, reader)
-	req.Header.Set("X-Cromwell-Actor", "sam")
+	req.Header.Set("X-Subutai-Actor", "sam")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		h.t.Fatal(err)
@@ -135,7 +135,7 @@ func (h *harness) call(method, path string, body any) (int, map[string]any) {
 func (h *harness) callList(method, path string) []map[string]any {
 	h.t.Helper()
 	req, _ := http.NewRequest(method, h.api.URL+path, nil)
-	req.Header.Set("X-Cromwell-Actor", "sam")
+	req.Header.Set("X-Subutai-Actor", "sam")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		h.t.Fatal(err)
@@ -434,7 +434,7 @@ func TestBudgetCap(t *testing.T) {
 	h := newHarness(t)
 	specPath := h.setupFeatureWithSpec()
 
-	configPath := filepath.Join(h.root, ".cromwell/config.yaml")
+	configPath := filepath.Join(h.root, ".subutai/config.yaml")
 	original, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)

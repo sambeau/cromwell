@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/config"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // ---- The feature page's send card (FR-4.1, FR-1.4) ----

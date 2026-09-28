@@ -2,15 +2,15 @@ package lifecycle
 
 // Validation: mechanical, synchronous, no judgement (DESIGN-003 §3). Runs at
 // submit (failure blocks the transition) and on demand via
-// `cromwell validate`. The manifest configures checks 2 and 5 only; checks
+// `subutai validate`. The manifest configures checks 2 and 5 only; checks
 // 1, 3, and 4 are the non-configurable floor (DESIGN-004 F-6).
 
 import (
 	"fmt"
 	"strings"
 
-	"cromwell/internal/config"
-	"cromwell/internal/content"
+	"subutai/internal/config"
+	"subutai/internal/content"
 )
 
 // Issue is one validation finding. Check identifies the failing check

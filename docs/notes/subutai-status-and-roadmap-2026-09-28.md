@@ -662,7 +662,7 @@ one of its jobs is unticked.
 *Done when:* from a feature's timeline you can click through to what any agent
 was told, did and concluded.
 
-**M7 — Rename to Subutai** · S · needs M1 · either lane, run alone
+**M7 — Rename to Subutai** · S · needs M1 · either lane, run alone · ✅ **done 2026-09-28**, see the [M7 handoff](handoff-M7-2026-09-28.md)
 *Goal: one name everywhere, changed once.*
 - Change the module, binary, config folder (still reading `.cromwell/` for one
   release), environment variables and UI copy.

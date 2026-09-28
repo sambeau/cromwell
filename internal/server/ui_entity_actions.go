@@ -8,10 +8,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/sizing"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/lifecycle"
+	"subutai/internal/sizing"
+	"subutai/internal/store"
 )
 
 // Actions relocated onto entity pages (SPEC-007 FR-5). Each posts to a /ui/*

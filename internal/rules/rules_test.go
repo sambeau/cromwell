@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/lifecycle"
+	"subutai/internal/bus"
+	"subutai/internal/lifecycle"
 )
 
 func docSnap(state lifecycle.DocumentState) (*DocSnap, Snapshot) {

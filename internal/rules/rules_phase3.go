@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
+	"subutai/internal/bus"
 )
 
 // Phase-3 rule additions: the AI estimator outcome (SPEC-003 FR-4). The

@@ -29,10 +29,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/config"
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/rules"
-	"cromwell/internal/store"
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
+	"subutai/internal/rules"
+	"subutai/internal/store"
 )
 
 // designApproved reports whether an owner's current design document is
@@ -645,8 +645,8 @@ func (s *Server) archiveInvalidatedFiles(moves []archivedMove) error {
 			return fmt.Errorf("git mv %s %s: %w", m.from, m.to, err)
 		}
 	}
-	if _, err := gitIn(s.RepoRoot, "commit", "-m", "cromwell: design revision invalidated documents; archived",
-		"--author", "cromwell <cromwell@localhost>"); err != nil {
+	if _, err := gitIn(s.RepoRoot, "commit", "-m", "subutai: design revision invalidated documents; archived",
+		"--author", "subutai <subutai@localhost>"); err != nil {
 		return fmt.Errorf("archive commit: %w", err)
 	}
 	return nil
@@ -775,7 +775,7 @@ func (s *Server) fileAuthoredDocument(ctx context.Context, featureID uuid.UUID, 
 	// hook only ever sees commits, and an agent's write is uncommitted at the
 	// moment it happens, so the notification comes from SubmitDoc's own
 	// transition rather than from git (FR-7.2).
-	s.commitDocument(path, fmt.Sprintf("cromwell: %s authored for %s", docType, f.Slug))
+	s.commitDocument(path, fmt.Sprintf("subutai: %s authored for %s", docType, f.Slug))
 	_, _, err = s.SubmitDoc(ctx, path, actor)
 	return err
 }
@@ -802,7 +802,7 @@ func (s *Server) authoredDocPath(ctx context.Context, f *store.Feature, docType 
 	}
 }
 
-// commitDocument commits one path with cromwell as the author. A failure is
+// commitDocument commits one path with subutai as the author. A failure is
 // logged rather than raised: the document is registered and submitted either
 // way, and a repository that cannot be committed to is a problem for a person,
 // not a reason to lose the work.
@@ -811,7 +811,7 @@ func (s *Server) commitDocument(path, message string) {
 		s.Log.Warn("could not stage authored document", "path", path, "err", err)
 		return
 	}
-	if _, err := gitIn(s.RepoRoot, "commit", "-m", message, "--author", "cromwell <cromwell@localhost>", "--", path); err != nil {
+	if _, err := gitIn(s.RepoRoot, "commit", "-m", message, "--author", "subutai <subutai@localhost>", "--", path); err != nil {
 		s.Log.Warn("could not commit authored document", "path", path, "err", err)
 	}
 }

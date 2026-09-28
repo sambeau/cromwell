@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"cromwell/internal/config"
+	"subutai/internal/config"
 )
 
 func specManifest() *config.Manifest {

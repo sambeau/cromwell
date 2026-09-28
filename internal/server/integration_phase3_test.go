@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 // markDone flips a feature to done directly (the full G1→G3 path is covered by

@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/sizing"
-	"cromwell/internal/store"
+	"subutai/internal/sizing"
+	"subutai/internal/store"
 )
 
 // TestUITemplatesParseAndRender exercises every page and fragment template with

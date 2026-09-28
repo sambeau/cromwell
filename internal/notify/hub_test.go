@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/bus"
+	"subutai/internal/bus"
 )
 
 func recv(t *testing.T, ch <-chan bus.Event) bus.Event {

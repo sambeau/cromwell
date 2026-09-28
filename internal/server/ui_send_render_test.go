@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // TestSendAndReviewTemplatesRender covers SPEC-011's new markup: the send

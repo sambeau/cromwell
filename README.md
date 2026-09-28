@@ -1,15 +1,19 @@
-# Cromwell
+# Subutai
 
 A document-led, specification-centred workflow system that takes a software
 project from initial concept to shipped features — humans driving planning,
 AI agents driving development. Greenfield successor to kanbanzai.
 
+Subutai was formerly called **Cromwell**. The historical documents keep the
+old name, and projects made with Cromwell keep working for one release (see
+[Coming from Cromwell](#coming-from-cromwell)).
+
 **Status:** the engine is built and proven live. Phases 1 to 4, SPEC-006,
 SPEC-007, SPEC-008 and SPEC-009 Stage 1 have shipped: the implementation loop,
 planning and tracking, the web command centre, the MCP facet for planning, and
 the authoring chain, in which agents write and review the spec and dev-plan
-from an approved design. Cromwell is now being revised as **Subutai**: the
-same engine with a clearer workflow and a new name. Where that stands, and the
+from an approved design. It is now being revised as **Subutai**: the same
+engine with a clearer workflow and a new name. Where that stands, and the
 milestones to finish it, are in the
 [Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md).
 The design ([DESIGN-010](docs/design/DESIGN-010-subutai.md)) is approved.
@@ -19,13 +23,15 @@ Phase A and the first three build milestones are merged:
   development**;
 - M6: every agent run keeps its transcript, and each feature has a timeline.
 
-Their specs (SPEC-010 to SPEC-012) await Sam's approval.
+Their specs (SPEC-010 to SPEC-012) are approved. M7, the rename to Subutai, is
+built; its spec ([SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md)) awaits
+Sam's approval.
 
-Build: `go build ./cmd/cromwell` · Test: `eval "$(scripts/test-db.sh)"` then
-`go test -race -count=1 ./...` (without `CROMWELL_TEST_DATABASE_URL` the
+Build: `go build ./cmd/subutai` · Test: `eval "$(scripts/test-db.sh)"` then
+`go test -race -count=1 ./...` (without `SUBUTAI_TEST_DATABASE_URL` the
 integration tests skip silently; Claude Code cloud sessions set it through
-the SessionStart hook) · Start: `cromwell init` then `cromwell serve` (needs
-`CROMWELL_DATABASE_URL` and a provider key) · Smoke project:
+the SessionStart hook) · Start: `subutai init` then `subutai serve` (needs
+`SUBUTAI_DATABASE_URL` and a provider key) · Smoke project:
 `scripts/smoke-project.sh` ([manual testing](docs/manual-testing.md)).
 
 ## Document map
@@ -45,7 +51,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [DESIGN-001](docs/design/DESIGN-001-data-model-and-schema.md) | Data model and Postgres schema |
 | [DESIGN-002](docs/design/DESIGN-002-orchestrator.md) | The orchestrator: events, dispatch, tool host, governance |
 | [DESIGN-003](docs/design/DESIGN-003-document-lifecycle-and-gates.md) | Document lifecycle, feature lifecycle, gate catalogue |
-| [DESIGN-004](docs/design/DESIGN-004-config-compartment.md) | The `.cromwell/` compartment: config, roles, skills, templates, pack lock |
+| [DESIGN-004](docs/design/DESIGN-004-config-compartment.md) | The project folder, `.subutai/` (formerly `.cromwell/`): config, roles, skills, templates, pack lock |
 | [DESIGN-005](docs/design/DESIGN-005-dev-plans-tasks-decomposition.md) | Phase 2: dev-plans, tasks, decomposition, G1 extension, revision-in-flight |
 | [DESIGN-006](docs/design/DESIGN-006-tool-host-and-worktrees.md) | Phase 2: the tool host, worktrees, implementer/verifier dispatch, merge |
 | [DESIGN-007](docs/design/DESIGN-007-web-command-centre.md) | Phase 4: the web command centre |
@@ -60,12 +66,14 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [SPEC-007](docs/specs/SPEC-007-workflow-surface-stage-a.md) | The workflow surface, Stage A: document-led browsing (**binding**) |
 | [SPEC-008](docs/specs/SPEC-008-mcp-facet-planning-authoring.md) | The MCP facet, slice 1: planning authoring (**binding**) |
 | [SPEC-009](docs/specs/SPEC-009-the-authoring-chain.md) | The authoring chain, Stage 1 (**binding**) |
+| [SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md) | The rename to Subutai, and what stays compatible (draft for Sam's approval) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
 | [REVIEW-003](docs/reviews/REVIEW-003-phase-3-planning-package.md) | Consistency review + approval of SPEC-003 |
 | [REVIEW-004](docs/reviews/REVIEW-004-phase-4-web-command-centre-package.md) | Consistency review + approval of DESIGN-007 and SPEC-004 |
 | [REVIEW-006](docs/reviews/REVIEW-006-command-centre-mutations-package.md) | Consistency review + approval of SPEC-006 |
 | [REVIEW-009](docs/reviews/REVIEW-009-authoring-chain-package.md) | Consistency review + approval of SPEC-009 |
+| [REVIEW-013](docs/reviews/REVIEW-013-rename-to-subutai.md) | Independent check of SPEC-013 and the rename for missed surfaces |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
 | [walkthrough-phase-3](docs/walkthrough-phase-3.md) | Phase 3: sizing, calibration and milestones |
@@ -73,7 +81,8 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [walkthrough-spec-006](docs/walkthrough-spec-006.md) | SPEC-006: the command centre's mutation slice |
 | [walkthrough-spec-007-008](docs/walkthrough-spec-007-008.md) | SPEC-007 and SPEC-008: the workflow surface and the MCP facet |
 | [walkthrough-spec-009-stage1](docs/walkthrough-spec-009-stage1.md) | SPEC-009 Stage 1: approval to gate 2, live, for 15,976 tokens |
-| [manual testing](docs/manual-testing.md) | Running Cromwell by hand, and rebuilding the smoke project |
+| [walkthrough-spec-013](docs/walkthrough-spec-013.md) | SPEC-013: a fresh Subutai project, and a Cromwell project carried across |
+| [manual testing](docs/manual-testing.md) | Running Subutai by hand, and rebuilding the smoke project |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
 | [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |
 | [Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) | Where the Subutai revision stands (2026-09-28), and the milestone plan to finish it |
@@ -81,8 +90,8 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 
 ## Phase plan
 
-- **Phase 1 — the vertical slice** (SPEC-001) ✅ **delivered**: `cromwell
-  init`, server + CLI, initiatives/features, document lifecycle with
+- **Phase 1 — the vertical slice** (SPEC-001) ✅ **delivered**: `init`,
+  server + CLI, initiatives/features, document lifecycle with
   validation and a real agent-reviewer, escalation inbox, complete audit and
   cost ledger. Proved the three load-bearing claims: code orchestrator,
   escalation-only human gates, ledger-by-construction.
@@ -111,8 +120,32 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
     - Send to development ([DEC-006](docs/decisions/DEC-006-humans-start-development.md), SPEC-011);
     - milestone and roadmap editing (SPEC-010);
     - transcripts, the feature timeline and review health (SPEC-012).
-  - **Next:** checklists, the rename, document identity and the editor,
-    executors, bugs, spikes, decisions, and GitHub adoption.
+  - **Built:** the rename to Subutai (SPEC-013).
+  - **Next:** checklists, document identity and the editor, executors, bugs,
+    spikes, decisions, and GitHub adoption.
+
+## Coming from Cromwell
+
+A project made with Cromwell loads under Subutai as it is, until the next
+release, and says what to rename:
+
+- **The project folder.** `.cromwell/` is read when there is no `.subutai/`.
+  Stop the server and run `git mv .cromwell .subutai`, then commit. A feature
+  that is building keeps its worktree: the server finds it in the renamed
+  folder and repairs it in git on start.
+- **Environment variables.** Each `CROMWELL_*` variable is read when its
+  `SUBUTAI_*` twin is unset. Rename them, and change `database.url_env` in
+  `config.yaml` to `SUBUTAI_DATABASE_URL`.
+- **The post-commit hook.** `subutai serve` points the hook `init` installed
+  at itself. A hook you have edited is left alone, with a note saying which
+  line to change.
+- **Chat clients.** The MCP endpoint is still `/mcp`, so a client added as
+  `cromwell` keeps working. Re-add it as `subutai` when you like.
+
+History stays as it was: past audit rows, actor names, commits by
+`cromwell <cromwell@localhost>`, and `cromwell/…` branches are not rewritten.
+The rules, and when they end, are in
+[SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md).
 
 ## Design notes
 

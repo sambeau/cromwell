@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/provider"
+	"subutai/internal/store"
 )
 
 // The web command centre handler suite (SPEC-004 NFR-4): the HTML handlers and
@@ -232,7 +232,7 @@ func TestUIEntityActions(t *testing.T) {
 
 	// FR-6.1: attaching a design document makes it appear in the Documents
 	// section and become the page's body — the capability that must exist
-	// before `cromwell doc add` can be removed (DEC-003).
+	// before `subutai doc add` can be removed (DEC-003).
 	designPath := "docs/design/login.md"
 	if err := os.MkdirAll(filepath.Join(h.root, "docs/design"), 0o755); err != nil {
 		t.Fatal(err)

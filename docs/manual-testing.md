@@ -1,4 +1,4 @@
-# Manual testing — how to run Cromwell and drive the command centre by hand
+# Manual testing — how to run Subutai and drive the command centre by hand
 
 A quick path from a clean checkout to a live web command centre you can click
 around in. Not a user manual — just enough to exercise the UI and the CLI
@@ -8,11 +8,12 @@ against a throwaway project.
 
 - **Go** (this repo builds with the toolchain in `go.mod`).
 - **Postgres 16.** A dev container is already running for the test suite —
-  `cromwell-pg-dev` on port **54329** (`postgres` / `cromwell`). You can reuse it
-  for manual play by creating a dedicated database (below), or point at any
-  Postgres you like. Without Docker, `eval "$(scripts/test-db.sh)"` starts a
+  `cromwell-pg-dev` on port **54329** (`postgres` / `cromwell`; it keeps its
+  name from before the rename). You can reuse it for manual play by creating a
+  dedicated database (below), or point at any Postgres you like. Without Docker, `eval "$(scripts/test-db.sh)"` starts a
   local cluster on 54329 from the installed PostgreSQL binaries and sets
-  `CROMWELL_TEST_DATABASE_URL` (user `postgres`, no password). Claude Code
+  `SUBUTAI_TEST_DATABASE_URL` (user `postgres`, no password), and, until the
+  next release, its old name `CROMWELL_TEST_DATABASE_URL` too. Claude Code
   cloud sessions do this automatically through the SessionStart hook.
 - **No LLM provider is needed** for most of the surface. Reads, estimates,
   milestones, roadmaps, the tree lifecycle, and the archive → checkpoint →
@@ -23,45 +24,45 @@ against a throwaway project.
 ## 1. Build
 
 ```sh
-go build -o /tmp/cromwell ./cmd/cromwell
+go build -o /tmp/subutai ./cmd/subutai
 ```
 
-(Anywhere on `PATH` is fine; `/tmp/cromwell` keeps it out of the repo.)
+(Anywhere on `PATH` is fine; `/tmp/subutai` keeps it out of the repo.)
 
 ## 2. Make a throwaway project
 
 ```sh
 # a dedicated database on the dev container (skip if you have your own Postgres)
-docker exec cromwell-pg-dev psql -U postgres -c "CREATE DATABASE cromwell_manual"
+docker exec cromwell-pg-dev psql -U postgres -c "CREATE DATABASE subutai_manual"
 
-export CROMWELL_DATABASE_URL="postgres://postgres:cromwell@localhost:54329/cromwell_manual"
+export SUBUTAI_DATABASE_URL="postgres://postgres:cromwell@localhost:54329/subutai_manual"
 export ANTHROPIC_API_KEY=sk-unused        # a placeholder is fine unless you dispatch agents
 
 # a git repo is required — documents live in git
-mkdir -p /tmp/cromwell-play && cd /tmp/cromwell-play
+mkdir -p /tmp/subutai-play && cd /tmp/subutai-play
 git init -q && git commit -qm init --allow-empty
 
-# init applies the schema and writes .cromwell/ (run it from inside the project)
-/tmp/cromwell init
+# init applies the schema and writes .subutai/ (run it from inside the project)
+/tmp/subutai init
 ```
 
 ## 3. Turn on the web UI
 
 `init` does not enable the TCP listener; the UI is served there. Add a
-`server:` block to `.cromwell/config.yaml`:
+`server:` block to `.subutai/config.yaml`:
 
 ```yaml
 server:
   http: 127.0.0.1:8799        # the web UI + JSON API live here
-  socket: /tmp/cromwell.sock  # keep this SHORT (see Gotchas)
+  socket: /tmp/subutai.sock   # keep this SHORT (see Gotchas)
   ui_actor: you@example.com   # the identity your browser actions are audited as
 ```
 
 ## 4. Start the server
 
 ```sh
-cd /tmp/cromwell-play
-/tmp/cromwell serve --repo /tmp/cromwell-play
+cd /tmp/subutai-play
+/tmp/subutai serve
 ```
 
 You should see it listening on both the unix socket (the CLI) and
@@ -75,12 +76,12 @@ curl -s http://127.0.0.1:8799/api/status
 
 ## 5. Seed something to look at
 
-In the second terminal (same `CROMWELL_DATABASE_URL` exported). The CLI talks to
+In the second terminal (same `SUBUTAI_DATABASE_URL` exported). The CLI talks to
 the running server over TCP automatically because `server.http` is set:
 
 ```sh
-export CROMWELL_DATABASE_URL="postgres://postgres:cromwell@localhost:54329/cromwell_manual"
-C=/tmp/cromwell
+export SUBUTAI_DATABASE_URL="postgres://postgres:cromwell@localhost:54329/subutai_manual"
+C=/tmp/subutai
 
 $C initiative add auth   --name "Authentication"
 $C initiative add billing --name "Billing"
@@ -179,7 +180,7 @@ your `ui_actor`.
 
 To watch a document review *escalate* into the inbox, or run an implementation
 loop, the server has to dispatch a real agent. Point a provider at a cheap,
-billing-capped model in `.cromwell/config.yaml` (e.g. DeepSeek via its
+billing-capped model in `.subutai/config.yaml` (e.g. DeepSeek via its
 Anthropic-compatible gateway: `base_url: https://api.deepseek.com/anthropic`),
 set its key in the environment, then `submit` a document. When the reviewer
 escalates, the checkpoint appears in the Inbox *and* the Documents view offers
@@ -189,8 +190,8 @@ is not needed to exercise everything above.
 ## 8. The smoke project, rebuilt with one script
 
 The live smokes of the authoring chain ([SPEC-009 walkthrough](walkthrough-spec-009-stage1.md))
-ran against a smoke project in `/tmp/cromwell-smoke`. That project is gone.
-`scripts/smoke-project.sh` rebuilds it:
+ran against a smoke project in `/tmp/cromwell-smoke`, made before the rename. That
+project is gone. `scripts/smoke-project.sh` rebuilds it, now in `/tmp/subutai-smoke`:
 
 ```sh
 eval "$(scripts/test-db.sh)"     # or set SMOKE_DATABASE_URL to a local Postgres
@@ -199,8 +200,8 @@ scripts/smoke-project.sh
 
 It makes no AI calls. It:
 
-- builds `/tmp/cromwell` and runs `cromwell init` in `/tmp/cromwell-smoke`,
-  against a database called `cromwell_smoke`;
+- builds `/tmp/subutai` and runs `subutai init` in `/tmp/subutai-smoke`,
+  against a database called `subutai_smoke`;
 - puts every role on one model, by default `deepseek-chat` through DeepSeek's
   Anthropic-compatible gateway, keyed by `DEEPSEEK_API_KEY`;
 - turns on the `write-spec` and `write-dev-plan` assignments, so a feature
@@ -225,8 +226,8 @@ To use another model or provider, set these before running it:
 | `SMOKE_BASE_URL` | `https://api.deepseek.com/anthropic` (set it empty for Anthropic's own endpoint) |
 | `SMOKE_API_KEY_ENV` | `DEEPSEEK_API_KEY` |
 | `SMOKE_PRICE_IN`, `SMOKE_PRICE_OUT` | `0.27`, `1.10` USD per million tokens |
-| `SMOKE_DIR`, `SMOKE_BIN` | `/tmp/cromwell-smoke`, `/tmp/cromwell` |
-| `SMOKE_HTTP`, `SMOKE_SOCKET` | `127.0.0.1:8801`, `/tmp/cromwell-smoke.sock` |
+| `SMOKE_DIR`, `SMOKE_BIN` | `/tmp/subutai-smoke`, `/tmp/subutai` |
+| `SMOKE_HTTP`, `SMOKE_SOCKET` | `127.0.0.1:8801`, `/tmp/subutai-smoke.sock` |
 
 For example, on Anthropic:
 
@@ -243,13 +244,13 @@ to rebuild both. It also refuses a database URL that isn't on `localhost`.
 
 - **Keep `server.socket` short.** On macOS the unix socket path caps at ~104
   bytes, and the socket is *always* bound now (it's the CLI's transport) — a
-  deep project path will fail to bind with "invalid argument". `/tmp/cromwell.sock`
+  deep project path will fail to bind with "invalid argument". `/tmp/subutai.sock`
   is safe.
 - **No `server.http` → no UI.** Without it the server runs for the CLI over the
   socket only; the web UI port is simply closed.
-- **`init` runs once, from inside the project**, and needs `CROMWELL_DATABASE_URL`
+- **`init` runs once, from inside the project**, and needs `SUBUTAI_DATABASE_URL`
   set. A second `init` refuses by design.
-- **Throwaway only.** Don't point `CROMWELL_DATABASE_URL` at anything real, and
+- **Throwaway only.** Don't point `SUBUTAI_DATABASE_URL` at anything real, and
   don't reuse the test database name — the automated suite drops and recreates
   its own schemas.
 
@@ -257,6 +258,6 @@ to rebuild both. It also refuses a database URL that isn't on `localhost`.
 
 ```sh
 # Ctrl-C the server, then:
-docker exec cromwell-pg-dev psql -U postgres -c "DROP DATABASE cromwell_manual"
-rm -rf /tmp/cromwell-play /tmp/cromwell.sock
+docker exec cromwell-pg-dev psql -U postgres -c "DROP DATABASE subutai_manual"
+rm -rf /tmp/subutai-play /tmp/subutai.sock
 ```

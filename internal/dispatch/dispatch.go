@@ -17,11 +17,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/config"
-	"cromwell/internal/provider"
-	"cromwell/internal/store"
-	"cromwell/internal/toolhost"
+	"subutai/internal/bus"
+	"subutai/internal/config"
+	"subutai/internal/provider"
+	"subutai/internal/store"
+	"subutai/internal/toolhost"
 )
 
 // ReviewOutcomeTool is the reviewer's single outcome tool (O-2). Every

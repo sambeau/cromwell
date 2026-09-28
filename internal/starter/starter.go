@@ -1,23 +1,30 @@
 // Package starter ships the embedded starter pack and implements
-// `cromwell init` (FR-1.1/1.2, vision §12): copy the pack, generate
+// `subutai init` (FR-1.1/1.2, vision §12): copy the pack, generate
 // config.yaml, write the pack lock with shipped hashes (DESIGN-004 §8),
 // install the post-commit hook, and apply migrations.
 package starter
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"syscall"
 
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/config"
-	"cromwell/internal/store"
+	"subutai/internal/compat"
+	"subutai/internal/config"
+	"subutai/internal/store"
 )
 
 //go:embed pack
@@ -29,7 +36,7 @@ const PackVersion = "0.1.0"
 const generatedConfig = `version: 1
 
 database:
-  url_env: CROMWELL_DATABASE_URL
+  url_env: SUBUTAI_DATABASE_URL
 
 budget:
   period: monthly
@@ -96,27 +103,83 @@ commands:
 `
 
 const hookScript = `#!/bin/sh
-# Installed by cromwell init: notify the server of document changes
+# Installed by subutai init: notify the server of document changes
 # (FR-4.2). Silent no-op when the server is not running.
 exec %q hook post-commit --repo %q >/dev/null 2>&1 || true
 `
 
+// hookShape matches a hook that init wrote, from either product, and
+// captures the product and the two %q-quoted arguments. Recognising
+// Cromwell's version is compat(M7).
+var hookShape = regexp.MustCompile(`\A#!/bin/sh\n` +
+	`# Installed by (subutai|cromwell) init: notify the server of document changes\n` +
+	`# \(FR-4\.2\)\. Silent no-op when the server is not running\.\n` +
+	`exec ("(?:[^"\\]|\\.)*") hook post-commit --repo ("(?:[^"\\]|\\.)*") >/dev/null 2>&1 \|\| true\n\z`)
+
+// RefreshHook keeps the post-commit hook init installed pointing at the
+// running binary (SPEC-013 §3.4). It rewrites the hook only when init wrote
+// it (its exact shape), and only when it is Cromwell's, names an executable
+// that no longer exists, or names another repository. A hook a person has
+// edited, or removed, is left alone. It never points the hook at a binary
+// in Go's build cache, which is gone when `go run` exits.
+//
+// The note says what happened, for the caller to print; it is empty when
+// there is nothing to say.
+func RefreshHook(repoRoot, executable string) (note string, err error) {
+	hookPath := filepath.Join(repoRoot, ".git", "hooks", "post-commit")
+	data, err := os.ReadFile(hookPath)
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		// No hook, or .git is a file (a linked worktree or submodule),
+		// where init couldn't have installed one either.
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	m := hookShape.FindSubmatch(data)
+	if m == nil {
+		if bytes.Contains(data, []byte("hook post-commit")) {
+			return fmt.Sprintf("warning: .git/hooks/post-commit has been edited, so it was left alone; "+
+				"if it runs an old binary, change its exec line to run %s", executable), nil
+		}
+		return "", nil
+	}
+	product := string(m[1])
+	oldExe, err1 := strconv.Unquote(string(m[2]))
+	oldRepo, err2 := strconv.Unquote(string(m[3]))
+	if err1 != nil || err2 != nil {
+		return "", nil
+	}
+	_, statErr := os.Stat(oldExe)
+	stale := product == "cromwell" || statErr != nil || oldRepo != repoRoot // "cromwell": compat(M7)
+	if !stale {
+		return "", nil
+	}
+	if strings.Contains(executable, string(filepath.Separator)+"go-build") {
+		return fmt.Sprintf("warning: .git/hooks/post-commit runs %s; serve from a built binary to update it", oldExe), nil
+	}
+	if err := os.WriteFile(hookPath, []byte(fmt.Sprintf(hookScript, executable, repoRoot)), 0o755); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("updated .git/hooks/post-commit to run %s", executable), nil
+}
+
 // Init runs once per project. It refuses to run twice (D-3) and applies all
 // migrations transactionally.
 func Init(ctx context.Context, repoRoot, executable string) error {
-	compRoot := filepath.Join(repoRoot, ".cromwell")
-	if _, err := os.Stat(compRoot); err == nil {
-		return fmt.Errorf(".cromwell/ already exists at %s; init runs once per project (use upgrade when it exists in a later phase)", compRoot)
+	compRoot := filepath.Join(repoRoot, compat.Folder)
+	if compat.HasFolder(repoRoot) { // either name: compat(M7)
+		return fmt.Errorf("%s already has a project folder (.subutai/ or .cromwell/); init runs once per project (use upgrade when it exists in a later phase)", repoRoot)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, ".git")); err != nil {
-		return fmt.Errorf("%s is not a git repository (cromwell manages documents in git)", repoRoot)
+		return fmt.Errorf("%s is not a git repository (subutai manages documents in git)", repoRoot)
 	}
 
 	// The database must be reachable before we write anything, so a failed
-	// init leaves no partial .cromwell/ behind (FR-1.2).
-	dbURL := os.Getenv("CROMWELL_DATABASE_URL")
+	// init leaves no partial .subutai/ behind (FR-1.2).
+	dbURL := compat.Getenv("SUBUTAI_DATABASE_URL")
 	if dbURL == "" {
-		return fmt.Errorf("CROMWELL_DATABASE_URL is not set (secrets live in the environment, never in files — NFR-4)")
+		return fmt.Errorf("SUBUTAI_DATABASE_URL is not set (secrets live in the environment, never in files — NFR-4)")
 	}
 	conn, err := pgx.Connect(ctx, dbURL)
 	if err != nil {
@@ -170,7 +233,7 @@ func Init(ctx context.Context, repoRoot, executable string) error {
 		cleanup()
 		return err
 	}
-	writes["pack.lock.yaml"] = "# Machine-managed by cromwell init/upgrade; do not edit (DESIGN-004 §8).\n" + string(lockBytes)
+	writes["pack.lock.yaml"] = "# Machine-managed by subutai init/upgrade; do not edit (DESIGN-004 §8).\n" + string(lockBytes)
 	for rel, body := range writes {
 		if err := os.WriteFile(filepath.Join(compRoot, rel), []byte(body), 0o644); err != nil {
 			cleanup()

@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/lifecycle"
-	"cromwell/internal/store"
+	"subutai/internal/lifecycle"
+	"subutai/internal/store"
 )
 
 // The chat agent's milestone and roadmap tools (SPEC-010 FR-7). They are

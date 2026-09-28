@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/bus"
-	"cromwell/internal/store"
+	"subutai/internal/bus"
+	"subutai/internal/store"
 )
 
 // The MCP tool handlers (SPEC-008 FR-2, FR-3). Each calls the SAME gated,

@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"cromwell/internal/lifecycle"
+	"subutai/internal/lifecycle"
 )
 
 // seedFeature creates an initiative + feature and returns the feature id.
@@ -136,19 +136,19 @@ func TestWorktreeAndSpecStale(t *testing.T) {
 	fid := seedFeature(t, s)
 
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		w, err := CreateWorktreeRow(ctx, tx, fid, ".cromwell/worktrees/login", "cromwell/auth/login", "sam")
+		w, err := CreateWorktreeRow(ctx, tx, fid, ".subutai/worktrees/login", "subutai/auth/login", "sam")
 		if err != nil {
 			return err
 		}
 		_ = w
-		return SetFeatureBranch(ctx, tx, fid, "cromwell/auth/login")
+		return SetFeatureBranch(ctx, tx, fid, "subutai/auth/login")
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	wt, err := LiveWorktreeForFeature(ctx, s.Pool, fid)
-	if err != nil || wt.Branch != "cromwell/auth/login" {
+	if err != nil || wt.Branch != "subutai/auth/login" {
 		t.Fatalf("worktree: %+v %v", wt, err)
 	}
 
