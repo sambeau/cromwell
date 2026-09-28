@@ -227,15 +227,18 @@ func LoadManifest(root, docType string) (*Manifest, error) {
 	if m.Type != docType {
 		errs = append(errs, errf(rel, "type", "is %q but the directory says %q", m.Type, docType))
 	}
-	if m.ReviewerRole == "" {
-		errs = append(errs, errf(rel, "reviewer_role", "required"))
-	}
 	switch m.ApprovedBy {
 	case "agent", "human":
 	case "":
 		m.ApprovedBy = "agent"
 	default:
 		errs = append(errs, errf(rel, "approved_by", "unknown authority %q: agent | human", m.ApprovedBy))
+	}
+	// A reviewer is required where it is the approver. Where a person
+	// approves, it is optional: the design reviewer is retired (SPEC-011
+	// FR-10.2), and a design with no reviewer role simply waits for a person.
+	if m.ReviewerRole == "" && m.ApprovedBy == "agent" {
+		errs = append(errs, errf(rel, "reviewer_role", "required when the agent approves this type"))
 	}
 	switch m.Sections.Order {
 	case "strict", "any":
@@ -376,7 +379,7 @@ func Load(root string, knownRuleKinds map[string]bool) (*Compartment, error) {
 		}
 	}
 	for docType, m := range c.Manifests {
-		if _, ok := c.Roles[m.ReviewerRole]; !ok {
+		if _, ok := c.Roles[m.ReviewerRole]; !ok && m.ReviewerRole != "" {
 			errs = append(errs, errf(filepath.Join("templates", docType, "manifest.yaml"),
 				"reviewer_role", "unknown role %q", m.ReviewerRole))
 		}

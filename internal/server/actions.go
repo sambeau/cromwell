@@ -43,6 +43,12 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 			return err
 		}
 		snap.Doc = s.docSnap(doc)
+		// The review loop's inputs (SPEC-011): whether an agent approval
+		// would be held, and which human issues are open.
+		snap.Doc.Held = s.specHeld(ctx, doc)
+		if snap.Doc.OpenIssues, err = s.openIssueIDs(ctx, doc.ID); err != nil {
+			return err
+		}
 		if doc.OwnerType == "feature" && doc.OwnerID != nil {
 			f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID)
 			if err == nil {
@@ -181,6 +187,14 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 		return s.applyDesignRevision(ctx, a)
 	case rules.ReindexDocument:
 		return s.reindexDocument(ctx, a.DocID)
+	case rules.ReviseAuthoredDocument:
+		return s.reviseAuthoredDocument(ctx, a)
+	case rules.HoldDocument:
+		return s.holdDocument(ctx, a)
+	case rules.AnswerIssues:
+		return s.answerIssues(ctx, a)
+	case rules.EstimateFeature:
+		return s.estimateFeature(ctx, a.FeatureID)
 	case rules.ArchiveInitiative:
 		return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			return store.ArchiveInitiative(ctx, tx, a.InitiativeID, a.Actor, a.Reason)
@@ -223,6 +237,28 @@ func (s *Server) queueReview(ctx context.Context, a rules.QueueReview) error {
 	if err != nil {
 		return s.configErrorCheckpoint(ctx, "document", a.DocID, err)
 	}
+	// A type with no reviewer — a design, now its reviewer is retired
+	// (SPEC-011 FR-10.2) — waits in reviewing for a person.
+	if manifest.ReviewerRole == "" {
+		return nil
+	}
+	// With agent spec review switched off, a submitted spec is held for a
+	// person rather than reviewed (FR-5.3). A person's request is the one
+	// exception: a one-off review, whose approval is held again.
+	if a.DocType == "spec" && !a.Fresh && !cfg.AgentSpecReview() {
+		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			return store.SetDocumentHold(ctx, tx, a.DocID, nil, "orchestrator",
+				"agent review is switched off for this project, so the spec waits for a person")
+		})
+		if err == nil {
+			s.notifyEntityChanged("document", a.DocID)
+		}
+		return err
+	}
+	key, err := s.reviewKey(ctx, a)
+	if err != nil {
+		return err
+	}
 	role, err := config.LoadRole(s.CompartmentRoot, manifest.ReviewerRole)
 	if err != nil {
 		return s.configErrorCheckpoint(ctx, "document", a.DocID, err)
@@ -233,7 +269,7 @@ func (s *Server) queueReview(ctx context.Context, a rules.QueueReview) error {
 		model = override
 	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		_, err := store.EnqueueDispatch(ctx, tx, purpose, role.Name, model, "document", a.DocID, a.IdempotencyKey)
+		_, err := store.EnqueueDispatch(ctx, tx, purpose, role.Name, model, "document", a.DocID, key)
 		return err
 	})
 	if err == nil {
@@ -283,8 +319,12 @@ func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) e
 
 	from := doc.State
 	var archived string
+	var planMoves []archivedMove
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocApprove, actor, nil); err != nil {
+			return err
+		}
+		if err := store.ClearDocumentHold(ctx, tx, doc.ID); err != nil {
 			return err
 		}
 		for _, c := range a.Comments {
@@ -307,6 +347,12 @@ func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) e
 			}
 			if err := store.UpdateDocumentPath(ctx, tx, doc.ID, canonicalPath); err != nil {
 				return err
+			}
+			// A revised spec takes its plan with the old one (SPEC-011
+			// FR-6.6): the plan decomposed a contract that no longer stands.
+			var e error
+			if planMoves, e = s.supersedePlanWithSpec(ctx, tx, doc); e != nil {
+				return e
 			}
 		}
 		return nil
@@ -332,6 +378,9 @@ func (s *Server) approveDocument(ctx context.Context, a rules.ApproveDocument) e
 			}
 		}
 		doc.Path = canonicalPath
+	}
+	if err := s.archiveInvalidatedFiles(planMoves); err != nil {
+		s.Log.Error("superseded plan archive failed", "doc", doc.ID, "err", err)
 	}
 
 	s.Bus.Publish(bus.DocumentTransitioned{
@@ -391,6 +440,9 @@ func (s *Server) returnForChanges(ctx context.Context, a rules.ReturnForChanges)
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionDocument(ctx, tx, doc, lifecycle.DocRequestChanges, a.Actor,
 			map[string]any{"comments": len(a.Comments)}); err != nil {
+			return err
+		}
+		if err := store.ClearDocumentHold(ctx, tx, doc.ID); err != nil {
 			return err
 		}
 		for _, c := range a.Comments {

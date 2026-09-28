@@ -51,6 +51,9 @@ type ReviewPromptInput struct {
 	// FR-2.2): the task asks for comments via submit_comments and offers no
 	// verdict, because the approval decision belongs to a person.
 	CommentsOnly bool
+	// HumanIssues is the rendered section listing the document's open human
+	// issues and how to answer them (SPEC-011 FR-6.3); empty when none.
+	HumanIssues string
 }
 
 // AssembleReviewPrompt renders the system and user strings for a reviewer
@@ -108,6 +111,10 @@ func AssembleReviewPrompt(in ReviewPromptInput) (system, user string) {
 		}
 		u.WriteString("\nVerify these were addressed rather than re-reviewing cold.\n")
 	}
+
+	// Human issues are must-address and are answered one by one (SPEC-011
+	// FR-6.3), so they come last before the document, apart from findings.
+	u.WriteString(in.HumanIssues)
 
 	u.WriteString(fmt.Sprintf("\n## Document under review (%s)\n\n%s\n", in.DocPath, strings.TrimSpace(in.DocBody)))
 

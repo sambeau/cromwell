@@ -1,16 +1,17 @@
 package server
 
-// The authoring chain (SPEC-009 Stage 1). Approving a design document is the
-// single act that means "ready to spec"; from there the orchestrator carries a
-// feature to decomposition with no further human involvement, and stops at
-// gate 2 — a human starting the work.
+// The authoring chain (SPEC-009 Stage 1, retriggered by SPEC-011). Approving a
+// design records what we want and starts nothing; a person pressing Send to
+// development is what commits resources (DEC-006). From the send, the
+// orchestrator carries a feature to decomposition and an estimate with no
+// further human involvement, and stops at gate 2 — Start building.
 //
 // The chain is expressed as two invariants rather than a sequence of steps
-// (FR-4), because width-first planning means approvals, features and
-// descriptions arrive in any order:
+// (FR-4), because width-first planning means approvals, features, descriptions
+// and sends arrive in any order:
 //
-//	every feature G0 admits, and that has a description, has a current spec
-//	every feature with an approved spec has a current dev-plan
+//	every sent feature G0 admits, and that has a description, has a current spec
+//	every sent feature with an approved spec has a current dev-plan
 //
 // Stating them this way means the heartbeat can reconcile them: a feature that
 // should have a spec and does not eventually gets one even if an event was
@@ -81,6 +82,12 @@ func (s *Server) neededAuthoring(ctx context.Context, featureID uuid.UUID) (stri
 	if f.State != lifecycle.FeatIdea {
 		return "", nil
 	}
+	// Nothing runs before Send (SPEC-011 FR-2.1, FR-2.2, SD-2): both
+	// invariants need the mark, so a design approval, a new feature or a
+	// description re-checks and finds nothing to do for an unsent feature.
+	if sent, err := s.featureSent(ctx, f); err != nil || !sent {
+		return "", err
+	}
 
 	// Invariant 1 — the spec.
 	spec, specErr := store.CurrentDocForOwner(ctx, s.Store.Pool, "spec", "feature", f.ID)
@@ -119,22 +126,10 @@ func (s *Server) neededAuthoring(ctx context.Context, featureID uuid.UUID) (stri
 // retry, and a sweep that re-enqueued it every thirty seconds would override
 // a human's answer to that question.
 func (s *Server) ReconcileAuthoringSweep(ctx context.Context) {
-	rows, err := s.Store.Pool.Query(ctx, `SELECT id FROM features WHERE state = 'idea'`)
+	// Sent features only (SPEC-011 FR-2.4): an unsent feature has no gap to
+	// fill, because nothing is owed to it until someone sends it.
+	ids, err := store.SentIdeaFeatureIDs(ctx, s.Store.Pool)
 	if err != nil {
-		s.Log.Error("authoring sweep", "err", err)
-		return
-	}
-	defer rows.Close()
-	var ids []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			s.Log.Error("authoring sweep", "err", err)
-			return
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
 		s.Log.Error("authoring sweep", "err", err)
 		return
 	}
@@ -176,6 +171,24 @@ func (s *Server) reconcileAuthoringScope(ctx context.Context, ownerType string, 
 	// A design owned by the project releases nothing on its own: a project is
 	// not an initiative, and its features live below one.
 	return nil
+}
+
+// featureSent is the one predicate for "has this feature been sent to
+// development" (SPEC-011 FR-1.2): it carries the mark, or it is being built.
+// Start building is a stronger commitment than Send, so a feature started
+// before the mark existed, or with its documents written by hand, still gets
+// its spec rewritten when its design is revised mid-build (SD-3). A ready
+// feature without the mark is not sent: DESIGN-010 §5 leaves it without a
+// spec until someone sends it.
+func (s *Server) featureSent(ctx context.Context, f *store.Feature) (bool, error) {
+	if f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview {
+		return true, nil
+	}
+	_, err := store.GetFeatureSend(ctx, s.Store.Pool, f.ID)
+	if err == store.ErrNotFound {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // queueAuthoring enqueues an authoring dispatch for a feature. The idempotency

@@ -46,6 +46,12 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 	} else if blocked {
 		return nil, fmt.Errorf("feature %s cannot start yet: its design was revised and a question in the Inbox asks whether the specification still stands — answer it first", path)
 	}
+	// A contract under revision blocks the start (SPEC-011 FR-6.7): an issue
+	// raised on an approved spec opens a successor, and building against the
+	// version it is replacing would waste the work.
+	if !s.currentDocApproved(ctx, "spec", f.ID) || !s.currentDocApproved(ctx, "dev_plan", f.ID) {
+		return nil, fmt.Errorf("This feature's specification or dev-plan is being revised, so building can't start until the revision is approved.")
+	}
 	branch := "cromwell/" + path
 	relPath := filepath.Join(".cromwell", "worktrees", store.ShortID("feat", f.ID))
 

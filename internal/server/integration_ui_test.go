@@ -604,6 +604,9 @@ An email field, a password field, and a session cookie on success.
 // move it.
 func TestUIDesignReviewIsHumanDecided(t *testing.T) {
 	h := newHarness(t)
+	// A project from before SPEC-011 keeps its design reviewer (SD-8): this
+	// test is SPEC-009's FR-2 loop, run on such a project.
+	h.legacyDesignReviewer()
 	ctx := context.Background()
 
 	if code, out := h.call("POST", "/api/initiatives", map[string]string{"slug": "platform", "name": "Platform"}); code != 201 {
