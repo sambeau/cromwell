@@ -166,6 +166,15 @@ func (s *Server) mcpOwnerOf(ctx context.Context, ownerType string, ownerID *uuid
 	return out
 }
 
+// publicOrRow is what a result calls a thing: its ID, or its row id if it
+// has none (SPEC-017 SD-9). Lookups accept either.
+func publicOrRow(publicID string, id uuid.UUID) string {
+	if publicID != "" {
+		return publicID
+	}
+	return id.String()
+}
+
 func (s *Server) mcpMilestoneSummary(ctx context.Context, m *store.Milestone) (map[string]any, error) {
 	card, err := s.milestoneCardFor(ctx, *m)
 	if err != nil {
@@ -177,7 +186,7 @@ func (s *Server) mcpMilestoneSummary(ctx context.Context, m *store.Milestone) (m
 		state = "shipped"
 	}
 	out := map[string]any{
-		"id": m.ID.String(), "name": m.Name, "description": m.Description,
+		"id": publicOrRow(m.PublicID, m.ID), "row_id": m.ID.String(), "name": m.Name, "description": m.Description,
 		"state": state, "owner": s.mcpOwnerOf(ctx, m.OwnerType, m.OwnerID),
 		"items_done": card.Done, "items_total": card.Total,
 		"url": "/ui/m/" + m.ID.String(),
@@ -207,7 +216,7 @@ func (s *Server) mcpRoadmapSummary(ctx context.Context, rm *store.Roadmap) (map[
 		ms = append(ms, sum)
 	}
 	return map[string]any{
-		"id": rm.ID.String(), "name": rm.Name, "owner": s.mcpOwnerOf(ctx, rm.OwnerType, rm.OwnerID),
+		"id": publicOrRow(rm.PublicID, rm.ID), "row_id": rm.ID.String(), "name": rm.Name, "owner": s.mcpOwnerOf(ctx, rm.OwnerType, rm.OwnerID),
 		"milestones": ms, "url": "/ui/r/" + rm.ID.String(),
 	}, nil
 }
@@ -453,8 +462,12 @@ func (s *Server) mcpGetMilestone(r *http.Request, args map[string]any) (any, err
 	members := make([]any, 0, len(rows))
 	for _, row := range rows {
 		mem := map[string]any{"type": row.Kind, "name": row.Label, "done": row.Done}
+		if row.PublicID != "" {
+			mem["id"] = row.PublicID
+		}
 		if row.Kind == "milestone" || row.Kind == "checklist" {
-			mem["id"] = row.ID.String()
+			mem["id"] = publicOrRow(row.PublicID, row.ID)
+			mem["row_id"] = row.ID.String()
 		} else {
 			mem["path"] = strings.TrimPrefix(strings.TrimPrefix(row.URL, "/ui/f/"), "/ui/i/")
 		}

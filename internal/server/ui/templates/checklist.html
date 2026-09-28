@@ -19,7 +19,7 @@
       <svg class="icon icon-md icon-entity" data-entity="checklist" aria-hidden="true"><use href="#i-checklist"/></svg>
     </span>
     <div class="page-head-titles">
-      <h1 class="t-page">{{.Checklist.Name}}</h1>
+      <h1 class="t-page">{{template "ident" .Checklist.PublicID}}{{.Checklist.Name}}</h1>
       <div class="page-head-meta">
         {{if .Card.Done}}{{template "state-badge" "done"}}{{else}}{{template "state-badge" "open"}}{{end}}
         <span class="t-meta u-row">
@@ -114,7 +114,7 @@
 {{define "checklist-editor-dialog"}}
 <dialog class="modal modal--wide" id="dlg-checklist" data-autoshow data-refresh-on-close aria-labelledby="t-checklist-editor">
   <div class="modal-head">
-    <h2 class="modal-title" id="t-checklist-editor"><svg class="icon icon-md" aria-hidden="true"><use href="#i-checklist"/></svg> {{.Checklist.Name}}</h2>
+    <h2 class="modal-title" id="t-checklist-editor"><svg class="icon icon-md" aria-hidden="true"><use href="#i-checklist"/></svg> {{template "ident" .Checklist.PublicID}}{{.Checklist.Name}}</h2>
     <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
   </div>

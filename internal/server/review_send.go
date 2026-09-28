@@ -119,6 +119,14 @@ func (s *Server) holdDocument(ctx context.Context, a rules.HoldDocument) error {
 				return err
 			}
 		}
+		if a.DispatchID != nil {
+			// The reviewer's approval is a verdict, held (SPEC-017 SD-6).
+			v := s.agentVerdict(ctx, a.DocID, store.VerdictApprove, a.Actor, *a.DispatchID)
+			v.Held = true
+			if err := store.RecordVerdict(ctx, tx, v); err != nil {
+				return err
+			}
+		}
 		return store.SetDocumentHold(ctx, tx, a.DocID, a.DispatchID, a.Actor,
 			"the spec reviewer approved it, and this spec is held for a person")
 	})
@@ -383,7 +391,8 @@ func (s *Server) DirectApprove(ctx context.Context, docID uuid.UUID, act relayAc
 	if err := s.auditAct(ctx, doc.ID, act, "document.human_verdict", map[string]any{"verdict": "approve"}); err != nil {
 		return err
 	}
-	return s.approveDocument(ctx, rules.ApproveDocument{DocID: doc.ID, Actor: act.Actor})
+	return s.approveDocumentAs(ctx, rules.ApproveDocument{DocID: doc.ID, Actor: act.Actor},
+		personVerdict(doc.ID, store.VerdictApprove, act))
 }
 
 func submitHint(state lifecycle.DocumentState) string {
@@ -419,17 +428,21 @@ func (s *Server) SendBack(ctx context.Context, docID uuid.UUID, reason string, a
 		}); err != nil {
 			return err
 		}
-		return s.HumanReturnDocument(ctx, doc.ID, act.Actor, reason)
+		return s.humanReturnDocument(ctx, doc.ID, reason, act)
 	}
 	if err := s.checkIssueAllowed(ctx, doc); err != nil {
 		return err
 	}
-	return s.returnWithIssue(ctx, doc, reason, "", act)
+	return s.returnWithIssue(ctx, doc, reason, "", act, true)
 }
 
 // returnWithIssue records a human issue and sends the document back to draft
 // in one transaction, cancelling a queued review and any hold.
-func (s *Server) returnWithIssue(ctx context.Context, doc *store.Document, body, section string, act relayAct) error {
+//
+// verdict is set for a person's send-back (SD-15), which is a verdict; an
+// issue raised on a document in review sends it back too, but records none
+// (SPEC-017 FR-2.3).
+func (s *Server) returnWithIssue(ctx context.Context, doc *store.Document, body, section string, act relayAct, verdict bool) error {
 	from := doc.State
 	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if _, err := store.InsertIssue(ctx, tx, doc.ID, act.Actor, section, body, act.Via, act.Quote); err != nil {
@@ -440,6 +453,14 @@ func (s *Server) returnWithIssue(ctx context.Context, doc *store.Document, body,
 		}
 		if err := store.ClearDocumentHold(ctx, tx, doc.ID); err != nil {
 			return err
+		}
+		if verdict {
+			v := personVerdict(doc.ID, store.VerdictSendBack, act)
+			if err := store.RecordVerdict(ctx, tx, v); err != nil {
+				return err
+			}
+			return store.TransitionDocument(ctx, tx, doc, lifecycle.DocRequestChanges, act.Actor,
+				act.payload(map[string]any{"cause": "human issue", "verdict_by": store.GiverPerson}))
 		}
 		return store.TransitionDocument(ctx, tx, doc, lifecycle.DocRequestChanges, act.Actor,
 			act.payload(map[string]any{"cause": "human issue"}))
@@ -540,7 +561,7 @@ func (s *Server) RaiseIssue(ctx context.Context, docID uuid.UUID, body, section 
 	switch doc.State {
 	case lifecycle.DocReviewing:
 		if sent {
-			return doc, s.returnWithIssue(ctx, doc, body, section, act)
+			return doc, s.returnWithIssue(ctx, doc, body, section, act, false)
 		}
 		// Unsent: recorded only. A review in flight will meet it, and a
 		// verdict that didn't answer it is not applied (FR-6.4).
@@ -578,7 +599,10 @@ func (s *Server) RaiseIssue(ctx context.Context, docID uuid.UUID, body, section 
 		} else if live != nil {
 			return s.RaiseIssue(ctx, live.ID, body, section, act)
 		}
-		succ, err := s.ReviseDoc(ctx, doc.Path, act.Actor)
+		// The person who raised the issue opened the revision, relayed or
+		// not (SPEC-017 FR-2.2, R17-7).
+		succ, err := s.reviseDocBy(ctx, doc.Path, act.Actor,
+			writerAct{Act: store.ActOpenedRevision, Kind: store.WriterPerson, Actor: act.Actor, Via: act.Via})
 		if err != nil {
 			return nil, err
 		}
@@ -663,6 +687,85 @@ func (s *Server) RequestReview(ctx context.Context, docID uuid.UUID, act relayAc
 	return "", fmt.Errorf("Only a draft or a document in review can be reviewed; this one is %s.", doc.State)
 }
 
+// SubmitFromChat submits a draft the chat agent wrote, as the chat agent,
+// with no quote (SPEC-017 FR-1, SD-1): submitting is asking the orchestrator
+// to do what it would do anyway (DEC-005). It says what happens next, in the
+// project's own terms, so the chat agent can tell the person.
+func (s *Server) SubmitFromChat(ctx context.Context, doc *store.Document) (string, error) {
+	switch doc.State {
+	case lifecycle.DocDraft:
+	case lifecycle.DocReviewing:
+		return "", errors.New("This document is already in review. A fresh review is a person's call: relay it with relay_review_request and their words.")
+	case lifecycle.DocApproved:
+		return "", errors.New("This document is approved. To change it, a person revises it on its page, or raises an issue on it, which you can relay.")
+	default:
+		return "", fmt.Errorf("This revision of the document is %s; name the current one.", doc.State)
+	}
+	// A revision of a feature being built pauses its building until a person
+	// answers (SPEC-011 FR-6.7, revision-in-flight), so submitting one is the
+	// person's call, not a planning act (SPEC-017 SD-1, R17-1).
+	if doc.SupersedesID != nil && doc.OwnerType == "feature" && doc.OwnerID != nil {
+		if f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID); err == nil &&
+			(f.State == lifecycle.FeatActive || f.State == lifecycle.FeatReview) {
+			return "", errors.New("This is a revision of a feature that is being built, and submitting it pauses the building until a person decides. A person submits it on its page.")
+		}
+	}
+	if !s.hasTemplate(doc.Type) {
+		return "", fmt.Errorf("Documents of type %s have no template to check them against, so they can't be submitted for review yet.", doc.Type)
+	}
+	if err := s.refuseIfPending(ctx, doc); err != nil {
+		return "", err
+	}
+	if err := s.refuseIfAuthorAtWork(ctx, doc); err != nil {
+		return "", err
+	}
+	// The submission's own audit row says it came from chat (NFR-1: one
+	// transaction).
+	report, _, err := s.submitDocWith(ctx, doc.Path, s.mcpActor(),
+		map[string]any{"via": "mcp", "submitted_from_chat": true}, nil)
+	if err != nil {
+		return "", err
+	}
+	if !report.Valid {
+		return "", fmt.Errorf("The document doesn't pass its template's checks yet, so it stays a draft. Fix these and submit it again: %s", reportSentence(report))
+	}
+	s.notifyEntityChanged("document", doc.ID)
+	return s.afterSubmission(ctx, doc), nil
+}
+
+// afterSubmission says what happens to a document once it is submitted
+// (SPEC-017 FR-1.3).
+func (s *Server) afterSubmission(ctx context.Context, doc *store.Document) string {
+	words := docTypeWords(doc.Type)
+	if s.humanApprovalType(doc.Type) {
+		return "It is in review, and waits for a person to approve it, on its page or by telling you."
+	}
+	cfg, err := s.freshConfig()
+	if err != nil {
+		return "It is in review."
+	}
+	if doc.Type == "spec" && !cfg.AgentSpecReview() {
+		return "Agent review is switched off for this project, so the " + words + " waits for a person to approve it."
+	}
+	role := s.reviewerRole(doc.Type)
+	if role == "" {
+		return "It is in review, and waits for a person."
+	}
+	who := s.roleWho(cfg, "review-"+doc.Type, role)
+	reviewer := "The " + roleWords(role) + " (" + strings.TrimPrefix(who, role+" on ") + ")"
+	if doc.Type == "dev_plan" && doc.OwnerType == "feature" && doc.OwnerID != nil {
+		// An approved plan is broken into tasks at once, and with an approved
+		// spec the feature is ready to build, sent or not (SPEC-011 SD-2).
+		return "Its review is queued. " + reviewer + " decides whether the dev-plan is approved; you don't. " +
+			"Once it is approved, it is broken into tasks, and with an approved specification the feature is ready " +
+			"to build. Building starts only when a person presses Start building."
+	}
+	if s.specHeld(ctx, doc) {
+		return "Its review is queued. " + reviewer + " reviews the " + words + ", and then it is held for a person, who approves it or lets the reviewer decide. Neither verdict is yours."
+	}
+	return "Its review is queued. " + reviewer + " decides whether the " + words + " is approved; you don't."
+}
+
 func reportSentence(r *lifecycle.Report) string {
 	var parts []string
 	for _, is := range r.Issues {
@@ -728,7 +831,9 @@ func (s *Server) ReleaseHold(ctx context.Context, docID uuid.UUID, act relayAct)
 	if err := s.auditAct(ctx, doc.ID, act, "document.hold_released", map[string]any{"dispatch_id": d.ID.String()}); err != nil {
 		return err
 	}
-	return s.approveDocument(ctx, rules.ApproveDocument{DocID: doc.ID, Actor: d.Role, DispatchID: &d.ID})
+	v := s.agentVerdict(ctx, doc.ID, store.VerdictApprove, d.Role, d.ID)
+	v.ReleasedBy, v.ReleasedVia, v.ReleasedQuote = act.Actor, act.Via, act.Quote
+	return s.approveDocumentAs(ctx, rules.ApproveDocument{DocID: doc.ID, Actor: d.Role, DispatchID: &d.ID}, v)
 }
 
 // refuseIfAuthorAtWork refuses a person's submission of a draft while its

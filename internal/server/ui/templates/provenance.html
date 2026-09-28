@@ -1,0 +1,20 @@
+{{/* Who wrote a document, and who gave its latest verdict (SPEC-017 FR-2.5,
+     DESIGN-010 §8 "Everything is attributed"). One include on the document
+     page, directly under its heading. The sentences are built in
+     provenance.go, so the page, the MCP results and the send screen say it
+     the same way. */}}
+
+{{define "doc-written-by"}}
+<div class="page-head-meta doc-provenance" id="doc-written-by">
+  <span class="t-meta">
+    <svg class="icon icon-xs" aria-hidden="true"><use href="#i-edit"/></svg>
+    <span>{{.Written}}{{if not .WrittenAt.IsZero}} <time datetime="{{.WrittenAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.WrittenAt.Format "2 Jan 2006, 15:04:05"}}">{{ago .WrittenAt}} ago</time>{{end}}{{if .WrittenRun}} · <a href="{{.WrittenRun}}">What the agent did</a>{{end}}</span>
+  </span>
+  {{if .Verdict}}
+  <span class="t-meta">
+    <svg class="icon icon-xs" aria-hidden="true"><use href="#i-approve"/></svg>
+    <span>{{.Verdict}}{{if not .VerdictAt.IsZero}} <time datetime="{{.VerdictAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.VerdictAt.Format "2 Jan 2006, 15:04:05"}}">{{ago .VerdictAt}} ago</time>{{end}}{{if .VerdictRun}} · <a href="{{.VerdictRun}}">Read the review</a>{{end}}</span>
+  </span>
+  {{end}}
+</div>
+{{end}}

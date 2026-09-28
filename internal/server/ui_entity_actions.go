@@ -161,7 +161,8 @@ func (s *Server) handleEntityAttach(w http.ResponseWriter, r *http.Request) {
 		s.renderEntity(w, r, ownerType, deref(ownerID), "", "Enter the path of the Markdown file in the repository to attach.")
 		return
 	}
-	_, err := s.RegisterDocForOwner(r.Context(), path, docType, ownerType, ownerID, s.uiActor())
+	_, err := s.registerDocBy(r.Context(), path, docType, ownerType, ownerID, s.uiActor(),
+		writerAct{Act: store.ActAdded, Kind: store.WriterPerson, Actor: s.uiActor(), Via: "ui"})
 	if err != nil {
 		s.renderEntity(w, r, ownerType, deref(ownerID), "", err.Error())
 		return

@@ -108,6 +108,16 @@ func CurrentDocumentByPublicID(ctx context.Context, q Querier, publicID string) 
 		ORDER BY (state <> 'superseded') DESC, (state = 'approved') DESC, revision DESC LIMIT 1`, publicID))
 }
 
+// LiveDocumentByPublicID is an ID's newest revision that isn't superseded:
+// the one in review or draft while a revision is open, otherwise the one in
+// force. The relay tools act on it (SPEC-017 FR-3.1), because a person's
+// verdict or issue is about the text in front of them.
+func LiveDocumentByPublicID(ctx context.Context, q Querier, publicID string) (*Document, error) {
+	return scanDoc(q.QueryRow(ctx, `
+		SELECT `+docCols+` FROM documents WHERE public_id = $1 AND state <> 'superseded'
+		ORDER BY revision DESC LIMIT 1`, publicID))
+}
+
 // CurrentApprovedDocForOwner is the newest approved, unsuperseded document of
 // a type for an owner. The prompts that carry a feature's designs read this,
 // so a newer draft design can't hide an approved one (SPEC-015 FR-3.7).

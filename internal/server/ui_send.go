@@ -152,9 +152,29 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 				return false, "a draft that was sent back, which its author will revise"
 			}
 		}
-		return true, "already written (" + string(d.State) + ")"
+		// Say who wrote it, so a person sees the step is skipped because
+		// the chat agent or someone else did it (SPEC-017 FR-5.1).
+		ws, _ := s.writerHistory(ctx, *d)
+		return true, "Already written" + doneBy(ws) + ". This step is skipped."
 	}
 	approved := func(d *store.Document, err error) bool { return err == nil && d.State == lifecycle.DocApproved }
+	approvedNote := func(d *store.Document, extra string) string {
+		if v, err := store.LastVerdict(ctx, s.Store.Pool, d.ID); err == nil && v.Verdict == store.VerdictApprove {
+			return strings.TrimSuffix(verdictSentence(*v), ".") + extra + ". This step is skipped."
+		}
+		return "Already approved" + extra + ". This step is skipped."
+	}
+	// A draft nobody has submitted satisfies the invariant (SPEC-011 FR-2.1),
+	// so nothing will submit it for review: say so (SPEC-017 FR-5.2).
+	unsubmitted := func(d *store.Document, err error, words string) string {
+		if err != nil || d.State != lifecycle.DocDraft {
+			return ""
+		}
+		if waits, _ := s.waitsForAuthor(ctx, d); waits {
+			return ""
+		}
+		return "This " + words + " is a draft nobody has submitted, so it won't be reviewed until someone submits it, on its page or from chat."
+	}
 
 	v.Forecasts = true
 	add := func(step sendStep, purpose string) {
@@ -180,8 +200,9 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 	// 2. Review the spec.
 	st = sendStep{Name: "Review the specification", Done: approved(spec, specErr)}
 	if st.Done {
-		st.DoneNote = "already approved"
+		st.DoneNote = approvedNote(spec, "")
 	}
+	specNote := unsubmitted(spec, specErr, "specification")
 	switch {
 	case specHumanApproved:
 		st.Who = "you"
@@ -197,6 +218,9 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 		} else {
 			v.Reviewer = "The spec reviewer (" + st.Who + ") approves the specification."
 		}
+	}
+	if specNote != "" {
+		st.Note = specNote
 	}
 	if st.Who == "you" {
 		v.Steps = append(v.Steps, st)
@@ -221,7 +245,10 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 	// 5. Review the plan.
 	st = sendStep{Name: "Review the dev-plan", Who: s.roleWho(cfg, "review-dev_plan", s.reviewerRole("dev_plan")), Done: approved(plan, planErr)}
 	if st.Done {
-		st.DoneNote = "already approved; its tasks are decomposed"
+		st.DoneNote = approvedNote(plan, ", and its tasks are decomposed")
+	}
+	if n := unsubmitted(plan, planErr, "dev-plan"); n != "" {
+		st.Note = n
 	}
 	add(st, "review-dev_plan")
 
@@ -230,7 +257,7 @@ func (s *Server) sendFeatureView(ctx context.Context, cfg *config.Config, f *sto
 	if est, err := store.CurrentEstimate(ctx, s.Store.Pool, "feature", f.ID); err == nil {
 		v.Estimate = fmt.Sprintf("This feature is estimated at %s tokens to build (%s).", humanTokens(est.Tokens), est.Tier)
 		if approved(plan, planErr) && plan.ApprovedAt != nil && est.CreatedAt.After(*plan.ApprovedAt) {
-			st.Done, st.DoneNote = true, "already estimated"
+			st.Done, st.DoneNote = true, "Already estimated. This step is skipped."
 		}
 	}
 	if st.Who == "" && !st.Done {
@@ -565,7 +592,8 @@ func (s *Server) handleDocRevise(w http.ResponseWriter, r *http.Request) {
 		s.afterDocAct(w, r, doc, "", errors.New("A revision of this document is already open. Work on that one."))
 		return
 	}
-	succ, err := s.ReviseDoc(r.Context(), doc.Path, s.uiActor())
+	succ, err := s.reviseDocBy(r.Context(), doc.Path, s.uiActor(),
+		writerAct{Act: store.ActOpenedRevision, Kind: store.WriterPerson, Actor: s.uiActor(), Via: "ui"})
 	if err != nil {
 		s.afterDocAct(w, r, doc, "", err)
 		return

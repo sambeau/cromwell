@@ -87,7 +87,7 @@ func (s *Server) mcpDesignResult(ctx context.Context, out map[string]any, ownerT
 	if err != nil {
 		return
 	}
-	out["design_document"] = mcpDocEntry(*d)
+	out["design_document"] = s.mcpDoc(ctx, *d)
 }
 
 // argBoolDefault reads an optional true/false argument.
@@ -254,12 +254,13 @@ func (s *Server) mcpAttachDocument(r *http.Request, args map[string]any) (any, e
 	if err != nil {
 		return nil, err
 	}
-	doc, err := s.RegisterDocForOwner(ctx, path, docType, ownerType, ownerID, s.mcpActor())
+	doc, err := s.registerDocBy(ctx, path, docType, ownerType, ownerID, s.mcpActor(),
+		writerAct{Act: store.ActAdded, Kind: store.WriterChat, Actor: s.mcpActor(), Via: "mcp"})
 	if err != nil {
 		return nil, attachError(err, path)
 	}
 	s.notifyEntityChanged("document", doc.ID)
-	out := mcpDocEntry(*doc)
+	out := s.mcpDoc(ctx, *doc)
 	out["note"] = "Attached by its path, with no ID. To give it one, call adopt_document with the same path."
 	return out, nil
 }
@@ -294,7 +295,7 @@ func (s *Server) mcpAdoptDocument(r *http.Request, args map[string]any) (any, er
 	if err != nil {
 		return nil, err
 	}
-	out := mcpDocEntry(*res.Doc)
+	out := s.mcpDoc(ctx, *res.Doc)
 	out["committed"] = res.Committed
 	if !res.Committed {
 		out["note"] = "The document has its ID, but the change to the file couldn't be committed (" +
@@ -424,7 +425,7 @@ func (s *Server) mcpGetInitiative(r *http.Request, args map[string]any) (any, er
 	if err != nil {
 		return nil, err
 	}
-	node["documents"] = mcpDocList(docs)
+	node["documents"] = s.mcpDocs(ctx, docs)
 	node["url"] = "/ui/i/" + path
 	return node, nil
 }
@@ -446,7 +447,7 @@ func (s *Server) mcpGetFeature(r *http.Request, args map[string]any) (any, error
 	}
 	return map[string]any{
 		"id": f.PublicID, "path": path, "name": f.Name, "description": f.Description,
-		"state": string(f.State), "documents": mcpDocList(docs), "url": "/ui/f/" + path,
+		"state": string(f.State), "documents": s.mcpDocs(ctx, docs), "url": "/ui/f/" + path,
 	}, nil
 }
 
@@ -466,15 +467,7 @@ func (s *Server) mcpListDocuments(r *http.Request, args map[string]any) (any, er
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"documents": mcpDocList(docs)}, nil
-}
-
-func mcpDocList(docs []store.Document) []any {
-	out := make([]any, 0, len(docs))
-	for _, d := range docs {
-		out = append(out, mcpDocEntry(d))
-	}
-	return out
+	return map[string]any{"documents": s.mcpDocs(ctx, docs)}, nil
 }
 
 // mcpDocEntry describes one document. "id" is its ID and "revision" which

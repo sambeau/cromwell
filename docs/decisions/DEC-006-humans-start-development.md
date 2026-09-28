@@ -4,7 +4,8 @@
 can't be the approval gate, and wasn't. **Amended the same day:**
 [Amendment 1](#amendment-1--reviews-and-relay-2026-09-28) replaces decisions 5,
 6 and 8. A dated note on its decision 8 (Sam, 2026-09-28) adds unticking a
-job to the relay list.
+job to the relay list. A second (Sam, 2026-09-28, with SPEC-017) says
+submitting a draft the chat agent wrote is not a relay.
 **Date drafted:** 2026-09-28
 **Date accepted:** 2026-09-28
 **Decided by:** Sam
@@ -357,6 +358,16 @@ Sam's ruling also sets out the human's role more clearly than DEC-006 did.
 > quote, and the database refuses a relayed tick without one. No planning tool can stand in for a tick: a ticked
 > job's title can't change, and the chat agent can't remove a checklist's
 > last unticked job (SPEC-014 SD-7).
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-017](../specs/SPEC-017-chat-as-a-proper-seat.md) SD-1 and SD-2).**
+> "A request for an agent review" on this list means a *fresh* review of a
+> document already in review. That still needs the person's quoted words,
+> through `relay_review_request`. Submitting a draft the chat agent wrote,
+> with the person, is not a relay: it asks the orchestrator to do what it
+> would do anyway (DEC-005), and the independent reviewer decides. The chat
+> agent does it with `submit_for_review`, which takes no quote and gives no
+> verdict. That tool refuses a revision of a feature being built, because
+> submitting one pauses the building until a person decides.
 
 ### Rationale
 

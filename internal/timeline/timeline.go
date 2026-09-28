@@ -93,8 +93,12 @@ type Moment struct {
 	// By says who caused the moment (DESIGN-010 §8, "everything is
 	// attributed"): ByAgent, with Cause naming the run; ByPerson or ByChat,
 	// with Actor naming them; or BySystem, for the orchestrator's own steps.
-	By      string
-	Actor   string
+	By    string
+	Actor string
+	// Relayed marks a person's verdict the chat agent carried, with their
+	// words (SPEC-017 SD-5): By is ByPerson, and the person is unnamed until
+	// per-user identity exists.
+	Relayed bool
 	Cause   *Run
 	RefType string
 	RefID   uuid.UUID
@@ -392,6 +396,9 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 			if c := cause(rule, e, runs); c != nil {
 				m.By, m.Cause = ByAgent, c
 			}
+		case opt.ChatActor != "" && e.Actor == opt.ChatActor && e.Str("via") == "mcp" && e.Str("verdict_by") == "person":
+			// A relayed verdict is the person's, not the chat agent's.
+			m.By, m.Relayed = ByPerson, true
 		case opt.ChatActor != "" && e.Actor == opt.ChatActor:
 			m.By, m.Actor = ByChat, e.Actor
 		default:

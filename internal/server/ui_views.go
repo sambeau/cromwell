@@ -112,8 +112,11 @@ type docPageData struct {
 	// Identity is what the page says and offers about the document's ID
 	// (SPEC-015 FR-4.6, FR-5.6, FR-5.8).
 	Identity docIdentity
-	Notice   string
-	Error    string
+	// Provenance is who wrote the document and who gave its latest verdict
+	// (SPEC-017 FR-2.5).
+	Provenance provenanceView
+	Notice     string
+	Error      string
 }
 
 func (s *Server) documentView(r *http.Request) (*docPageData, error) {
@@ -153,6 +156,11 @@ func (s *Server) documentViewByPath(ctx context.Context, path, notice, errMsg st
 	// only when an open review-escalation checkpoint refs it (SD-4).
 	page.Actions = s.docActionsFor(ctx, doc)
 	page.Identity = s.docIdentityFor(ctx, doc)
+	if prov, _, _, err := s.documentProvenance(ctx, *doc); err == nil {
+		page.Provenance = prov
+	} else {
+		s.Log.Warn("read provenance", "doc", doc.ID, "err", err)
+	}
 	if doc.State == lifecycle.DocReviewing && s.humanApprovalType(doc.Type) {
 		page.HumanDecision = true
 	} else if cp, err := s.openReviewCheckpoint(ctx, doc.ID); err == nil && cp != nil {

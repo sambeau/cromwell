@@ -128,6 +128,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.CatchUpScan(ctx); err != nil {
 		s.Log.Error("boot catch-up scan", "err", err)
 	}
+	if err := s.BackfillProvenance(ctx); err != nil {
+		s.Log.Error("boot provenance backfill", "err", err)
+	}
 	if err := s.ReconcileWorktrees(ctx); err != nil {
 		s.Log.Error("boot worktree reconciliation", "err", err)
 	}

@@ -48,7 +48,7 @@ func (s *Server) RegisterDoc(ctx context.Context, path, docType, ownerType strin
 	if err != nil {
 		return nil, err
 	}
-	return s.RegisterDocForOwner(ctx, path, docType, ownerType, ownerID, actor)
+	return s.registerDocBy(ctx, path, docType, ownerType, ownerID, actor, s.writerFor(store.ActAdded, actor, "api"))
 }
 
 // RegisterDocForOwner registers a Markdown file as a document owned by the given
@@ -57,10 +57,16 @@ func (s *Server) RegisterDoc(ctx context.Context, path, docType, ownerType strin
 // path the CLI's `doc add`, the UI's attach action, and the MCP attach tool all
 // share (DEC-003).
 func (s *Server) RegisterDocForOwner(ctx context.Context, path, docType, ownerType string, ownerID *uuid.UUID, actor string) (*store.Document, error) {
+	return s.registerDocBy(ctx, path, docType, ownerType, ownerID, actor, s.writerFor(store.ActAdded, actor, ""))
+}
+
+// registerDocBy is RegisterDocForOwner, saying who added the file and from
+// where (SPEC-017 FR-2.2).
+func (s *Server) registerDocBy(ctx context.Context, path, docType, ownerType string, ownerID *uuid.UUID, actor string, by writerAct) (*store.Document, error) {
 	if _, err := config.LoadManifest(s.CompartmentRoot, docType); err != nil && docType == "spec" {
 		return nil, err // a type without a template can still be registered, but spec must have one
 	}
-	doc, err := s.registerDocWithIdentity(ctx, path, docType, ownerType, ownerID, actor, "", 0)
+	doc, err := s.registerDocWithIdentity(ctx, path, docType, ownerType, ownerID, actor, "", 0, by)
 	if err == nil && docType == "design" {
 		// A design attached over an untouched starter becomes the page's body
 		// (SPEC-015 SD-15).
@@ -73,7 +79,7 @@ func (s *Server) RegisterDocForOwner(ctx context.Context, path, docType, ownerTy
 // file must already carry it in its front matter; the row records it
 // (SPEC-015 FR-3.3). Attach passes none: an attached file is known by its
 // path until it is adopted (SD-12).
-func (s *Server) registerDocWithIdentity(ctx context.Context, path, docType, ownerType string, ownerID *uuid.UUID, actor, publicID string, revision int) (*store.Document, error) {
+func (s *Server) registerDocWithIdentity(ctx context.Context, path, docType, ownerType string, ownerID *uuid.UUID, actor, publicID string, revision int, by writerAct) (*store.Document, error) {
 	raw, err := s.readDocFile(path)
 	if err != nil {
 		return nil, err
@@ -81,7 +87,7 @@ func (s *Server) registerDocWithIdentity(ctx context.Context, path, docType, own
 	var doc *store.Document
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		doc, err = registerInTx(ctx, tx, path, raw, docType, ownerType, ownerID, nil, publicID, revision, actor)
+		doc, err = registerInTx(ctx, tx, path, raw, docType, ownerType, ownerID, nil, publicID, revision, actor, by)
 		return err
 	})
 	return doc, err
@@ -152,6 +158,15 @@ func (s *Server) ValidateDoc(ctx context.Context, path string) (*lifecycle.Repor
 // the submitted content, and lets the rule engine queue the review
 // (FR-5.2).
 func (s *Server) SubmitDoc(ctx context.Context, path, actor string) (*lifecycle.Report, *store.Document, error) {
+	return s.submitDocWith(ctx, path, actor, nil, nil)
+}
+
+// submitDocWith is SubmitDoc with what the caller adds in the same
+// transaction (SPEC-017 NFR-1): payload joins the transition's audit row, and
+// inTx runs whether or not the document passes validation, so a writing act
+// is recorded even when its submission is refused.
+func (s *Server) submitDocWith(ctx context.Context, path, actor string, payload map[string]any,
+	inTx func(context.Context, pgx.Tx, *store.Document) error) (*lifecycle.Report, *store.Document, error) {
 	doc, err := store.LiveDocumentByPath(ctx, s.Store.Pool, path)
 	if err != nil {
 		return nil, nil, err
@@ -174,6 +189,11 @@ func (s *Server) SubmitDoc(ctx context.Context, path, actor string) (*lifecycle.
 			map[string]any{"valid": report.Valid, "issues": report.Issues}); err != nil {
 			return err
 		}
+		if inTx != nil {
+			if err := inTx(ctx, tx, doc); err != nil {
+				return err
+			}
+		}
 		if !report.Valid {
 			return nil
 		}
@@ -187,7 +207,7 @@ func (s *Server) SubmitDoc(ctx context.Context, path, actor string) (*lifecycle.
 		if err := store.RefreshDocumentTitle(ctx, tx, doc.ID, parsed.FrontMatterString("title")); err != nil {
 			return err
 		}
-		return store.TransitionDocument(ctx, tx, doc, lifecycle.DocSubmit, actor, nil)
+		return store.TransitionDocument(ctx, tx, doc, lifecycle.DocSubmit, actor, payload)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -204,6 +224,11 @@ func (s *Server) SubmitDoc(ctx context.Context, path, actor string) (*lifecycle.
 // ReviseDoc creates a successor draft for an approved document (FR-4.4):
 // new row with supersedes_id, working copy at a version-suffixed path.
 func (s *Server) ReviseDoc(ctx context.Context, path, actor string) (*store.Document, error) {
+	return s.reviseDocBy(ctx, path, actor, s.writerFor(store.ActOpenedRevision, actor, ""))
+}
+
+// reviseDocBy is ReviseDoc, saying who opened the revision (SPEC-017 FR-2.2).
+func (s *Server) reviseDocBy(ctx context.Context, path, actor string, by writerAct) (*store.Document, error) {
 	doc, err := store.LiveDocumentByPath(ctx, s.Store.Pool, path)
 	if err != nil {
 		return nil, err
@@ -244,8 +269,14 @@ func (s *Server) ReviseDoc(ctx context.Context, path, actor string) (*store.Docu
 		predecessorID := doc.ID
 		successor, err = store.RegisterDocument(ctx, tx, doc.Type, doc.OwnerType, doc.OwnerID,
 			workingPath, doc.Title, content.Hash(raw), &predecessorID, actor)
-		if err != nil || doc.PublicID == "" {
+		if err != nil {
 			return err
+		}
+		if err := recordWriter(ctx, tx, successor.ID, by); err != nil {
+			return err
+		}
+		if doc.PublicID == "" {
+			return nil
 		}
 		if err := store.SetDocumentIdentity(ctx, tx, successor.ID, doc.PublicID, revision); err != nil {
 			return identityClash(err, doc.PublicID, revision)
