@@ -789,6 +789,19 @@ func (s *Server) decisionRows(ctx context.Context) ([]decisionRow, error) {
 			pick[key] = d
 		}
 	}
+	// A decision another one superseded shows as superseded, even while an
+	// amendment of it is left over as a draft (FR-3.5.3).
+	retired := map[string]bool{}
+	for _, x := range sups {
+		retired[x.SupersededID] = true
+	}
+	for _, d := range docs {
+		if retired[d.PublicID] && d.State == lifecycle.DocSuperseded {
+			if cur := pick[d.PublicID]; cur.State != lifecycle.DocSuperseded || d.Revision > cur.Revision {
+				pick[d.PublicID] = d
+			}
+		}
+	}
 	sort.SliceStable(order, func(i, j int) bool {
 		a, aok := ident.Parse(order[i])
 		b, bok := ident.Parse(order[j])

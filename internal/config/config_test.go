@@ -454,3 +454,47 @@ func TestActorNamesMustDiffer(t *testing.T) {
 		t.Errorf("different names are fine: %v", err)
 	}
 }
+
+// SPEC-018 FR-6.5: the surfacing caps default when absent or 0, a token cap
+// too small to hold anything is refused, and so is a negative count.
+func TestSurfacingConfig(t *testing.T) {
+	root := validCompartment(t)
+	c, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if c.SurfacingMaxTokens() != DefaultSurfacingMaxTokens || c.SurfacingMaxDecisions() != DefaultSurfacingMaxDecisions {
+		t.Errorf("defaults: %d tokens, %d decisions", c.SurfacingMaxTokens(), c.SurfacingMaxDecisions())
+	}
+	cfg, _ := os.ReadFile(filepath.Join(root, "config.yaml"))
+	write(t, root, "config.yaml", string(cfg)+"surfacing:\n  max_tokens: 400\n  max_decisions: -1\n")
+	_, err = LoadConfig(root)
+	if err == nil || !strings.Contains(err.Error(), "surfacing.max_tokens: 400 is too small") ||
+		!strings.Contains(err.Error(), "surfacing.max_decisions") {
+		t.Errorf("small or negative caps should be refused, naming the field: %v", err)
+	}
+	write(t, root, "config.yaml", string(cfg)+"surfacing:\n  max_tokens: 900\n  max_decisions: 4\n")
+	if c, err = LoadConfig(root); err != nil || c.SurfacingMaxTokens() != 900 || c.SurfacingMaxDecisions() != 4 {
+		t.Errorf("explicit caps not kept: %v %+v", err, c)
+	}
+}
+
+// SPEC-018 FR-1.2: max_words names exactly one target and a max; one_line
+// names a field.
+func TestSurfacedRuleShapes(t *testing.T) {
+	root := validCompartment(t)
+	write(t, root, "templates/spec/manifest.yaml", `type: spec
+reviewer_role: spec-reviewer
+rules:
+  - kind: max_words
+    field: ruling
+    body: true
+  - kind: one_line
+`)
+	_, err := LoadManifest(root, "spec")
+	for _, want := range []string{"exactly one of field, section or body", "max above 0", "one_line needs a field"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("error should say %q: %v", want, err)
+		}
+	}
+}

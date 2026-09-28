@@ -106,7 +106,7 @@ func (s *Server) mcpListDecisions(r *http.Request, args map[string]any) (any, er
 	out := map[string]any{"state": page.State, "decisions": entries}
 	if page.Branch != nil {
 		out["for"] = page.OwnerName
-		out["left_out"] = page.Branch.LeftOut
+		out["left_out"] = nonNil(page.Branch.LeftOut)
 		out["told_tokens"] = page.Branch.Tokens
 		out["max_tokens"] = page.Branch.MaxTokens
 	}
