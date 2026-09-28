@@ -134,6 +134,7 @@ path into and through development), G5 (archiving an initiative), and
 anything that starts, stops or releases agent work stay out of the chat
 agent's reach.
 
-This amendment permits the two milestone tools; it doesn't build them. When
-they are added, `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` must name
-them on purpose, as DEC-005 requires.
+The two tools are `mark_milestone_shipped` and `reopen_milestone`, added with
+[SPEC-010](../specs/SPEC-010-milestones-and-roadmaps-editing.md) FR-7.10.
+`TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` names them on purpose, as
+DEC-005 requires.

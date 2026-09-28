@@ -82,9 +82,19 @@ print("   shipping:", json.dumps(detail["shipping"], indent=None))
 road = tool("get_roadmap", roadmap="Billing plan")
 print("   roadmap:", [f"{m['position']}. {m['name']} ({m['state']})" for m in road["milestones"]])
 
-tool("lock_milestone", milestone="Billing beta")
-tool("unlock_milestone", milestone="Auth beta")
-
-auth_beta = tool("get_milestone", milestone="Auth beta")
-print("   Auth beta state:", auth_beta["state"], "shipped_at:", auth_beta.get("shipped_at"))
-tool("add_milestone_member", milestone="Auth beta", member_type="feature", member="billing/refunds")
+# Shipping over MCP: refused by G4 while nothing is done, then allowed.
+tool("mark_milestone_shipped", milestone="Billing beta")
+import subprocess
+subprocess.run(["psql", "postgres://postgres@localhost:54329/m4_demo?sslmode=disable", "-qc",
+                "UPDATE features SET state = 'done' WHERE slug = 'invoices'"], check=True)
+print("\n(no AI provider, so billing/invoices was marked done directly in the database)")
+out = tool("mark_milestone_shipped", milestone="Billing beta")
+print("  ", out["state"], "at", out["shipped_at"], "-", out["change"])
+tool("add_milestone_member", milestone="Billing beta", member_type="feature", member="auth/passkeys")
+out = tool("reopen_milestone", milestone="Billing beta", reason="Passkeys go out with billing after all.")
+print("  ", out["state"], "-", out["change"])
+out = tool("add_milestone_member", milestone="Billing beta", member_type="feature", member="auth/passkeys")
+print("  ", out["change"], f"→ {out['items_done']} of {out['items_total']} items done")
+out = tool("mark_milestone_shipped", milestone="Billing beta")
+print("  ", out["state"], "-", out["change"])
+tool("reopen_milestone", milestone="Billing GA")

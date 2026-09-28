@@ -71,7 +71,7 @@ That shapes the choices below: none of these acts can affect what agents do.
 > A person can build a two-milestone roadmap for an initiative entirely in the
 > browser — create both milestones, fill them from both ends, put them on a
 > roadmap in order, and mark one as shipped — and the chat agent can do the
-> same over MCP, except marking it as shipped.
+> same over MCP.
 
 Two supporting claims:
 
@@ -79,8 +79,7 @@ Two supporting claims:
 > made it.
 
 > G4 still stops a milestone being marked as shipped when nothing in it is
-> done, with no way round it. The chat agent can create, fill and order
-> milestones and roadmaps, but it can't mark one as shipped or reopen it.
+> done, with no way round it, for the chat agent exactly as for a person.
 
 ## 2. Scope
 
@@ -97,8 +96,7 @@ Two supporting claims:
 5. **Marking a milestone as shipped** (G4), and **reopening** it, with the
    gate's reason in plain words when it refuses (FR-5).
 6. **The two editors** in a modal (FR-6).
-7. **MCP tools** for everything above except marking as shipped and reopening
-   (FR-7).
+7. **MCP tools** for everything above (FR-7).
 
 ### Out of scope (deferred, with destination)
 
@@ -109,7 +107,6 @@ Two supporting claims:
 | Renaming, re-describing or deleting a milestone or roadmap | **Not specified here**; no service method exists. It is the most likely first follow-up (§6), and it matters more now that the chat agent can create them. |
 | Moving a milestone or roadmap to a different owner | Not specified here. Ownership is set at creation. |
 | Drag-to-reorder on a roadmap | Polish, as SPEC-006 §2 already said. The handler takes a target position (FR-4.2), so drag can use it later unchanged. |
-| MCP tools to mark a milestone as shipped or reopen it | **Not built.** See SD-4. Adding them needs a short amendment to DEC-004. |
 | Reopening from the API or CLI | Not built. The CLI is being retired (DEC-003), and the web UI is enough. |
 | Anything in DESIGN-010 or DEC-007 | M2. |
 
@@ -147,8 +144,8 @@ Two supporting claims:
     one easy to create by accident.
   - **`MemberCandidates`** is the milestone-side picker's read (FR-3.3).
 
-- **SD-4 — The chat agent may mark a milestone as shipped and reopen it, but
-  this build doesn't add the tools.** Before Sam's decision (SD-11) this was
+- **SD-4 — The chat agent can mark a milestone as shipped and reopen it.**
+  Before Sam's decision (SD-11) this was
   about safety: locking couldn't be undone, and a chat agent that misread
   "we're done with beta" would have made a permanent mistake. Now that shipping
   can be undone, that reason has gone. The only thing left in the way was
@@ -157,10 +154,10 @@ Two supporting claims:
   development gate, so both acts are permitted. No quoted words are needed,
   because a mistake is undone by reopening.
 
-  The tools themselves aren't in this build, which was specced, reviewed and
-  demonstrated without them. The tool-set test still lists `lock_milestone`
-  and `unlock_milestone` as names that must not exist today; adding them is a
-  small follow-up that must update that test on purpose (§6).
+  The two tools, `mark_milestone_shipped` and `reopen_milestone`, were added at
+  Sam's request once the amendment was in place (FR-7.10). They call the same
+  store methods as the web UI, and G4 applies to the agent exactly as to a
+  person. The tool-set test names both on purpose, as DEC-005 asks.
 
 - **SD-5 — The chat agent edits milestones and roadmaps as ordinary
   planning.** DEC-004 lets the chat agent create and edit planning material
@@ -168,8 +165,8 @@ Two supporting claims:
   descriptions and documents, but not milestones and roadmaps, because they
   weren't in the chat agent's reach when it was written. This spec treats them
   like the rest. They say what ships together and in what order. Editing them
-  doesn't start work, spend tokens or pass a gate, and everything the ten tools
-  do can be undone, except creating a milestone. (A stray milestone is clutter
+  doesn't start work, spend tokens or pass a development gate, and everything
+  the twelve tools do can be undone, except creating a milestone. (A stray milestone is clutter
   until rename and delete exist; see §6.)
 
   The alternative would be to treat them as *relay* tools under DEC-006
@@ -548,23 +545,35 @@ SPEC-008's `attachError` does, so the agent can relay them.
   name, path or id, done), progress as `items_done`/`items_total` and
   `tokens_done`/`tokens_estimated`. An open milestone also has a `shipping`
   object with `could_mark_shipped_now`, `why_not` (G4's sentence) and `how`
-  (that a person does it in the web UI); a shipped one has `shipped_at`. For a
-  roadmap: owner and milestones in order, each with its position, state and
-  progress.
-- **FR-7.9 The boundary.** There is no tool to mark a milestone as shipped or
-  to reopen one (SD-4). The advertised set is the SPEC-008 nine plus these
-  ten, and `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` names every one
-  and lists `lock_milestone` and `unlock_milestone` among the names that must
-  be unknown. The `initialize` instructions mention milestones and roadmaps,
-  and say that marking a milestone as shipped is a person's act.
+  (which tool does it, and that it can be undone); a shipped one has
+  `shipped_at`. For a roadmap: owner and milestones in order, each with its
+  position, state and progress.
+- **FR-7.9 The boundary.** The advertised set is the SPEC-008 nine plus these
+  twelve, and `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` names every
+  one. No tool touches any other gate (DEC-004 Amendment 1). The `initialize`
+  instructions mention milestones and roadmaps, including marking a milestone
+  as shipped when the person says it has gone out.
+- **FR-7.10 `mark_milestone_shipped` and `reopen_milestone`** — added under
+  DEC-004 Amendment 1 (SD-4). `mark_milestone_shipped` takes `milestone` and
+  calls `LockMilestone` as the MCP actor; when G4 refuses, the tool fails with
+  G4's own sentence and nothing changes, exactly as for a person. It returns
+  the milestone with `state: shipped` and `shipped_at`. `reopen_milestone`
+  takes `milestone` and an optional `reason` and calls `UnlockMilestone`,
+  whose audit row keeps the reason and the record it replaces. Marking a
+  shipped milestone again, or reopening an open one, fails with a sentence.
+  Both tools' descriptions tell the agent to act when the person says so, and
+  that shipping can be undone.
   *AC for FR-7:* over `POST /mcp`, the agent builds a two-milestone roadmap for
   an initiative, fills it by id and by name, refuses a loop, reorders the
   roadmap and reads it back with `could_mark_shipped_now` false and G4's
-  sentence; bad owners, bad dates, bad member types, removing what isn't there
-  and changing a shipped milestone each fail with a sentence; a shipped
-  milestone reads as `shipped` with `shipped_at`; each write leaves an audit
-  row whose actor is the MCP actor; `lock_milestone` and `unlock_milestone`
-  are method-not-found (`TestMCPPlanTools`,
+  sentence; `mark_milestone_shipped` is refused in G4's sentence while nothing
+  is done, then succeeds and reads back as `shipped` with `shipped_at`; a
+  second mark, changing a shipped milestone, and reopening an open one each
+  fail with a sentence; `reopen_milestone` reopens it, records the reason and
+  the old record, and lets it change again; bad owners, bad dates, bad member
+  types and removing what isn't there each fail with a sentence; each write,
+  including shipping and reopening, leaves an audit row whose actor is the MCP
+  actor (`TestMCPPlanTools`,
   `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet`).
 
 ## 4. Non-functional requirements
@@ -576,8 +585,9 @@ SPEC-008's `attachError` does, so the agent can relay them.
   methods directly in a transaction. Neither issues HTTP to `/api/*`.
 - **NFR-3 — No way round G4.** G4 keeps its shape: a blocking inline reason,
   no checkpoint, no force (L-6). Reopening (FR-5.4) is the one new act, and it
-  is logged with the old snapshot. The chat agent can edit plans but can't
-  mark a milestone as shipped or reopen it (SD-4, SD-5).
+  is logged with the old snapshot. The chat agent can mark a milestone as
+  shipped and reopen it, but G4 applies to it exactly as to a person, and no
+  chat tool touches any other gate (SD-4, SD-5).
 - **NFR-4 — No typed entity path.** Every entity in a form is carried by id in
   a hidden field or chosen from a list (SPEC-007 SD-6). Fields are named
   `milestone_id`, `roadmap_id`, `member_id`, `member_type` and `place`; the
@@ -609,8 +619,8 @@ SPEC-008's `attachError` does, so the agent can relay them.
    two-milestone roadmap for an initiative entirely in the browser: create,
    add members from both ends, reorder, mark one as shipped, and reopen it.
    This also checks FR-6.4. Screenshots saved.
-3. **The same over MCP**, by JSON-RPC calls to `POST /mcp`, except marking as
-   shipped, which is shown to be unknown.
+3. **The same over MCP**, by JSON-RPC calls to `POST /mcp`, including marking
+   a milestone as shipped (refused by G4 first) and reopening it.
 4. Both recorded in `docs/walkthrough-spec-010.md`.
 5. `go vet ./...` and `go test -race -count=1 ./...` clean.
 6. A handoff note records what was built, what was decided, and what needs
@@ -630,7 +640,7 @@ SPEC-008's `attachError` does, so the agent can relay them.
    **may mark a milestone as shipped and reopen it**, because G4 is a
    record-keeping check rather than a development gate (SD-4, SD-5). Recorded
    as [DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28).
-   The ship and reopen tools are permitted but not yet built (§6).
+   At Sam's request, the ship and reopen tools were then added (FR-7.10).
 
 Nothing else waits on Sam except approving the spec and the build.
 
@@ -653,11 +663,6 @@ Nothing else waits on Sam except approving the spec and the build.
 - **`POST /api/milestones/lock` reports every failure as a G4 409**, including
   "already locked". The UI handler doesn't copy that; the API is left alone
   because the CLI is being retired.
-- **Chat tools to mark a milestone as shipped and to reopen it.** Permitted by
-  DEC-004 Amendment 1, not yet built. They would call `LockMilestone` and
-  `UnlockMilestone` as the MCP actor, return G4's sentence when it refuses, and
-  move `lock_milestone` and `unlock_milestone` (or whatever they are named)
-  from the tool-set test's must-not-exist list to its list of tools.
 - **The tool-set test will also change in M3**, whose relay tools edit the
   same list. Whichever lands second merges the two.
 
@@ -711,7 +716,15 @@ Sam then accepted all three remaining recommendations the same day:
 
 | Where | What changed |
 |---|---|
-| SD-4, SD-5 | Marked decided. [DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28) names milestones and roadmaps as planning, and says G4 is a record-keeping check, so the chat agent may also mark as shipped and reopen. The tools aren't built yet (§6). |
+| SD-4, SD-5 | Marked decided. [DEC-004 Amendment 1](../decisions/DEC-004-mcp-planning-authoring.md#amendment-1--milestones-and-roadmaps-2026-09-28) names milestones and roadmaps as planning, and says G4 is a record-keeping check, so the chat agent may also mark as shipped and reopen. |
 | SD-6, SD-10 | Marked accepted; DESIGN-008 §5.1a carries a dated note. |
 | SD-11 | Vision §4 carries a dated note. |
 | DoD 6 | Lists the four decisions; only approval of the spec and build remains. |
+
+Sam then asked for the two shipping tools:
+
+| Where | What changed |
+|---|---|
+| FR-7.10 (new) | `mark_milestone_shipped` and `reopen_milestone`, over `LockMilestone` and `UnlockMilestone` as the MCP actor. |
+| Goal, scope, SD-4, NFR-3, FR-7.8, FR-7.9, DoD 3 | The chat agent now does everything a person does here; the tool set is twenty-one, and the test names the two new tools instead of forbidding `lock_milestone` and `unlock_milestone`. |
+| §6 | The "chat tools to ship and reopen" follow-up is removed, because it is done. |

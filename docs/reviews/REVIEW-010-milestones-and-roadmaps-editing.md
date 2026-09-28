@@ -482,8 +482,8 @@ not approve.
 
 _Decision (Sam), 2026-09-28: the four decisions above are settled.
 (1) Locking became a reversible "Mark as shipped" (SPEC-010 SD-11), and the
-chat agent may mark as shipped and reopen, under DEC-004 Amendment 1; the
-tools aren't built yet. (2) Both deviations from DESIGN-008 §5.1a are
+chat agent may mark as shipped and reopen, under DEC-004 Amendment 1, with
+two tools added for it (SPEC-010 FR-7.10). (2) Both deviations from DESIGN-008 §5.1a are
 accepted, with a dated note in the design. (3) Milestones and roadmaps are
 planning layer, recorded in DEC-004 Amendment 1. (4) Roadmap entries may cross
 owners. Approval of SPEC-010 itself is still pending._

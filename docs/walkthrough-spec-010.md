@@ -3,10 +3,10 @@
 **Date:** 2026-09-28
 **Spec:** [SPEC-010](specs/SPEC-010-milestones-and-roadmaps-editing.md), draft
 for Sam's approval
-**Status:** Definition of done items 2 to 5 run in this session, and rerun
-after Sam decided that locking becomes a reversible "Mark as shipped". Sam
-still has to approve the spec, and to answer the three choices left in its
-DoD 6.
+**Status:** Definition of done items 2 to 5 run in this session. The browser
+half was rerun after Sam decided that locking becomes a reversible "Mark as
+shipped", and the MCP half again after the chat agent gained the two shipping
+tools. Sam still has to approve the spec and the build.
 **Set-up:** a fresh build of `./cmd/cromwell`, a throwaway project made with
 `cromwell init` in `/var/tmp/m4demo`, served on `127.0.0.1:8810` against
 Postgres 16. There was **no AI provider**: `ANTHROPIC_API_KEY` was a dummy, and
@@ -17,8 +17,7 @@ nothing in this walkthrough dispatches an agent.
 The claim SPEC-010 exists to prove:
 
 > A person can build a two-milestone roadmap for an initiative entirely in the
-> browser, and the chat agent can do the same over MCP, except marking a
-> milestone as shipped.
+> browser, and the chat agent can do the same over MCP.
 
 Both halves held.
 
@@ -155,21 +154,23 @@ The same server, the same database, and a small JSON-RPC client
 the plan was for the Billing initiative. The output below is trimmed only of
 ids.
 
-The handshake's instructions now mention planning, and name marking a
-milestone as shipped among the things a person does:
+The handshake's instructions now mention planning, including marking a
+milestone as shipped:
 
 ```
 instructions: Cromwell's planning surface. You can create and shape initiatives,
 features, titles, descriptions and document attachments, and plan with
-milestones and roadmaps: create them, fill them, and order them. You cannot
-start work, change a gate, mark a milestone as shipped, or run an agent — a
-person does that from the command centre.
+milestones and roadmaps: create them, fill them, order them, and mark a
+milestone as shipped when the person says it has gone out. You cannot start
+work, change a gate, or run an agent — a person does that from the command
+centre.
 
-19 tools: add_milestone_member, attach_document, create_feature,
+21 tools: add_milestone_member, attach_document, create_feature,
 create_initiative, create_milestone, create_roadmap, get_feature,
 get_initiative, get_milestone, get_roadmap, get_tree, list_documents,
-list_milestones, list_roadmaps, place_roadmap_entry, remove_milestone_member,
-remove_roadmap_entry, update_feature, update_initiative
+list_milestones, list_roadmaps, mark_milestone_shipped, place_roadmap_entry,
+remove_milestone_member, remove_roadmap_entry, reopen_milestone,
+update_feature, update_initiative
 ```
 
 Creating, with an owner, and one refusal:
@@ -215,8 +216,8 @@ Ordering the roadmap. `place_roadmap_entry` both places and moves:
    order: ['1. Billing beta', '2. Billing GA']
 ```
 
-Reading it back. `get_milestone` tells the agent whether a person could mark
-it as shipped now, and why not, in G4's own sentence:
+Reading it back. `get_milestone` tells the agent whether the milestone could
+be marked as shipped now, and why not, in G4's own sentence:
 
 ```
 → list_milestones owner_type="initiative" owner_path="billing"
@@ -227,8 +228,8 @@ it as shipped now, and why not, in G4's own sentence:
 → get_milestone milestone="Billing beta"
    members: [('feature', 'billing/invoices', False), ('feature', 'billing/refunds', False)]
    shipping: {"could_mark_shipped_now": false,
-              "how": "A person marks a milestone as shipped from its editor in the web UI.
-                      There is no tool for it here.",
+              "how": "Mark it as shipped with mark_milestone_shipped when the person says
+                      the release has gone out. It can be undone with reopen_milestone.",
               "why_not": "This milestone can't be marked as shipped yet, because none of its
                           2 features is done. Marking it as shipped records what actually
                           went out, so at least one has to be finished first."}
@@ -236,35 +237,52 @@ it as shipped now, and why not, in G4's own sentence:
    roadmap: ['1. Billing beta (open)', '2. Billing GA (open)']
 ```
 
-And the boundary (SD-4). The chat agent can neither mark a milestone as shipped
-nor reopen one, and the milestone shipped in the browser can't be changed from
-chat:
+Marking it as shipped and reopening it (FR-7.10, DEC-004 Amendment 1). G4
+refuses the agent exactly as it refuses a person, in the same sentence. No AI
+provider could finish a feature, so the script marked `billing/invoices` done
+directly in the database, as the browser half did for Login form:
 
 ```
-→ lock_milestone milestone="Billing beta"
-  protocol error -32601: there is no tool called "lock_milestone" on this server
-→ unlock_milestone milestone="Auth beta"
-  protocol error -32601: there is no tool called "unlock_milestone" on this server
-→ get_milestone milestone="Auth beta"
-   Auth beta state: shipped shipped_at: 2026-09-28T12:46:27Z
-→ add_milestone_member milestone="Auth beta" member_type="feature" member="billing/refunds"
+→ mark_milestone_shipped milestone="Billing beta"
+  refused: This milestone can't be marked as shipped yet, because none of its 2
+  features is done. Marking it as shipped records what actually went out, so at
+  least one has to be finished first.
+
+(billing/invoices marked done directly in the database)
+
+→ mark_milestone_shipped milestone="Billing beta"
+   shipped at 2026-09-28T14:46:36Z - The milestone is marked as shipped. What it
+   contains is now fixed; reopen_milestone undoes this if it was a mistake.
+→ add_milestone_member milestone="Billing beta" member_type="feature" member="auth/passkeys"
   refused: that milestone is marked as shipped, so what it contains can't change;
-  a person can reopen it in the web UI if it needs to
+  if the person wants to change it, reopen it first with reopen_milestone
+→ reopen_milestone milestone="Billing beta" reason="Passkeys go out with billing after all."
+   open - The milestone is open again, and what it contains is live. The history
+   still shows when it was marked as shipped.
+→ add_milestone_member milestone="Billing beta" member_type="feature" member="auth/passkeys"
+   feature Passkeys was added. → 1 of 3 items done
+→ mark_milestone_shipped milestone="Billing beta"
+   shipped - The milestone is marked as shipped. ...
+→ reopen_milestone milestone="Billing GA"
+  refused: that milestone isn't marked as shipped, so there is nothing to reopen
 ```
 
 ## The audit trail
 
 Every act from both halves, by actor. The browser's acts are `sam`'s and the
 chat agent's are `chat-agent`'s. `milestone.locked` is "marked as shipped" and
-`milestone.unlocked` is "reopened": *Auth beta* was shipped, reopened and
-shipped again, all by `sam`.
+`milestone.unlocked` is "reopened". *Auth beta* was shipped, reopened and
+shipped again by `sam` in the browser; *Billing beta* the same by
+`chat-agent` over MCP.
 
 ```
    actor    |           kind           | count
 ------------+--------------------------+-------
  chat-agent | milestone.created        |     2
- chat-agent | milestone.member_added   |     4
+ chat-agent | milestone.locked         |     2
+ chat-agent | milestone.member_added   |     5
  chat-agent | milestone.member_removed |     1
+ chat-agent | milestone.unlocked       |     1
  chat-agent | roadmap.created          |     1
  chat-agent | roadmap.entry_set        |     3
  sam        | milestone.created        |     2
@@ -292,8 +310,8 @@ tests are:
 | `TestG4` (extended) | FR-5.1: every refusal is a sentence about features |
 | `TestPlanEditorsRender` | Every new template and its shapes; no tables; no typed paths |
 | `TestUIPlanEditing` | FR-2 to FR-6 through the `/ui/*` handlers, both post styles, including ship and reopen |
-| `TestMCPPlanTools` | FR-7 over `POST /mcp`, the audit actor, the `shipped` state, and no ship or reopen tool |
-| `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` (updated) | The nineteen tools by name, and `lock_milestone` and `unlock_milestone` unknown |
+| `TestMCPPlanTools` | FR-7 over `POST /mcp`, the audit actor, the `shipped` state, and shipping and reopening over MCP, including G4's refusal |
+| `TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet` (updated) | The twenty-one tools by name |
 
 ## Small things noticed on the way
 
