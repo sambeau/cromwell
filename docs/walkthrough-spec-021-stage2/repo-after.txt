@@ -1,0 +1,14 @@
+$ git log --oneline
+967c4fa SPK-003: findings (time box ended)
+d3ec0ad SPK-002: findings (concluded)
+27b3492 SPK-001: findings (concluded)
+66d07ed subutai: start the design of INIT-001, Imports
+13477d0 subutai init
+fb4dc2f init
+
+$ git worktree list
+/var/tmp/m14s2demo                                967c4fa [master]
+/var/tmp/m14s2demo/.subutai/worktrees/spk-4a5b97  967c4fa (detached HEAD)
+
+$ git branch -a
+* master

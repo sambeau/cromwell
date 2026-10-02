@@ -155,7 +155,7 @@ Write the design for the import screen on the assumption that polling once a sec
   await expectText('You are running SPK-002');
   await shot('12-person-saved-draft.png', '#spike-findings-text');
   await page.locator('button', { hasText: "I've finished" }).click();
-  await reloadUntil('ran by hand', 3).catch(() => {});
+  await expectText('Ended, waiting to be read');
   await shot('13-person-spike-ended.png');
   await page.locator('button', { hasText: 'The question is answered' }).click();
   await expectText('Closed by sam, who also ran it.');
@@ -172,8 +172,8 @@ Write the design for the import screen on the assumption that polling once a sec
   await shot('15-time-box-before.png');
   sql("UPDATE spikes SET deadline_at = now() - interval '1 minute' WHERE public_id = 'SPK-003'; UPDATE work_claims SET deadline_at = now() - interval '1 minute' WHERE ref_id = (SELECT id FROM spikes WHERE public_id = 'SPK-003')");
   log.push('# SPK-003: spikes.deadline_at and work_claims.deadline_at backdated by SQL; waiting for the heartbeat\n');
-  await reloadUntil('time box');
-  await reloadUntil('The spike reached the end of its time box', 30).catch(() => {});
+  await reloadUntil('Ended, waiting to be read');
+  await expectText('Reached its time box');
   await shot('16-time-box-ended.png');
   await page.locator('a[href^="/ui/d/"]').first().click();
   await expectText('How this spike ended');
