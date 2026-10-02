@@ -743,9 +743,27 @@ Every leak:
 
 A ref that moved for another reason, such as a feature merging into `main`
 during the spike, isn't a leak, because it holds none of the worktree's
-commits. Code the agent's scripts commit somewhere other than the worktree is
-outside what this check can see; DEC-007's "honest costs" accept the same
-limit for chat work.
+commits.
+
+If git has no record of a working copy that was made (the spike has used
+tokens, so its first call ran after the planner made it), the check fails
+closed: an agent that deleted its working copy can't hide what it kept. For
+the same reason, a retry that finds a used working copy damaged runs the check
+on it, and records what it finds, before making it again. *(Amended after the
+second code review.)*
+
+**What the check can't see**, accepted as DEC-007's "honest costs" accept the
+same limits for chat work, because the agent is a colleague that has been told
+not to keep code, not an adversary:
+- code the agent's scripts commit somewhere other than the worktree;
+- commits made without moving the worktree's `HEAD` (`git commit-tree` and
+  `git update-ref`), or recorded under a misleading reflog message;
+- a repository with `core.logAllRefUpdates` switched off, where every spike
+  reports that the check couldn't run (the safe direction).
+
+It may also report too much: an agent that merges a newer `main` into its
+working copy makes `main` look like kept code. That raises a checkpoint a
+person dismisses; it never deletes anything.
 
 **FR-6.4 — Reconciliation.** At boot, and on every heartbeat:
 - a `running` spike whose run is `succeeded`, `cancelled`, or `failed` with
