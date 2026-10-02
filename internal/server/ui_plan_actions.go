@@ -505,6 +505,9 @@ func (s *Server) memberFromForm(ctx context.Context, r *http.Request) (string, u
 	if err != nil {
 		return "", uuid.Nil, "", errors.New("Choose something to add first.")
 	}
+	if _, serr := store.GetSpike(ctx, s.Store.Pool, memberID); memberType == "spike" || serr == nil {
+		return "", uuid.Nil, "", errors.New(spikeNotDeliverableRefusal)
+	}
 	switch memberType {
 	case "feature":
 		f, err := store.GetFeature(ctx, s.Store.Pool, memberID)
