@@ -334,6 +334,11 @@ var Rules = []Rule{
 
 	{Kind: "checkpoint.created", Fold: "Waiting for a person", CausedBy: []string{"*"},
 		Make: func(e Event, _ *Context) (string, string, string) {
+			// A spike's stale claim is a question about a spike, not a task
+			// (SPEC-021 FR-14.2).
+			if e.RefType == "spike" && e.Str("kind") == "claim-stale" {
+				return "Waiting for a person: is someone still working on a spike", "review", "question"
+			}
 			return "Waiting for a person: " + checkpointAbout(e.Str("kind")), "review", "question"
 		}},
 	{Kind: "checkpoint.responded", Fold: "A person decided",

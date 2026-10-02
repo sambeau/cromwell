@@ -737,6 +737,11 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/spikes/start", s.handleUISpikeStartPost)
 	mux.HandleFunc("POST /ui/spikes", s.handleUISpikeCreate)
 	mux.HandleFunc("POST /ui/spikes/close", s.handleUISpikeClose)
+	// Running a spike by hand, and releasing a claim (SPEC-021 FR-16.1).
+	mux.HandleFunc("POST /ui/spikes/claim", s.handleUISpikeClaim)
+	mux.HandleFunc("POST /ui/spikes/draft", s.handleUISpikeDraft)
+	mux.HandleFunc("POST /ui/spikes/submit", s.handleUISpikeSubmit)
+	mux.HandleFunc("POST /ui/spikes/release", s.handleUISpikeRelease)
 	mux.HandleFunc("GET /ui/frag/spikes-line", s.handleFragSpikesLine)
 	mux.HandleFunc("POST /ui/feature/new", s.handleEntityFeatureCreate)
 	mux.HandleFunc("POST /ui/initiative/new", s.handleEntityInitiativeCreate)
@@ -842,6 +847,45 @@ type inboxItem struct {
 	// claim questions, so a person can see if the claimant came back
 	// (SPEC-020 FR-5.3).
 	LastActivity string
+}
+
+// AnswerLabel is the words on one answer button. The release answer's words
+// come from the checkpoint's context (SPEC-021 FR-14.2), so a spike's claim
+// question says "Release the claim"; a question raised without them, or one
+// that isn't a claim question, uses the task's words.
+func (i inboxItem) AnswerLabel(verb any) string {
+	if str(verb) == "release" {
+		if l, _ := i.releaseWords(); l != "" {
+			return l
+		}
+	}
+	return verbLabel(verb)
+}
+
+// AnswerConsequence is what an answer does, beside its button. See AnswerLabel.
+func (i inboxItem) AnswerConsequence(verb any) string {
+	if str(verb) == "release" {
+		if _, c := i.releaseWords(); c != "" {
+			return c
+		}
+	}
+	return verbConsequence(verb)
+}
+
+// releaseWords reads release_label and release_consequence from a claim
+// question's context.
+func (i inboxItem) releaseWords() (label, consequence string) {
+	if !isClaimQuestion(i.Kind) {
+		return "", ""
+	}
+	var c struct {
+		Label       string `json:"release_label"`
+		Consequence string `json:"release_consequence"`
+	}
+	if json.Unmarshal(i.Context, &c) != nil {
+		return "", ""
+	}
+	return c.Label, c.Consequence
 }
 
 // ContextLabel names the disclosure that holds the checkpoint's context. The
