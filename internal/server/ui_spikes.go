@@ -192,9 +192,9 @@ type spikePage struct {
 	// BuildOnSentence says how to build on an answered spike's findings.
 	BuildOnSentence string
 
-	Timeline []spikeMoment
-	RunURL   string
-	RunNote  string
+	Timeline   []spikeMoment
+	RunURL     string
+	RunNote    string
 	Follows    *spikeLink
 	FollowedBy *spikeLink
 
