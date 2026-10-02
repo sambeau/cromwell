@@ -449,9 +449,10 @@ in a round.
 The database checks:
 - an `agent` row has a `dispatch_id` and `measured = true`;
 - a `chat` or `person` row has a `claim_id` and `measured = false`;
-- `dispatch_id` is unique among agent rows, and `claim_id` among claim rows
-  (each run and each claim-round is one row). A round may hold any number of
-  rows: a claim released and claimed again is two.
+- `dispatch_id` is unique among agent rows, and `(claim_id, round)` among
+  claim rows: each run is one row, and a claim has one row per round, since a
+  `returned` claim resumed in the next round is a new row. A round may hold
+  any number of rows: a claim released and the task claimed again is two.
 
 When a task is deleted (re-decomposition deletes only `pending` and `ready`
 tasks, which have no executions), its rows are deleted with it, by the
