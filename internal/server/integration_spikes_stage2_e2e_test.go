@@ -8,7 +8,9 @@ package server
 
 import (
 	"context"
+	"html"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -193,6 +195,57 @@ func TestSpikeExecutorIsRecorded(t *testing.T) {
 		if out["measured"] != (want == store.ExecutorAgent) {
 			t.Errorf("%s: get_spike measured = %v", sp.PublicID, out["measured"])
 		}
+	}
+
+	// The executor's sentence, the same on the page and in get_spike
+	// (FR-16.1, FR-16.2).
+	for sp, prefix := range map[*store.Spike]string{
+		agent:  "Run by the spike runner (" + runs[0].Model + ").",
+		chat:   "Being run in chat by the chat agent, who claimed it",
+		person: "Being run by hand by ",
+	} {
+		ex := asMap(t, h.toolOK("get_spike", map[string]any{"spike": sp.PublicID})["executor"])
+		sentence, _ := ex["sentence"].(string)
+		if !strings.HasPrefix(sentence, prefix) {
+			t.Errorf("%s: get_spike executor sentence = %q, want it to start %q", sp.PublicID, sentence, prefix)
+		}
+		if code, body := h.getUI("/ui/s/" + sp.PublicID); code != 200 || !strings.Contains(body, html.EscapeString(sentence)) {
+			t.Errorf("%s: the page doesn't say %q", sp.PublicID, sentence)
+		}
+	}
+
+	// Once the chat spike is submitted, both say who ran it.
+	h.toolOK("submit_spike", map[string]any{"spike": chat.PublicID, "findings": goodFindings})
+	ex := asMap(t, h.toolOK("get_spike", map[string]any{"spike": chat.PublicID})["executor"])
+	if ex["sentence"] != "Run in chat by the chat agent." {
+		t.Errorf("ended chat spike: get_spike executor sentence = %v", ex["sentence"])
+	}
+	if _, body := h.getUI("/ui/s/" + chat.PublicID); !strings.Contains(body, "Run in chat by the chat agent.") {
+		t.Error("the ended chat spike's page doesn't say who ran it")
+	}
+}
+
+// A change in a claimed spike's detached working copy is the claim's
+// activity, and withdraws a pending claim-stale (FR-14.3, SPEC-020 FR-5.2).
+func TestSpikeWorkingCopyChangeIsClaimActivity(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	sp := h.chatSpike()
+	res := h.claimSpike(sp)
+	h.staleClaim(res.Claim)
+	h.srv.ClaimSweep(ctx)
+	if h.pendingOf("claim-stale", "spike", sp.ID) == nil {
+		t.Fatal("a stale spike claim raised no claim-stale")
+	}
+	if err := os.WriteFile(filepath.Join(res.WorkingCopy.Path, "scratch.txt"), []byte("trying something\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.ClaimSweep(ctx)
+	if c := h.latestSpikeClaim(sp); c.LastActivity != "worktree" {
+		t.Errorf("last activity = %q, want worktree", c.LastActivity)
+	}
+	if h.pendingOf("claim-stale", "spike", sp.ID) != nil {
+		t.Error("a change in the working copy didn't withdraw claim-stale")
 	}
 }
 

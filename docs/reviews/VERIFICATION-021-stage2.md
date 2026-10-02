@@ -40,20 +40,22 @@ Run in `/var/tmp/ver2` against a private Postgres
 |---|---|
 | `go vet ./...` | clean (exit 0, no output) |
 | `gofmt -l internal cmd` | empty |
-| `go test -race -count=1 -v ./...` | __RESULT__ |
-| Top-level `--- PASS` | __PASS__ |
-| Top-level `--- FAIL` | __FAIL__ |
-| Top-level `--- SKIP` | __SKIP__ |
-| `internal/server` duration | __SERVERDUR__ |
-| `internal/store` duration | __STOREDUR__ |
+| `go test -race -count=1 -v ./...` | green: every package `ok`, exit 0 |
+| Top-level `--- PASS` | 544 |
+| Top-level `--- FAIL` | 0 |
+| Top-level `--- SKIP` | 2 |
+| `internal/server` duration | 300.4 s (`ok subutai/internal/server 300.414s`) |
+| `internal/store` duration | 21.0 s |
 
-__SKIPS__
+The two skips, with their reasons as the log gives them:
+- `TestDemoM6` (`internal/server/demo_m6_test.go:32`): "set SUBUTAI_M6_DEMO to a directory to run the SPEC-012 demo". An opt-in demo, not a test of this stage.
+- `TestChecklistBackfillRunsOnlyWithTheTable` (`internal/store/identity_test.go:186`): "a checklists table exists on this branch; the with-table case below covers it". A branch-dependent case, by design.
 
-**The integration tests ran.** __INTEG__
+**The integration tests ran.** `scripts/test-db.sh` exported `SUBUTAI_TEST_DATABASE_URL=postgres://postgres@localhost:54371/postgres`, and no test skipped for want of a database: `internal/server` took 300 s and `internal/store` 21 s, and every database-backed test cited below (for example `TestChatSpikeIsHeldByItsClaimAndDeadline`, 0.70 s; `TestMigration0016BackfillsSpikes`, 0.25 s; `TestSpikeHasNoMergePath`, 5.20 s) has a `--- PASS` line in the log. Every test this document names, except the removed `TestSpikeCantBeClaimedYet`, was checked by script against the log's top-level `--- PASS` lines.
 
 **Stage 1 still holds.** `TestSpikeStopsHardAtItsBudget`
 (`internal/server/integration_spikes_test.go:733`) and `TestSpikeHasNoMergePath`
-(`:1465`) passed, with every other stage 1 spike test (__S1__). Stage 1's
+(`:1465`) passed, with every other stage 1 spike test (107 top-level tests with "Spike" in the name passed, none failed). Stage 1's
 `TestSpikeCantBeClaimedYet` no longer exists (no match in the tree), replaced on
 purpose by `TestSpikeIsClaimedOnlyByItsExecutor` (FR-13.9).
 
@@ -241,7 +243,7 @@ purpose by `TestSpikeIsClaimedOnlyByItsExecutor` (FR-13.9).
 
 | Item | Result | Evidence |
 |---|---|---|
-| `tests_pass`: vet, gofmt, the race suite green, integration tests run | __TESTSPASS__ | the test run above |
+| `tests_pass`: vet, gofmt, the race suite green, integration tests run | PASS | the test run above |
 | `verification_passed`: every §4 criterion has cited evidence | PARTIAL | this document: two PARTIALs below |
 | Browser walkthrough without an AI provider: chat and person spikes started, chat claimed over MCP, findings saved and submitted, time-box and unmeasured lines, the person spike run by hand, both closed | PASS | `docs/walkthrough-spec-021-stage2.md` §1-7; screenshots `03`-`14`, `15`-`17`, `18`-`20`; `mcp-output.txt` |
 | Handoff `docs/notes/handoff-M14-stage2-2026-10-02.md` | PARTIAL | absent at `faed33a`. A draft was committed after it (`71bf456`, "Handoff for M14 stage 2: draft, before verification"); it was not part of what I verified |
@@ -271,3 +273,27 @@ Minor observations, not criteria: the empty-draft time-box sentences
 (FR-15.3) and the typed time box kept on a refused start (NFR-8) are proved
 by code only; the moved-on answer's notice (FR-14.2) is asserted as a no-op,
 not by its words.
+
+## After verification: the PARTIALs closed (lead, 2026-10-02)
+
+Each PARTIAL above was closed after this run, on the branch:
+
+1. **FR-16's executor lines.** `TestSpikeExecutorIsRecorded`
+   (`integration_spikes_stage2_e2e_test.go`) now asserts, for the agent, the
+   claimed chat and the claimed person spike, that `get_spike`'s
+   `executor.sentence` starts with "Run by the spike runner (*model*).",
+   "Being run in chat by the chat agent, who claimed it" and "Being run by
+   hand by", and that the spike's page carries the same sentence; then,
+   after the chat spike is submitted, that both say "Run in chat by the chat
+   agent.". The unclaimed chat and person sentences were already asserted on
+   the page (lines cited above).
+2. **FR-14.3.** `TestSpikeWorkingCopyChangeIsClaimActivity` claims a chat
+   spike, lets its claim go stale and sees `claim-stale` raised, writes a
+   file in the detached worktree, runs the sweep again, and sees the claim's
+   last activity become `worktree` and the question withdrawn.
+3. **The handoff** is
+   [handoff-M14-stage2-2026-10-02](../notes/handoff-M14-stage2-2026-10-02.md),
+   finalised with this result.
+
+Both new tests pass, and the full suite was run again on the final commit;
+the handoff records that run.
