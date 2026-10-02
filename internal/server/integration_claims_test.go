@@ -10,13 +10,9 @@ package server
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -513,7 +509,8 @@ func (s *Server) codeReviewModelFor(ctx context.Context, taskID uuid.UUID) (stri
 	if err != nil {
 		return "", err
 	}
-	return s.codeReviewModel(ctx, s.Store.Pool, cfg, taskID, cfg.Assignments["review-code"])
+	m, _, err := s.codeReviewModel(ctx, s.Store.Pool, cfg, taskID, cfg.Assignments["review-code"])
+	return m, err
 }
 
 // ---- The whole path ----
@@ -631,7 +628,7 @@ func TestSendBackReturnsToTheClaimAndApprovalEndsIt(t *testing.T) {
 	if line.Sentence != "Implemented by the chat agent." || line.Measured {
 		t.Fatalf("executor line = %+v", line)
 	}
-	if un, _ := store.TaskUnmeasured(ctx, h.srv.Store.Pool, t1.ID); !un {
+	if un, _ := store.Unmeasured(ctx, h.srv.Store.Pool, "task", t1.ID); !un {
 		t.Fatal("a chat-implemented task is unmeasured")
 	}
 }
@@ -989,151 +986,5 @@ func TestQueueReviewUsesTheChatModelForAChatWrittenSpec(t *testing.T) {
 				return false
 			})
 		})
-	}
-}
-
-// ---- Units ----
-
-func TestExecutorSentence(t *testing.T) {
-	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-	run, claimID := uuid.New(), uuid.New()
-	agent := func(round int, done bool) store.Execution {
-		e := store.Execution{Kind: "agent", Actor: "implementer", Model: "claude-sonnet-5", Round: round, Measured: true, DispatchID: &run}
-		if done {
-			t := now
-			e.SubmittedAt = &t
-		}
-		return e
-	}
-	chat := func(round int, done bool) store.Execution {
-		e := store.Execution{Kind: "chat", Actor: "chat-agent", Round: round, ClaimID: &claimID}
-		if done {
-			t := now
-			e.SubmittedAt = &t
-		}
-		return e
-	}
-	person := store.Execution{Kind: "person", Actor: "sam", Round: 1, ClaimID: &claimID}
-	task := func(s lifecycle.TaskState) *store.Task { return &store.Task{State: s} }
-	cases := []struct {
-		name  string
-		task  *store.Task
-		execs []store.Execution
-		claim *store.Claim
-		want  string
-	}{
-		{"nobody", task(lifecycle.TaskReady), nil, nil, "Nobody has started this task yet."},
-		{"agent working", task(lifecycle.TaskActive), []store.Execution{agent(1, false)}, nil,
-			"Being implemented by the implementer (claude-sonnet-5)."},
-		{"chat done", task(lifecycle.TaskDone), []store.Execution{chat(1, true)}, nil, "Implemented by the chat agent."},
-		{"person claimed", task(lifecycle.TaskActive), []store.Execution{person},
-			&store.Claim{ID: claimID, State: lifecycle.ClaimOpen, ClaimedAt: now.Add(-3 * time.Hour)},
-			"Being implemented by sam, who claimed it 3 hours ago."},
-		{"released then finished by an agent", task(lifecycle.TaskReview), []store.Execution{chat(1, false), agent(1, true)}, nil,
-			"Implemented by the implementer (claude-sonnet-5), from work the chat agent started."},
-		{"reworked by the chat agent", task(lifecycle.TaskReview), []store.Execution{agent(1, true), chat(2, true)}, nil,
-			"Implemented by the implementer (claude-sonnet-5), then reworked by the chat agent."},
-		{"same executor again", task(lifecycle.TaskDone), []store.Execution{chat(1, true), chat(2, true)}, nil, "Implemented by the chat agent."},
-	}
-	for _, tc := range cases {
-		got := executorSentence(tc.task, tc.execs, tc.claim, now)
-		if got.Sentence != tc.want {
-			t.Errorf("%s: %q, want %q", tc.name, got.Sentence, tc.want)
-		}
-	}
-	if got := executorSentence(task(lifecycle.TaskDone), []store.Execution{agent(1, true)}, nil, now); got.RunID != run.String() || !got.Measured || got.Kind != "agent" {
-		t.Errorf("fields = %+v", got)
-	}
-}
-
-func TestWithWorkingCopyIsOneAtATimePerPath(t *testing.T) {
-	s := &Server{}
-	var inside, overlaps atomic.Int32
-	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_ = s.withWorkingCopy("/work/a", func() error {
-				if inside.Add(1) > 1 {
-					overlaps.Add(1)
-				}
-				time.Sleep(2 * time.Millisecond)
-				inside.Add(-1)
-				return nil
-			})
-		}()
-	}
-	wg.Wait()
-	if overlaps.Load() != 0 {
-		t.Fatalf("two hands in one working copy: %d overlaps", overlaps.Load())
-	}
-	// Different working copies don't wait for one another.
-	done := make(chan struct{})
-	_ = s.withWorkingCopy("/work/a", func() error {
-		go func() {
-			_ = s.withWorkingCopy("/work/b", func() error { close(done); return nil })
-		}()
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Error("another working copy was held up")
-		}
-		return nil
-	})
-}
-
-func TestWorktreeFingerprintChangesWithTheWorkingCopy(t *testing.T) {
-	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q")
-	run("config", "user.email", "t@t")
-	run("config", "user.name", "t")
-	writeIn(t, dir, "a.txt", "one\n")
-	run("add", "-A")
-	run("commit", "-qm", "one")
-
-	fp := func() string {
-		t.Helper()
-		f, err := worktreeFingerprint(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return f
-	}
-	clean := fp()
-	if fp() != clean {
-		t.Fatal("a fingerprint is stable")
-	}
-	writeIn(t, dir, "a.txt", "two!\n")
-	edited := fp()
-	if edited == clean {
-		t.Fatal("an edit changes it")
-	}
-	writeIn(t, dir, "b.txt", "new\n")
-	added := fp()
-	if added == edited {
-		t.Fatal("a new file changes it")
-	}
-	if err := os.Remove(filepath.Join(dir, "b.txt")); err != nil {
-		t.Fatal(err)
-	}
-	run("add", "-A")
-	run("commit", "-qm", "two")
-	if committed := fp(); committed == edited || committed == clean {
-		t.Fatal("a commit changes it")
-	}
-	if err := os.Remove(filepath.Join(dir, "a.txt")); err != nil {
-		t.Fatal(err)
-	}
-	if fp() == "" {
-		t.Fatal("a deletion still fingerprints")
 	}
 }

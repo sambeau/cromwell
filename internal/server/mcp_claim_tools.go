@@ -21,6 +21,8 @@ import (
 	"subutai/internal/store"
 )
 
+// mcpClaimTools are the two tools the chat agent works a task with: claim_task
+// and submit_task (SPEC-020 FR-3.1). Release, review and approval have none.
 func (s *Server) mcpClaimTools() []mcpTool {
 	return []mcpTool{
 		{
@@ -54,6 +56,8 @@ func (s *Server) mcpClaimTools() []mcpTool {
 	}
 }
 
+// mcpClaimTask claims, renews or resumes a task for the chat agent and returns
+// what it needs to work in it (FR-3.2).
 func (s *Server) mcpClaimTask(r *http.Request, args map[string]any) (any, error) {
 	ctx := r.Context()
 	ref, ok := argString(args, "task")
@@ -72,6 +76,13 @@ func (s *Server) mcpClaimTask(r *http.Request, args map[string]any) (any, error)
 	if cfg, err := s.freshConfig(); err == nil {
 		hours = int(cfg.ClaimExpiry() / time.Hour)
 	}
+	return claimResultMap(res, entry, hours), nil
+}
+
+// claimResultMap is the claim tool's result: the task, the feature, the
+// working copy, the contract and the rules, with the reviewer's comments in a
+// round after the first.
+func claimResultMap(res *ClaimResult, entry map[string]any, expiryHours int) map[string]any {
 	out := map[string]any{
 		"task":    entry,
 		"feature": map[string]any{"id": res.Feature.PublicID, "path": res.FeaturePath, "name": res.Feature.Name},
@@ -81,21 +92,21 @@ func (s *Server) mcpClaimTask(r *http.Request, args map[string]any) (any, error)
 		"contract": res.Contract,
 		"rules":    res.Rules,
 		"expires": fmt.Sprintf("If nothing changes in the working copy for %d hours, the person will be asked whether anyone is still working on this.",
-			hours),
+			expiryHours),
 		"next": "Implement the task in the working copy, run the project's build and tests, then call submit_task with a summary.",
 	}
 	if res.ReviewComments != nil && res.Round > 1 {
 		out["review_comments"] = res.ReviewComments
 	}
-	if res.Renewed {
-		out["renewed"] = true
+	for key, set := range map[string]bool{"renewed": res.Renewed, "resumed": res.Resumed} {
+		if set {
+			out[key] = true
+		}
 	}
-	if res.Resumed {
-		out["resumed"] = true
-	}
-	return out, nil
+	return out
 }
 
+// mcpSubmitTask submits the chat agent's claimed task for code review (FR-3.4).
 func (s *Server) mcpSubmitTask(r *http.Request, args map[string]any) (any, error) {
 	ctx := r.Context()
 	ref, ok := argString(args, "task")
@@ -169,8 +180,9 @@ func (s *Server) mcpTaskEntry(ctx context.Context, t *store.Task, ids map[uuid.U
 	if c, err := store.LatestClaimFor(ctx, q, "task", t.ID); err == nil {
 		claim := map[string]any{
 			"kind": c.Kind, "who": whoWords(c.Kind, c.Actor, ""), "state": string(c.State),
-			"since":         c.ClaimedAt.UTC().Format(time.RFC3339),
-			"last_activity": c.LastActivityAt.UTC().Format(time.RFC3339),
+			"since":              c.ClaimedAt.UTC().Format(time.RFC3339),
+			"last_activity":      c.LastActivityAt.UTC().Format(time.RFC3339),
+			"last_activity_what": claimActivityWords(c.LastActivity),
 		}
 		if c.State == lifecycle.ClaimEnded && c.EndReason == "released" {
 			claim["released_by"] = c.EndedBy

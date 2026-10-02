@@ -488,6 +488,28 @@ func gitIn(dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// headOf is the commit the working copy at path is on, trimmed, or "" when git
+// can't say (no repository, no commits). It is the one way the server reads a
+// head; worktreeFingerprint reads it again with --no-optional-locks because it
+// runs while a claimant works and must never take git's index lock.
+func headOf(path string) string {
+	out, err := gitIn(path, "rev-parse", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// featureHead is the head of the feature's live worktree, or "" when it has
+// none or git can't say.
+func (s *Server) featureHead(ctx context.Context, featureID uuid.UUID) string {
+	wt, err := store.LiveWorktreeForFeature(ctx, s.Store.Pool, featureID)
+	if err != nil {
+		return ""
+	}
+	return headOf(s.worktreeAbs(wt.Path))
+}
+
 // planAuthor builds a write-spec or write-dev-plan plan (SPEC-009 FR-5.3,
 // FR-5.4). Authoring is read-only with respect to the worktree — documents
 // live in the main repository, never in one — so the plan carries a nil
