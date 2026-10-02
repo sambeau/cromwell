@@ -65,6 +65,7 @@
 {{end}}
 
 {{with .Timeline}}{{template "feature-timeline" .}}{{end}}
+{{template "feature-tasks" .}}
 
 <div class="page-split u-mt-6">
   <div>
@@ -772,6 +773,14 @@
 
 {{define "page-task"}}{{template "pagetop" .}}
 {{with .Data}}
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
 <div class="page-head">
   <div class="page-head-top">
     <span class="page-head-icon">
@@ -790,6 +799,7 @@
     </div>
   </div>
 </div>
+{{template "task-executor" .Executor}}
 
 {{if .Task.Description}}
 <section class="panel u-mt-4">
@@ -799,6 +809,7 @@
   <div class="panel-body"><div class="doc"><p>{{.Task.Description}}</p></div></div>
 </section>
 {{end}}
+{{template "task-claim" .Claim}}
 {{template "task-runs" .Runs}}
 {{end}}
 {{template "pagebottom" .}}{{end}}

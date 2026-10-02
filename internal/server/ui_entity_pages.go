@@ -231,6 +231,11 @@ type taskPage struct {
 	FeatureName string
 	FeatureURL  string
 	Runs        []runRow // the agent runs on this task (SPEC-012 FR-4.1)
+	// Who executed it, and the claim panel (SPEC-020 FR-1.5, FR-4.1).
+	Executor executorView
+	Claim    claimPanel
+	Notice   string
+	Error    string
 }
 
 func (s *Server) handleUITaskPage(w http.ResponseWriter, r *http.Request) {
@@ -239,13 +244,27 @@ func (s *Server) handleUITaskPage(w http.ResponseWriter, r *http.Request) {
 		s.uiNotFound(w, r, "task", r.PathValue("id"))
 		return
 	}
+	s.renderTaskPage(w, r, id, "", "")
+}
+
+// renderTaskPage renders a task's page, with a notice or an error banner when
+// a claim act has just run (SPEC-020 FR-4.2).
+func (s *Server) renderTaskPage(w http.ResponseWriter, r *http.Request, id uuid.UUID, notice, errMsg string) {
 	ctx := r.Context()
 	t, err := store.GetTask(ctx, s.Store.Pool, id)
 	if err != nil {
 		s.notFoundOrErr(w, r, "task", id.String(), err)
 		return
 	}
-	page := taskPage{Task: *t}
+	page := taskPage{Task: *t, Notice: notice, Error: errMsg}
+	if page.Executor, err = s.taskExecutorView(ctx, t); err != nil {
+		s.uiError(w, err)
+		return
+	}
+	if page.Claim, err = s.taskClaimPanel(ctx, t); err != nil {
+		s.uiError(w, err)
+		return
+	}
 	if page.Runs, err = s.runRowsFor(ctx, "task", t.ID); err != nil {
 		s.uiError(w, err)
 		return
@@ -256,6 +275,7 @@ func (s *Server) handleUITaskPage(w http.ResponseWriter, r *http.Request) {
 			page.FeatureURL = "/ui/f/" + path
 		}
 	}
+	pushPageURL(w, r, "/ui/t/"+id.String())
 	s.render(w, "page-task", s.page(r.Context(), "browse", page))
 }
 

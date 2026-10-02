@@ -256,3 +256,44 @@ func TestRelayedVerdictIsAPersons(t *testing.T) {
 		t.Errorf("a relayed approval: by %s, relayed %v, actor %q", ms[1].By, ms[1].Relayed, ms[1].Actor)
 	}
 }
+
+// TestClaimMoments is SPEC-020 FR-1.7: a claim, its submission and its release
+// are moments attributed from the payload's kind; renewals, resumptions and
+// the claim's ending are detail.
+func TestClaimMoments(t *testing.T) {
+	task := uuid.New()
+	claim := func(min int, kind, actor, label string, p map[string]any) Event {
+		e := ev(min, kind, p)
+		e.Actor, e.RefType, e.RefID, e.Label = actor, "task", task, label
+		return e
+	}
+	events := []Event{
+		claim(0, "claim.claimed", "chat-agent", "Add login", map[string]any{"kind": "chat", "via": "mcp"}),
+		claim(1, "claim.renewed", "chat-agent", "Add login", map[string]any{"kind": "chat"}),
+		claim(2, "claim.submitted", "chat-agent", "Add login", map[string]any{"kind": "chat"}),
+		claim(3, "claim.released", "sam", "Add login", map[string]any{"kind": "chat"}),
+		claim(4, "claim.claimed", "sam", "Add login", map[string]any{"kind": "person", "via": "ui"}),
+		claim(5, "claim.resumed", "sam", "Add login", map[string]any{"kind": "person"}),
+		claim(6, "claim.ended", "orchestrator", "Add login", map[string]any{"kind": "person"}),
+	}
+	ms := Build(events, nil, Options{ChatActor: "chat-agent"})
+	want := "Claimed by the chat agent: Add login · Submitted by the chat agent: Add login · " +
+		"Released by sam: Add login · Claimed by sam: Add login"
+	if got := labels(ms); got != want {
+		t.Fatalf("moments:\n got %s\nwant %s", got, want)
+	}
+	for i, by := range []string{ByChat, ByChat, ByPerson, ByPerson} {
+		if ms[i].By != by {
+			t.Errorf("moment %d (%s) is by %s, want %s", i, ms[i].Label, ms[i].By, by)
+		}
+	}
+	if ms[3].Actor != "sam" || ms[0].Actor != "" {
+		t.Errorf("a person is named and the chat agent isn't: %q, %q", ms[3].Actor, ms[0].Actor)
+	}
+	if ms[0].Icon != "chat" || ms[3].Icon != "owner" {
+		t.Errorf("icons: %s, %s", ms[0].Icon, ms[3].Icon)
+	}
+	if len(ms[3].Events) != 3 {
+		t.Errorf("the resumption and the ending stay as detail: %d events", len(ms[3].Events))
+	}
+}

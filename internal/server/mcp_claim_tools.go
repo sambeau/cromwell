@@ -188,7 +188,7 @@ func (s *Server) mcpTaskEntry(ctx context.Context, t *store.Task, ids map[uuid.U
 			out["review_comments"] = rc
 		}
 	}
-	why, err := s.claimRefusalFor(ctx, t)
+	why, err := s.claimRefusalFor(ctx, t, s.ChatClaimant())
 	if err != nil {
 		return nil, err
 	}
