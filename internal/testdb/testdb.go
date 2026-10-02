@@ -6,6 +6,7 @@ package testdb
 import (
 	"context"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,10 @@ func URL(t *testing.T, dbname string) string {
 	if err != nil {
 		t.Fatalf("bad SUBUTAI_TEST_DATABASE_URL: %v", err)
 	}
+
+	// Parallel checkouts on one server (several worktrees testing at once)
+	// each set their own suffix, so they don't drop each other's schemas.
+	dbname += os.Getenv("SUBUTAI_TEST_DB_SUFFIX")
 
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, base)
