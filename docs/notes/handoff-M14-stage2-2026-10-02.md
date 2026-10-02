@@ -76,8 +76,9 @@ to 23 are stage 2's).
 | `79f27e0`, `6ae7577`, `3967c3d` | Code-review round 1, and its fixes |
 | `c5dbdaf`, `c039a0a`, `ab981c3` (merged at `e3f5a29`) | Code-review round 2, and its fixes |
 | `a8c1233`, `faed33a` | Code-review round 3: no major on either side |
-| `0a7cf5a`, `cba0efb` and later | The walkthrough |
-| the rest | The roadmap mark, the plan's status, verification and this note |
+| `0a7cf5a`, `cba0efb`, `0e4535b` | The walkthrough, run before and after the round 2 fixes |
+| `2f8e1a4` | VERIFICATION-021-stage2, and the tests that close its PARTIALs |
+| the rest | The roadmap mark, the plan's status and this note |
 
 ## How it was built
 
@@ -98,13 +99,24 @@ As [How M13 and M14 are built](orchestration-M13-M14.md) says:
 | Check | Result | Evidence |
 |---|---|---|
 | `git_status_clean` | **pass** | `git status --short` prints nothing on `claude/subutai-m14-stage2-spikes` after the last commit, pushed. |
-| `tests_pass` | **pass** | TESTS_PLACEHOLDER |
+| `tests_pass` | **pass** | `go vet ./...` is clean, and `gofmt -l internal cmd` prints nothing. `go test -race -count=1 -v ./...` on the final code: every package `ok`, **545 top-level tests passed, 0 failed, 2 skipped**; `internal/server` took 288s, with 108 top-level spike tests. The skips are `TestDemoM6` (opt-in) and `TestChecklistBackfillRunsOnlyWithTheTable`'s no-table case, the same two as on `main`. The integration tests ran against real Postgres and git, not skipped. The verifier's own run, before the last two tests were added, was 544 passed, 0 failed, the same 2 skipped. |
 | `contract_documents_approved` | **pending: Sam** | SPEC-021 is a draft, with stage 2's choices 15 to 23 added to DoD 10. |
 | `all_tasks_terminal` | **pass** | T1 to T6 and both fixer passes are done and merged ([dev plan](dev-plan-M14-stage2.md), Status). |
 | `reviews_present` | **pass** | Spec review: REVIEW-021 §6. Code reviews, three rounds of each: [round 1 bugs](../reviews/REVIEW-021-stage2-code-round1-bugs.md), [round 1 quality](../reviews/REVIEW-021-stage2-code-round1-quality.md), [round 2 bugs](../reviews/REVIEW-021-stage2-code-round2-bugs.md), [round 2 quality](../reviews/REVIEW-021-stage2-code-round2-quality.md), [round 3 bugs](../reviews/REVIEW-021-stage2-code-round3-bugs.md), [round 3 quality](../reviews/REVIEW-021-stage2-code-round3-quality.md). Round 3 found **no major** on either side. |
-| `verification_passed` | VERIFY_PLACEHOLDER | VERIFY_EVIDENCE_PLACEHOLDER |
+| `verification_passed` | **pass** | [VERIFICATION-021-stage2](../reviews/VERIFICATION-021-stage2.md): **101 PASS, 3 PARTIAL, 0 FAIL** at `faed33a`, each with a test, a `file:line` or a screenshot. All three PARTIALs were closed afterwards and the document says how: two new assertions in `TestSpikeExecutorIsRecorded` (each executor sentence on the page and in `get_spike`), a new `TestSpikeWorkingCopyChangeIsClaimActivity` (FR-14.3), and this handoff. Stage 1's `TestSpikeStopsHardAtItsBudget` and `TestSpikeHasNoMergePath` still pass. |
 | `worktree_removed` | **pass** | `git worktree list` shows only `/home/user/cromwell`. Every subagent worktree was merged and removed, and its branch deleted. |
 | `branch_merged` | **pending: the integrator** | Pushed to `claude/subutai-m14-stage2-spikes`, not to `main`. |
+
+**The browser walkthrough**, with no AI provider
+([walkthrough-spec-021-stage2](../walkthrough-spec-021-stage2.md)): a chat
+spike started from the start screen, claimed, saved and submitted over MCP,
+and closed by a person; a person spike run by hand from its page and closed
+by the same person; a spike ended at its time box with its saved draft; the
+Inbox's claim question for a spike; and the lists. Its first run found the
+**Ask again** layout and the "run" wording on chat and person spikes, both
+fixed in round 2; its second run, on the final code, passed. Afterwards the
+demo repository held only `master`, and one worktree for a spike still
+running.
 
 ## What was built
 
@@ -284,7 +296,10 @@ None is a major.
     says "Starting spends tokens… its budget" whoever is chosen, the New spike
     dialog offers only a budget, and the spikes list's intro says an agent
     works on each spike.
-VERIFY_CANDIDATES_PLACEHOLDER
+15. **Proved by code, not by a test** (the verifier's notes): the empty-draft
+    time-box sentences (FR-15.3), the typed time box kept on a refused start
+    (NFR-8), and the wording of the notice for an answer to a claim that has
+    moved on (FR-14.2; the no-op is tested).
 
 ## Traps for the next session
 
