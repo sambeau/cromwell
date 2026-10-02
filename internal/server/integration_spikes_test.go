@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/bus"
 	"subutai/internal/provider"
+	"subutai/internal/rules"
 	"subutai/internal/store"
 	"subutai/internal/toolhost"
 )
@@ -1157,5 +1160,415 @@ func TestLeftoverSpikeWorktreeIsRemoved(t *testing.T) {
 	}
 	if cur := h.getSpike(run.ID); cur.State != store.SpikeRunning {
 		t.Errorf("the running spike is %s", cur.State)
+	}
+}
+
+// ---- FR-7: closing, and asking again ----
+
+// endedSpike runs a spike to its end with a concluding agent, and returns it.
+func (h *harness) endedSpike(initiativeID uuid.UUID, question string, budget *int64) *store.Spike {
+	h.t.Helper()
+	sp := h.newSpike(initiativeID, question, budget)
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(sp, 0)
+	return h.spikeSettled(sp)
+}
+
+func TestPersonClosesASpike(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+
+	a := h.endedSpike(in, "Is the first question answered?", nil)
+	b := h.endedSpike(in, "Is the second question answered?", nil)
+	docA, _ := h.findingsOf(a)
+	stateBefore := docA.State
+
+	closedA, err := h.srv.CloseSpike(ctx, a.ID, store.SpikeAnswered, nil, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closedA.State != store.SpikeClosed || closedA.ClosedAs != store.SpikeAnswered || closedA.ClosedBy != "sam" || closedA.ClosedAt == nil {
+		t.Errorf("closed answered: %s as %q by %q", closedA.State, closedA.ClosedAs, closedA.ClosedBy)
+	}
+	if closedA.EndedHow != store.SpikeConcluded {
+		t.Errorf("closing lost how the run ended: %q", closedA.EndedHow)
+	}
+	closedB, err := h.srv.CloseSpike(ctx, b.ID, store.SpikeUnanswered, nil, "sam")
+	if err != nil || closedB.ClosedAs != store.SpikeUnanswered {
+		t.Fatalf("closed unanswered: %v, %v", closedB, err)
+	}
+	// Closing doesn't approve the findings: they keep their own lifecycle.
+	if cur, _ := h.findingsOf(a); cur.State != stateBefore {
+		t.Errorf("closing moved the findings from %s to %s", stateBefore, cur.State)
+	}
+	if got := h.auditKinds("spike.closed", a.ID); got != 1 {
+		t.Errorf("%d spike.closed rows, want 1", got)
+	}
+
+	// Closing twice, and closing a spike that is still running, are refused.
+	want := "This spike can't be closed now: it is still running, or it is already closed."
+	if _, err := h.srv.CloseSpike(ctx, a.ID, store.SpikeAnswered, nil, "sam"); err == nil || err.Error() != want {
+		t.Errorf("closing twice: %v", err)
+	}
+	if _, err := h.srv.CloseSpike(ctx, a.ID, SpikeCloseAgain, nil, "sam"); err == nil || err.Error() != want {
+		t.Errorf("asking again of a closed spike: %v", err)
+	}
+	running := h.newSpike(in, "Is this one still running?", nil)
+	h.startSpikeQuiet(running, 1000)
+	for _, as := range []string{store.SpikeAnswered, store.SpikeUnanswered, SpikeCloseAgain} {
+		if _, err := h.srv.CloseSpike(ctx, running.ID, as, nil, "sam"); err == nil || err.Error() != want {
+			t.Errorf("closing a running spike as %s: %v", as, err)
+		}
+	}
+	if cur := h.getSpike(running.ID); cur.State != store.SpikeRunning {
+		t.Errorf("a refused close moved the spike to %s", cur.State)
+	}
+	// An idea can be closed unanswered, but not answered, and isn't asked again.
+	idea := h.newSpike(in, "Was this ever started?", nil)
+	for _, as := range []string{store.SpikeAnswered, SpikeCloseAgain} {
+		if _, err := h.srv.CloseSpike(ctx, idea.ID, as, nil, "sam"); err == nil || err.Error() != want {
+			t.Errorf("closing an idea as %s: %v", as, err)
+		}
+	}
+	if _, err := h.srv.CloseSpike(ctx, idea.ID, "bogus", nil, "sam"); err == nil {
+		t.Error("an unknown way of closing was accepted")
+	}
+	if _, err := h.srv.CloseSpike(ctx, idea.ID, store.SpikeUnanswered, nil, "sam"); err != nil {
+		t.Errorf("closing an idea unanswered: %v", err)
+	}
+	// Starting a closed spike is refused, in a sentence.
+	if _, err := h.srv.StartSpike(ctx, a.ID, 0, "sam"); err == nil || err.Error() != "This spike has already been started." {
+		t.Errorf("starting a closed spike: %v", err)
+	}
+}
+
+func TestAskingAgainMakesASecondSpike(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	h.createFeature("pf", "login", "Login", "Sign in.")
+	feat, _ := h.srv.featureByPath(ctx, "pf/login")
+
+	first, err := h.srv.CreateSpike(ctx, "feature", feat.ID, "Does the header survive the proxy?", i64(20_000), "sam", "ui")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(first, 0)
+	first = h.spikeSettled(first)
+
+	second, err := h.srv.CloseSpike(ctx, first.ID, SpikeCloseAgain, i64(90_000), "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.PublicID == first.PublicID || second.State != store.SpikeIdea || second.Question != first.Question {
+		t.Errorf("second spike = %s %s %q", second.PublicID, second.State, second.Question)
+	}
+	if second.FollowsID == nil || *second.FollowsID != first.ID {
+		t.Errorf("the second spike doesn't follow the first: %v", second.FollowsID)
+	}
+	if second.FeatureID == nil || *second.FeatureID != feat.ID || second.InitiativeID != in {
+		t.Errorf("the second spike's owner is wrong: %v / %s", second.FeatureID, second.InitiativeID)
+	}
+	if second.BudgetOverride == nil || *second.BudgetOverride != 90_000 || second.CreatedVia != "ui" {
+		t.Errorf("budget override %v via %s", second.BudgetOverride, second.CreatedVia)
+	}
+	closed := h.getSpike(first.ID)
+	if closed.State != store.SpikeClosed || closed.ClosedAs != store.SpikeUnanswered {
+		t.Errorf("the first spike is %s as %q, want closed unanswered", closed.State, closed.ClosedAs)
+	}
+	if n := len(h.runsFor("spike", second.ID)); n != 0 {
+		t.Errorf("asking again started the second spike (%d runs)", n)
+	}
+	var follows int
+	if err := h.srv.Store.Pool.QueryRow(ctx, `SELECT count(*) FROM spikes WHERE follows_id = $1`, first.ID).Scan(&follows); err != nil || follows != 1 {
+		t.Errorf("%d spikes follow the first (%v)", follows, err)
+	}
+
+	// Started, its prompt holds the earlier findings, and the new budget.
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(second, 0)
+	second = h.spikeSettled(second)
+	prompt := h.runPrompt(second)
+	if !strings.Contains(prompt, "The header is read in one place, and a test shows it.") || !strings.Contains(prompt, "You have 90,000 tokens.") {
+		t.Errorf("the second run's prompt:\n%s", prompt)
+	}
+
+	// Asking again with no figure keeps the budget the spike had.
+	third, err := h.srv.CloseSpike(ctx, second.ID, SpikeCloseAgain, nil, "sam")
+	if err != nil || third.BudgetOverride == nil || *third.BudgetOverride != 90_000 {
+		t.Errorf("third = %v, %v", third, err)
+	}
+	// A refusal in the new spike undoes the close: the owner is archived, so
+	// the first spike isn't closed for nothing.
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(third, 0)
+	third = h.spikeSettled(third)
+	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE initiatives SET archived = true WHERE id = $1`, in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.CloseSpike(ctx, third.ID, SpikeCloseAgain, nil, "sam"); err == nil ||
+		err.Error() != "That initiative is archived, so a spike can't be created on it." {
+		t.Errorf("asking again under an archived initiative: %v", err)
+	}
+	if cur := h.getSpike(third.ID); cur.State != store.SpikeEnded {
+		t.Errorf("a refused ask-again closed the spike: %s", cur.State)
+	}
+	if _, err := h.srv.CloseSpike(ctx, third.ID, SpikeCloseAgain, i64(-1), "sam"); err == nil {
+		t.Error("a negative budget was accepted")
+	}
+}
+
+// ---- NFR-4: there is no merge path ----
+
+func TestSpikeHasNoMergePath(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	branches := h.gitOut("branch", "--list")
+	base := h.headSHA()
+
+	// A whitelisted script that does what a run must not: commit in the
+	// worktree and make a branch there. It only runs when the agent asks.
+	h.editConfig(`    argv: ["true"]`, `    argv: ["sh", "-c", "echo leaked > leak.txt && git add -A && git -c user.name=x -c user.email=x@x commit -qm leaked && git branch keep-this"]`)
+
+	// A run that leaves scaffolding but keeps no code.
+	clean := h.newSpike(in, "Does scaffolding stay in the working copy?", nil)
+	write, _ := json.Marshal(map[string]string{"path": "scratch.txt", "content": "throwaway\n"})
+	h.mock.RespondToolUse("write_file", string(write), tiny)
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(clean, 0)
+	clean = h.spikeSettled(clean)
+	if _, err := os.Stat(filepath.Join(h.root, "scratch.txt")); !os.IsNotExist(err) {
+		t.Errorf("the run's scaffolding reached the main checkout (%v)", err)
+	}
+	if got := h.gitOut("branch", "--list"); got != branches {
+		t.Errorf("a branch exists after a clean run:\nbefore %q\nafter  %q", branches, got)
+	}
+	// After the run, the main checkout's history holds only the findings commit.
+	log := strings.Fields(h.gitOut("log", "--format=%H", base+"..HEAD"))
+	if len(log) != 1 {
+		t.Fatalf("%d commits since the run began, want only the findings'", len(log))
+	}
+	doc, _ := h.findingsOf(clean)
+	if files := strings.Fields(h.gitOut("show", "--name-only", "--format=", log[0])); len(files) != 1 || files[0] != doc.Path {
+		t.Errorf("the findings commit touches %v, want only %s", files, doc.Path)
+	}
+	if msg := strings.TrimSpace(h.gitOut("log", "-1", "--format=%s")); !strings.HasPrefix(msg, "SPK-001: findings (") {
+		t.Errorf("the commit message = %q", msg)
+	}
+	if got := h.auditKinds("spike.code_kept", clean.ID); got != 0 {
+		t.Errorf("a clean run raised a leak: %d", got)
+	}
+	var rows int
+	if err := h.srv.Store.Pool.QueryRow(ctx, `SELECT count(*) FROM worktrees`).Scan(&rows); err != nil || rows != 0 {
+		t.Errorf("worktrees rows = %d (%v), want none", rows, err)
+	}
+
+	// The merge refuses a spike's ID: it finds no feature.
+	if err := h.srv.mergeFeature(ctx, clean.ID, "sam"); err == nil {
+		t.Error("mergeFeature accepted a spike's id")
+	}
+	// The rules emit no merge for a run-spike success, whatever its outcome.
+	for _, outcome := range []string{`{"ended":"budget"}`, `{"ended":"turn_limit"}`, findingsJSON(goodFindings), `{"merge":true}`} {
+		actions := rules.Decide(bus.DispatchSucceeded{DispatchID: uuid.New(), Purpose: "run-spike", Role: "spike-runner",
+			RefType: "spike", RefID: clean.ID, Outcome: json.RawMessage(outcome)}, rules.Snapshot{})
+		for _, a := range actions {
+			if _, ok := a.(rules.EndSpike); !ok {
+				t.Errorf("a run-spike success led to %T", a)
+			}
+		}
+	}
+	// No route, API or UI, merges, promotes or lands a spike; and a spike's
+	// ID isn't a feature to start.
+	for _, path := range []string{"/api/spikes/merge", "/api/spikes/promote", "/api/spikes/land", "/api/spike/merge",
+		"/ui/spikes/merge", "/ui/spikes/promote", "/ui/spikes/land", "/api/spikes/" + clean.ID.String() + "/merge"} {
+		if code, _ := h.call("POST", path, map[string]string{"spike": clean.ID.String()}); code != 404 && code != 405 {
+			t.Errorf("POST %s = %d, want 404 or 405", path, code)
+		}
+	}
+	for _, path := range []string{clean.PublicID, "pf/" + clean.PublicID, clean.ID.String()} {
+		if code, _ := h.call("POST", "/api/features/start", map[string]string{"path": path}); code < 400 {
+			t.Errorf("POST /api/features/start with %q = %d, want a refusal", path, code)
+		}
+	}
+	if resp, err := http.Get(h.api.URL + "/ui/f/pf/" + clean.PublicID); err != nil || resp.StatusCode != 404 {
+		t.Errorf("the feature page for a spike's ID: %v %v", resp, err)
+	}
+
+	// The leak check. The agent runs the script: its commit is on a branch
+	// that outlives the worktree.
+	leak := h.newSpike(in, "Is leaked code caught?", nil)
+	h.mock.RespondToolUse("run_command", `{"name":"build"}`, tiny)
+	h.saveCall(tiny, "Yes.", "The script committed and branched.")
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(leak, 0)
+	leak = h.spikeSettled(leak)
+
+	if out := h.gitOut("branch", "--list", "keep-this"); !strings.Contains(out, "keep-this") {
+		t.Fatalf("the branch the script made is gone (Subutai must not delete it): %q", out)
+	}
+	commit := strings.TrimSpace(h.gitOut("rev-parse", "keep-this"))
+	if refs := strings.Fields(h.gitOut("for-each-ref", "--contains", commit, "--format=%(refname:short)")); len(refs) != 1 || refs[0] != "keep-this" {
+		t.Errorf("the worktree's commit is reachable from %v, want only keep-this", refs)
+	}
+	_, text := h.findingsOf(leak)
+	if !strings.Contains(text, "Code from this spike was kept on `keep-this`, outside its working copy. Subutai hasn't deleted it; the Inbox asks what to do.") {
+		t.Errorf("the findings don't name the branch:\n%s", text)
+	}
+	if got := h.auditKinds("spike.code_kept", leak.ID); got != 1 {
+		t.Errorf("%d spike.code_kept audit rows, want 1", got)
+	}
+	cps := h.pendingByKind("spike-code-kept")
+	if len(cps) != 1 || cps[0].RefType != "spike" || cps[0].RefID != leak.ID ||
+		cps[0].Question != "Code from SPK-002 was kept on `keep-this`, outside its working copy. A spike's code is never merged. Delete the branch, or keep it knowing it won't be built from." {
+		t.Errorf("the checkpoint = %+v", cps)
+	}
+	if _, err := os.Stat(h.spikeDir(leak)); !os.IsNotExist(err) {
+		t.Errorf("the leaking spike's worktree is still there (%v)", err)
+	}
+	// The leaked commit isn't on the main line: only the findings were added.
+	if got := strings.Fields(h.gitOut("log", "--format=%s", "keep-this..HEAD")); len(got) == 0 {
+		t.Error("the main line doesn't have its own commits")
+	}
+	if h.gitOut("branch", "--contains", commit, "--list", "main", "master") != "" {
+		t.Error("the leaked commit reached the main line")
+	}
+	// Answering the checkpoint changes nothing in Subutai.
+	if code, out := h.call("POST", "/api/respond", map[string]any{"id": cps[0].ID.String(), "response": map[string]any{"answer": "acknowledge"}}); code != 200 {
+		t.Errorf("answering the checkpoint: %d %v", code, out)
+	}
+	if out := h.gitOut("branch", "--list", "keep-this"); !strings.Contains(out, "keep-this") {
+		t.Error("answering the checkpoint deleted the branch")
+	}
+}
+
+// ---- SD-14: open spikes block archiving ----
+
+func TestOpenSpikesBlockArchivingTheirInitiative(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	sp := h.newSpike(in, "Is it safe to archive?", nil)
+
+	code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf"})
+	if code != 409 || !strings.Contains(out["reason"].(string), "1 open spike(s)") {
+		t.Fatalf("archive with an open spike: %d %v", code, out)
+	}
+	// The UI route says so too, in the page a person reads.
+	code, page := h.postForm("/ui/initiative/archive", map[string]string{"id": in.String()})
+	if code != 200 || !strings.Contains(page, "open spike") {
+		t.Errorf("the UI archive: %d\n%s", code, truncate(page, 600))
+	}
+	if st, _ := h.srv.Store.InitiativeBySlugPath(ctx, []string{"pf"}); st.Archived {
+		t.Fatal("the initiative was archived with an open spike under it")
+	}
+	// One that has ended and waits for a person counts too.
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(sp, 0)
+	sp = h.spikeSettled(sp)
+	if code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf"}); code != 409 {
+		t.Errorf("archive with an ended spike: %d %v", code, out)
+	}
+	// Closed, it doesn't.
+	if _, err := h.srv.CloseSpike(ctx, sp.ID, store.SpikeAnswered, nil, "sam"); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf"}); code != 200 {
+		t.Errorf("archive with only a closed spike: %d %v", code, out)
+	}
+}
+
+// ---- Appendix A: the places that switch on an owner ----
+
+func TestSpikeAppendixSites(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	sp := h.endedSpike(in, "Where does a spike show up?", nil)
+	doc, _ := h.findingsOf(sp)
+
+	// Attaching or adopting a document to a spike is refused, both ways in.
+	const refusal = "A spike's only document is its findings, which its run writes."
+	if _, err := h.srv.RegisterDoc(ctx, "docs/x.md", "note", "spike", sp.PublicID, "sam"); err == nil || err.Error() != refusal {
+		t.Errorf("RegisterDoc on a spike: %v", err)
+	}
+	if _, err := h.srv.mcpResolveOwner(ctx, "spike", sp.PublicID); err == nil || err.Error() != refusal {
+		t.Errorf("mcpResolveOwner on a spike: %v", err)
+	}
+	// The findings' owner is the spike, its crumb leads there, and its ID
+	// is the spike's.
+	if doc.OwnerType != "spike" || doc.OwnerID == nil || *doc.OwnerID != sp.ID || doc.PublicID != "SPK-001-findings" {
+		t.Errorf("findings = %s owned by %s", doc.PublicID, doc.OwnerType)
+	}
+	if doc.Type != "findings" || !strings.HasPrefix(doc.Path, "docs/work/INIT-001-pf/SPK-001-findings") {
+		t.Errorf("findings are %s at %s", doc.Type, doc.Path)
+	}
+	c := h.srv.ownerCrumb(ctx, "spike", doc.OwnerID)
+	if c.ID != "SPK-001" || c.URL != "/ui/s/SPK-001" {
+		t.Errorf("owner crumb = %+v", c)
+	}
+	// A spike-owned document's branch is the spike's initiative.
+	if sc := h.srv.scopeForDocument(ctx, doc); sc.InitiativeID == nil || *sc.InitiativeID != in {
+		t.Errorf("scope = %+v", sc)
+	}
+	// The rules' snapshot doesn't fail on a spike-owned document, and has no
+	// owning feature for it.
+	snap, err := h.srv.snapshot(ctx, bus.DocumentTransitioned{DocID: doc.ID, To: "reviewing"})
+	if err != nil || snap.Doc == nil || snap.OwnerFeature != nil || snap.Doc.OwnerType != "spike" {
+		t.Errorf("snapshot = %+v, %v", snap, err)
+	}
+	// The findings go through the ordinary lifecycle, and a person approves
+	// them: submitting queues no agent review, because the manifest says so.
+	if report, _, err := h.srv.SubmitDoc(ctx, doc.Path, "sam"); err != nil || !report.Valid {
+		t.Fatalf("submit findings: %v %v", err, report)
+	}
+	h.quiet()
+	if got := h.docState(doc.Path); got != "reviewing" {
+		t.Errorf("submitted findings are %s, want reviewing (a person's to approve)", got)
+	}
+	if n := len(h.runsFor("document", doc.ID)); n != 0 {
+		t.Errorf("%d agent reviews were dispatched for findings, want none", n)
+	}
+	if err := h.srv.HumanApproveDocument(ctx, doc.ID, "sam"); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.docState(doc.Path); got != "approved" {
+		t.Errorf("approved findings are %s", got)
+	}
+	if st, _ := store.GetSpike(ctx, h.srv.Store.Pool, sp.ID); st.State != store.SpikeEnded {
+		t.Errorf("approving the findings moved the spike to %s", st.State)
+	}
+
+	// An ID redirects to the spike's page.
+	if code, loc := h.redirectOf("/ui/id/SPK-001"); code != 302 || loc != "/ui/s/SPK-001" {
+		t.Errorf("/ui/id/SPK-001 = %d %q", code, loc)
+	}
+	if code, loc := h.redirectOf("/ui/id/spk-001"); code != 302 || loc != "/ui/s/SPK-001" {
+		t.Errorf("/ui/id/spk-001 = %d %q", code, loc)
+	}
+	if code, _ := h.redirectOf("/ui/id/SPK-099"); code != 404 {
+		t.Errorf("/ui/id/SPK-099 = %d, want 404", code)
+	}
+	if code, loc := h.redirectOf("/ui/id/SPK-001-findings"); code != 302 || !strings.HasPrefix(loc, "/ui/d/docs/work/") {
+		t.Errorf("/ui/id/SPK-001-findings = %d %q", code, loc)
+	}
+
+	// The run's page says what it was and leads to the spike and its owner.
+	runs := h.runsFor("spike", sp.ID)
+	page, err := h.srv.buildRunPage(ctx, &runs[0], "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Heading != "Running a spike" {
+		t.Errorf("run heading = %q", page.Heading)
+	}
+	var urls []string
+	for _, cr := range page.Crumbs {
+		urls = append(urls, cr.URL)
+	}
+	if !strings.Contains(strings.Join(urls, " "), "/ui/s/SPK-001") || !strings.Contains(strings.Join(urls, " "), "/ui/i/pf") {
+		t.Errorf("run crumbs = %v", urls)
 	}
 }

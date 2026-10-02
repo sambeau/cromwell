@@ -228,3 +228,20 @@ func TestG0SpecReady(t *testing.T) {
 		t.Error("G0 must not pass on anything but its own or its immediate parent's design")
 	}
 }
+
+// Open spikes block G5 as unfinished features do, and the reason names them
+// (SPEC-021 SD-14).
+func TestG5CountsOpenSpikes(t *testing.T) {
+	if r := G5Open(0, 0); !r.Pass {
+		t.Errorf("G5Open(0, 0) should pass: %+v", r)
+	}
+	if r := G5Open(0, 2); r.Pass || r.Reason != "2 open spike(s) in subtree" {
+		t.Errorf("G5Open(0, 2) = %+v", r)
+	}
+	if r := G5Open(1, 3); r.Pass || r.Reason != "1 non-terminal feature(s) and 3 open spike(s) in subtree" {
+		t.Errorf("G5Open(1, 3) = %+v", r)
+	}
+	if G5(2) != G5Open(2, 0) {
+		t.Error("G5 and G5Open(n, 0) differ")
+	}
+}

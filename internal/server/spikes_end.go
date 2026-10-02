@@ -82,6 +82,7 @@ func (s *Server) EndSpike(ctx context.Context, spikeID uuid.UUID, how, note stri
 		if sp, err = store.GetSpike(ctx, s.Store.Pool, spikeID); err != nil {
 			return err
 		}
+		s.notifySpikeChanged(sp)
 	}
 	return s.finishSpikeEnding(ctx, sp)
 }
@@ -155,15 +156,21 @@ func (s *Server) roleOnly(name string) (int, error) {
 // worktree. It runs for a spike that has ended, and again for any that an
 // earlier call left half done.
 func (s *Server) finishSpikeEnding(ctx context.Context, sp *store.Spike) error {
+	changed := false
 	if doc, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "findings", "spike", sp.ID); err == nil {
-		s.commitSpikeFindings(sp, doc)
+		changed = s.commitSpikeFindings(sp, doc)
 	}
 	if sp.WorktreePath != "" && sp.WorktreeRemovedAt == nil {
 		if err := s.discardSpikeWorktree(ctx, sp); err != nil {
 			return err
 		}
+		changed = true
 	}
-	s.notifySpikeChanged(sp)
+	if changed {
+		// The page shows the commit and the discard; a sweep that found
+		// nothing to do says nothing.
+		s.notifySpikeChanged(sp)
+	}
 	return nil
 }
 
@@ -183,12 +190,13 @@ func spikeEndReason(how string) string {
 // commitSpikeFindings commits the findings file in the main checkout, once:
 // when it has never been committed. What a person edits later is theirs to
 // commit, and isn't swept up here.
-func (s *Server) commitSpikeFindings(sp *store.Spike, doc *store.Document) {
+func (s *Server) commitSpikeFindings(sp *store.Spike, doc *store.Document) bool {
 	out, err := gitIn(s.RepoRoot, "ls-files", "--", doc.Path)
 	if err != nil || strings.TrimSpace(out) != "" {
-		return
+		return false
 	}
 	s.commitDocument(doc.Path, fmt.Sprintf("%s: findings (%s)", sp.PublicID, spikeEndReason(sp.EndedHow)))
+	return true
 }
 
 // ---- The worktree ----
