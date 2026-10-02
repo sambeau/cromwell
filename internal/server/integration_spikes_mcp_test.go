@@ -235,3 +235,21 @@ func jsonText(v any) string {
 	raw, _ := json.Marshal(v)
 	return string(raw)
 }
+
+// TestSpikeMCPInstructions is FR-9: the handshake tells the chat agent it may
+// write down a spike's question, and that starting and closing are a person's.
+func TestSpikeMCPInstructions(t *testing.T) {
+	h := newHarness(t)
+	resp := h.rpc("initialize", map[string]any{
+		"protocolVersion": mcpProtocolVersion,
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test-client", "version": "1"},
+	})
+	if resp.Error != nil {
+		t.Fatalf("initialize: %s", resp.Error.Message)
+	}
+	text, _ := resp.Result.(map[string]any)["instructions"].(string)
+	if want := "You may write down a spike's question with create_spike; only a person can start or close one."; !strings.Contains(text, want) {
+		t.Errorf("the instructions lack %q:\n%s", want, text)
+	}
+}

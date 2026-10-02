@@ -59,13 +59,13 @@
         <p class="t-meta">A spike on {{.Title}} writes down a question to find out. Nothing runs until you start it, and you see its budget first.</p>
         <div class="field">
           <label class="field-label" for="spike-question">The question</label>
-          <textarea class="textarea" id="spike-question" name="question" rows="3" maxlength="500" required placeholder="Does the payments API accept a refund after settlement?"></textarea>
-          <p class="field-hint">One sentence saying what it should find out, at most 500 characters. It can't be edited afterwards: a different question is a different spike.</p>
+          <textarea class="textarea" id="spike-question" name="question" rows="3" maxlength="500" required aria-describedby="spike-question-hint" placeholder="Does the payments API accept a refund after settlement?"></textarea>
+          <p class="field-hint" id="spike-question-hint">One sentence saying what it should find out, at most 500 characters. It can't be edited afterwards: a different question is a different spike.</p>
         </div>
         <div class="field">
           <label class="field-label" for="spike-budget">Budget in tokens <span class="t-meta">(optional)</span></label>
-          <input class="input" id="spike-budget" name="budget" inputmode="numeric" placeholder="Leave empty for the project's default">
-          <p class="field-hint">The run stops when it reaches this many tokens. You can change it when you start the spike.</p>
+          <input class="input" id="spike-budget" name="budget" inputmode="numeric" aria-describedby="spike-budget-hint" placeholder="Leave empty for the project's default">
+          <p class="field-hint" id="spike-budget-hint">The run stops when it reaches this many tokens. You can change it when you start the spike.</p>
         </div>
       </div>
       <input type="hidden" name="owner_type" value="{{.RefType}}">
@@ -138,15 +138,15 @@
 {{end}}
 {{if .Error}}
 <div class="banner banner--error" role="alert">
-  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{code .Error}}</div></div>
 {{end}}
 
 <section class="panel u-mt-4" id="spike-state">
   <div class="panel-body">
     <p id="spike-state-sentence">{{.StateSentence}}</p>
     {{if .Follows}}<p class="t-meta u-mt-2">It asks again after <a href="{{.Follows.URL}}">{{.Follows.PublicID}}</a>.</p>{{end}}
-    {{if .FollowBy}}<p class="t-meta u-mt-2">It was asked again as <a href="{{.FollowBy.URL}}">{{.FollowBy.PublicID}}</a>.</p>{{end}}
-    {{if .SD12}}<p class="u-mt-2">{{.SD12}}</p>{{end}}
+    {{if .FollowedBy}}<p class="t-meta u-mt-2">It was asked again as <a href="{{.FollowedBy.URL}}">{{.FollowedBy.PublicID}}</a>.</p>{{end}}
+    {{if .BuildOnSentence}}<p class="u-mt-2">{{.BuildOnSentence}}</p>{{end}}
   </div>
 </section>
 
@@ -203,11 +203,7 @@
     <div class="action-row">
       <a class="btn btn--primary" href="/ui/spikes/start?spike={{.ID}}">
         <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Start this spike…</a>
-      <form method="post" action="/ui/spikes/close">
-        <input type="hidden" name="spike" value="{{.ID}}">
-        <input type="hidden" name="as" value="unanswered">
-        <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Close without running</button>
-      </form>
+      {{template "spike-close-form" closeForm .ID "unanswered" "Close without running" "close" false}}
     </div>
     <p class="t-meta u-mt-2">Starting shows you who will run it and its budget first. Closing without running records that nobody needs the answer, and keeps the question.</p>
   </div>
@@ -221,24 +217,16 @@
   <div class="panel-body">
     <p class="t-meta">Read the findings, then say whether they answer the question.</p>
     <div class="action-row u-mt-2">
-      <form method="post" action="/ui/spikes/close">
-        <input type="hidden" name="spike" value="{{.ID}}">
-        <input type="hidden" name="as" value="answered">
-        <button class="btn btn--primary" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>The question is answered</button>
-      </form>
-      <form method="post" action="/ui/spikes/close">
-        <input type="hidden" name="spike" value="{{.ID}}">
-        <input type="hidden" name="as" value="unanswered">
-        <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Close without an answer</button>
-      </form>
+      {{template "spike-close-form" closeForm .ID "answered" "The question is answered" "approve" true}}
+      {{template "spike-close-form" closeForm .ID "unanswered" "Close without an answer" "close" false}}
     </div>
     <form method="post" action="/ui/spikes/close" class="u-mt-4 triage-with-field">
       <input type="hidden" name="spike" value="{{.ID}}">
       <input type="hidden" name="as" value="again">
       <label class="field-label" for="again-budget">A new budget, in tokens</label>
-      <input class="input" id="again-budget" name="budget" inputmode="numeric"{{if .AgainBudget}} value="{{.AgainBudget}}"{{end}}>
+      <input class="input" id="again-budget" name="budget" inputmode="numeric" aria-describedby="again-budget-hint"{{if .AgainBudget}} value="{{.AgainBudget}}"{{end}}>
       <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"/></svg>Ask again with a new budget</button>
-      <p class="field-hint">This closes the spike without an answer and writes down a new one with the same question and the budget you give. Nothing starts until you press Start on its screen. The new run is shown what this one found.</p>
+      <p class="field-hint" id="again-budget-hint">This closes the spike without an answer and writes down a new one with the same question and the budget you give. Nothing starts until you press Start on its screen. The new run is shown what this one found.</p>
     </form>
   </div>
 </section>
@@ -289,7 +277,7 @@
 
 {{if .Error}}
 <div class="banner banner--error" role="alert">
-  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{code .Error}}</div></div>
 {{end}}
 
 <section class="panel u-mt-4">
@@ -316,7 +304,7 @@
     </div>
     <div class="panel-body">
       {{if .Refusal}}
-      <p class="action-reason" id="start-runner"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{.Refusal}}</span></p>
+      <p class="action-reason" id="start-runner"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{code .Refusal}}</span></p>
       {{else}}
       <p id="start-runner">{{.Runner}}</p>
       {{end}}
@@ -332,8 +320,8 @@
     <div class="panel-body">
       <div class="field">
         <label class="field-label" for="start-budget">Budget in tokens</label>
-        <input class="input" id="start-budget" name="budget" inputmode="numeric" value="{{.Budget}}" required>
-        {{if .BudgetNote}}<p class="field-hint" id="start-budget-note">{{.BudgetNote}}</p>{{end}}
+        <input class="input" id="start-budget" name="budget" inputmode="numeric" value="{{.Budget}}" required{{if .BudgetNote}} aria-describedby="start-budget-note"{{end}}>
+        {{if .BudgetNote}}<p class="field-hint" id="start-budget-note">{{code .BudgetNote}}</p>{{end}}
       </div>
       <p class="t-meta">The run stops when it reaches this many tokens. Whatever findings it has saved by then are written up, and you decide whether to ask again.</p>
     </div>
@@ -386,3 +374,12 @@
 {{end}}
 {{end}}
 {{template "pagebottom" .}}{{end}}
+
+{{/* One of the buttons that close a spike (FR-1.4, FR-7). */}}
+{{define "spike-close-form"}}
+<form method="post" action="/ui/spikes/close">
+  <input type="hidden" name="spike" value="{{.Spike}}">
+  <input type="hidden" name="as" value="{{.As}}">
+  <button class="btn{{if .Primary}} btn--primary{{end}}" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{.Icon}}"/></svg>{{.Label}}</button>
+</form>
+{{end}}

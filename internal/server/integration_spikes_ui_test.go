@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -28,11 +29,15 @@ func (h *harness) uiText(path string) string {
 	return html.UnescapeString(body)
 }
 
-// postText posts a form and returns the status and the unescaped body (or the
-// Location of a redirect).
+// postText posts a form and returns the status and the unescaped body. A
+// redirect to a spike's page is followed, as a browser does, and its page
+// returned.
 func (h *harness) postText(path string, v url.Values) (int, string) {
 	h.t.Helper()
 	code, body := h.postValues(path, v)
+	if code == http.StatusSeeOther && strings.HasPrefix(body, "/ui/s/") {
+		return http.StatusOK, h.uiText(body)
+	}
 	return code, html.UnescapeString(body)
 }
 
@@ -78,7 +83,7 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 	wants(t, "the start screen", screen,
 		"Does the API honour the header?", "The pf initiative",
 		"The spike runner runs it, on "+model+".",
-		`value="1000000"`, "This is the project's default budget, from `spikes.default_token_budget`.",
+		`value="1000000"`, "This is the project's default budget, from <code>spikes.default_token_budget</code>.",
 		"The run stops when it reaches this many tokens. Whatever findings it has saved by then are written up, and you decide whether to ask again.",
 		"No decisions apply here.",
 		"It works in a throwaway copy of the code, made from the current main line. Nothing it writes there is kept: the copy is discarded when the run ends, and Subutai never merges it.",
@@ -103,7 +108,7 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 	h.editConfig("  run-spike: spike-runner\n", "  # run-spike: spike-runner\n")
 	screen = h.uiText(startURL(plain))
 	wants(t, "the start screen with no runner", screen,
-		"Nobody is assigned to run spikes, so this spike can't start. Assign `run-spike` to a role in `config.yaml`.",
+		"Nobody is assigned to run spikes, so this spike can't start. Assign <code>run-spike</code> to a role in <code>config.yaml</code>.",
 		"disabled")
 	if code, body := h.postText("/ui/spikes/start", url.Values{"spike": {plain.ID.String()}}); code != 200 {
 		t.Errorf("starting with no runner = %d", code)
@@ -117,10 +122,11 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 
 	// The POST starts it once.
 	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
-	code, body := h.postText("/ui/spikes/start", url.Values{"spike": {own.ID.String()}, "budget": {"40,000"}})
-	if code != 200 {
-		t.Fatalf("POST /ui/spikes/start = %d\n%s", code, truncate(body, 600))
+	code, loc := h.postValues("/ui/spikes/start", url.Values{"spike": {own.ID.String()}, "budget": {"40,000"}})
+	if code != http.StatusSeeOther || !strings.HasPrefix(loc, "/ui/s/"+own.PublicID) {
+		t.Fatalf("POST /ui/spikes/start = %d %q, want a 303 to the spike's page", code, loc)
 	}
+	body := h.uiText(loc)
 	wants(t, "the page after the start", body, own.PublicID+" has started, with a budget of 40,000 tokens.", "This spike is running.")
 	started := h.getSpike(own.ID)
 	if started.TokenBudget == nil || *started.TokenBudget != 40_000 || started.StartedBy == "" {
@@ -154,8 +160,8 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 			_ = resp.Body.Close()
-			if resp.StatusCode != 404 && resp.StatusCode != 405 {
-				t.Errorf("%s %s = %d, want 404 or 405", method, path, resp.StatusCode)
+			if resp.StatusCode != http.StatusNotFound {
+				t.Errorf("%s %s = %d, want 404", method, path, resp.StatusCode)
 			}
 		}
 	}
@@ -197,7 +203,7 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 		"Created by sam in the web UI.")
 	lacks(t, "an idea's page", page, "The question is answered", "Ask again with a new budget")
 	// /ui/id/ lands on the page.
-	if code, loc := h.postValuesGetLocation("/ui/id/" + idea.PublicID); code != 302 || loc != "/ui/s/"+idea.PublicID {
+	if code, loc := h.redirectOf("/ui/id/" + idea.PublicID); code != 302 || loc != "/ui/s/"+idea.PublicID {
 		t.Errorf("/ui/id/%s = %d %q", idea.PublicID, code, loc)
 	}
 
@@ -253,8 +259,8 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 	// One that concluded.
 	concl := h.endedSpike(in, "Does the API honour the header?", nil)
 	wants(t, "a concluded spike's page", h.uiText("/ui/s/"+concl.PublicID),
-		"This spike's run has ended: the agent reached a conclusion. It's waiting for you to read the findings.",
-		"Ended: the agent reached a conclusion.")
+		"This spike's run has ended: it reached a conclusion. It's waiting for you to read the findings.",
+		"Ended: it reached a conclusion.")
 
 	// The owner sections: the initiative lists the spikes it owns directly,
 	// the feature its own, each with its state and tokens used of budget.
@@ -324,6 +330,9 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 	// The Inbox: the count of ended spikes, linking to the list, while the
 	// badge still counts checkpoints only.
 	wants(t, "the inbox", h.uiText("/ui/inbox"), "/ui/frag/spikes-line")
+	if _, badge := h.getUI("/ui/frag/inbox-badge"); strings.TrimSpace(badge) != "" {
+		t.Errorf("the inbox badge = %q while only spikes wait, want it to count checkpoints alone", strings.TrimSpace(badge))
+	}
 	line := h.uiText("/ui/frag/spikes-line")
 	wants(t, "the inbox line", line, "3 spikes have ended and are waiting for you to read their findings.", `href="/ui/spikes"`)
 
@@ -364,17 +373,6 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 	cands := h.uiText("/ui/m/" + m.ID.String() + "/candidates?q=log")
 	lacks(t, "the milestone candidates", cands, "SPK-", "Which queue", "Does the login form leak timing?")
 	wants(t, "the milestone candidates", cands, "Login")
-}
-
-// postValuesGetLocation does a GET without following a redirect.
-func (h *harness) postValuesGetLocation(path string) (int, string) {
-	h.t.Helper()
-	resp, err := noRedirect.Get(h.api.URL + path)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	return resp.StatusCode, resp.Header.Get("Location")
 }
 
 // ---- FR-1.3, FR-1.4, FR-7: creating and closing from the browser ----
@@ -470,7 +468,11 @@ func TestSpikeUICreateCloseAndAgain(t *testing.T) {
 	// An ended spike closes as answered; the findings are left as they are.
 	ended := h.endedSpike(in, "Does the API honour the header?", nil)
 	doc, _ := h.findingsOf(ended)
-	_, body = h.postText("/ui/spikes/close", url.Values{"spike": {ended.ID.String()}, "as": {"answered"}})
+	code, loc := h.postValues("/ui/spikes/close", url.Values{"spike": {ended.ID.String()}, "as": {"answered"}})
+	if code != http.StatusSeeOther || !strings.HasPrefix(loc, "/ui/s/"+ended.PublicID) {
+		t.Fatalf("closing as answered = %d %q, want a 303 to the spike's page", code, loc)
+	}
+	body = h.uiText(loc)
 	wants(t, "answered", body, ended.PublicID+" is closed: the question is answered.", "Closed as answered, by ")
 	if after, _ := h.findingsOf(ended); after.State != doc.State {
 		t.Errorf("the findings went from %s to %s", doc.State, after.State)
@@ -478,7 +480,7 @@ func TestSpikeUICreateCloseAndAgain(t *testing.T) {
 
 	// Asking again redirects to the new spike's start screen.
 	first := h.endedSpike(in, "Does the API retry?", nil)
-	code, loc := h.postValues("/ui/spikes/close", url.Values{"spike": {first.ID.String()}, "as": {"again"}, "budget": {"30,000"}})
+	code, loc = h.postValues("/ui/spikes/close", url.Values{"spike": {first.ID.String()}, "as": {"again"}, "budget": {"30,000"}})
 	if code != 303 || !strings.HasPrefix(loc, "/ui/spikes/start?spike=") {
 		t.Fatalf("ask again = %d %q, want a 303 to the start screen", code, loc)
 	}
@@ -507,5 +509,56 @@ func TestSpikeUICreateCloseAndAgain(t *testing.T) {
 	wants(t, "a bad ask-again budget", body, "A spike's budget is a positive whole number of tokens.")
 	if got := h.getSpike(other.ID); got.State != store.SpikeEnded {
 		t.Errorf("a refused ask-again left the spike %s", got.State)
+	}
+}
+
+// TestSpikeStartScreenForecast is FR-3.2: with three or more earlier spike
+// runs the start screen forecasts from their median, and with fewer it says
+// there aren't enough.
+func TestSpikeStartScreenForecast(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	sp := h.newSpike(in, "How slow is the export?", nil)
+
+	seed := func(input int) {
+		t.Helper()
+		finished := time.Now().Add(-time.Hour)
+		if _, err := h.srv.Store.Pool.Exec(ctx, `
+			INSERT INTO dispatches (id, state, purpose, role, model, ref_type, ref_id, idempotency_key,
+				started_at, finished_at, input_tokens, output_tokens, outcome)
+			VALUES ($1, 'succeeded', 'run-spike', 'spike-runner', 'claude-sonnet-5', 'spike', $2, $3, $4, $5, $6, 2000, '{}')`,
+			store.NewID(), uuid.New(), uuid.NewString(), finished.Add(-time.Minute), finished, input); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(10_000)
+	seed(12_000)
+	wants(t, "the screen with two earlier runs", h.uiText(startURL(sp)), "There aren't enough earlier spikes to forecast this one yet.")
+
+	seed(14_000) // runs of 12,000, 14,000 and 16,000 tokens: the median is 14,000
+	screen := h.uiText(startURL(sp))
+	wants(t, "the screen with three earlier runs", screen,
+		"Rough forecast: about "+humanTokens(14_000)+" tokens, from the median of this project's earlier spike runs.")
+	lacks(t, "the screen with three earlier runs", screen, "There aren't enough earlier spikes")
+}
+
+// TestSpikeBadIDsAnswerAlike: a spike id that isn't one is a 400 and one that
+// names nothing is a 404, on the start screen and on both POSTs.
+func TestSpikeBadIDsAnswerAlike(t *testing.T) {
+	h := newHarness(t)
+	if code, _ := h.getUI("/ui/spikes/start?spike=nonsense"); code != http.StatusBadRequest {
+		t.Errorf("GET start with a malformed id = %d, want 400", code)
+	}
+	if code, _ := h.getUI("/ui/spikes/start?spike=" + uuid.NewString()); code != http.StatusNotFound {
+		t.Errorf("GET start with an unknown id = %d, want 404", code)
+	}
+	for _, path := range []string{"/ui/spikes/start", "/ui/spikes/close"} {
+		if code, _ := h.postValues(path, url.Values{"spike": {"nonsense"}, "as": {"answered"}}); code != http.StatusBadRequest {
+			t.Errorf("POST %s with a malformed id = %d, want 400", path, code)
+		}
+		if code, _ := h.postValues(path, url.Values{"spike": {uuid.NewString()}, "as": {"answered"}}); code != http.StatusNotFound {
+			t.Errorf("POST %s with an unknown id = %d, want 404", path, code)
+		}
 	}
 }

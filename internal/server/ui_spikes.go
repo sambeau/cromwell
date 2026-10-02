@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
@@ -66,40 +67,66 @@ func tokensOfBudget(sp *store.Spike) string {
 	return groupThousands(sp.TokensUsed) + " of " + groupThousands(*sp.TokenBudget) + " tokens"
 }
 
-// spikeEndReason says how a run ended, to follow "its run has ended: ".
-func spikeEndedWords(how string) string {
-	switch how {
-	case store.SpikeConcluded:
-		return "the agent reached a conclusion"
-	case store.SpikeBudget:
-		return "it stopped at its budget"
-	case store.SpikeTurnLimit:
-		return "it stopped at its turn limit"
-	case store.SpikeFailed:
-		return "the run failed"
+// spikeCloseForm is what the page's one close-button form is given.
+type spikeCloseForm struct {
+	Spike       uuid.UUID
+	As          string
+	Label, Icon string
+	Primary     bool
+}
+
+// codeSpans shows a sentence with its `backticked` words as code: the text is
+// escaped first, so only the marks the sentence carried become markup. A
+// sentence with an unmatched backtick is shown as it is.
+func codeSpans(s string) template.HTML {
+	parts := strings.Split(template.HTMLEscapeString(s), "`")
+	if len(parts)%2 == 0 {
+		return template.HTML(strings.Join(parts, "`"))
 	}
-	return "the run is over"
+	var b strings.Builder
+	for i, p := range parts {
+		if i%2 == 1 {
+			b.WriteString("<code>" + p + "</code>")
+		} else {
+			b.WriteString(p)
+		}
+	}
+	return template.HTML(b.String())
 }
 
 // spikeWhen is a moment in words: "2 October at 14:05".
-func spikeWhen(t time.Time) string { return t.Local().Format("2 January at 15:04") }
+func spikeWhen(t time.Time) string { return t.Format("2 January at 15:04") }
+
+// spikeOwnerInfo is the entity a spike hangs on. Path is empty when it can't be
+// found, and every field is empty when the owner itself can't be read.
+type spikeOwnerInfo struct {
+	ID, Name, Type, Path string
+}
+
+func (s *Server) spikeOwnerRef(ctx context.Context, sp *store.Spike) spikeOwnerInfo {
+	if sp.FeatureID != nil {
+		f, err := store.GetFeature(ctx, s.Store.Pool, *sp.FeatureID)
+		if err != nil {
+			return spikeOwnerInfo{}
+		}
+		path, _ := s.featurePath(ctx, f)
+		return spikeOwnerInfo{ID: f.PublicID, Name: f.Name, Type: "feature", Path: path}
+	}
+	in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID)
+	if err != nil {
+		return spikeOwnerInfo{}
+	}
+	path, _ := s.initiativePath(ctx, in.ID)
+	return spikeOwnerInfo{ID: in.PublicID, Name: in.Name, Type: "initiative", Path: path}
+}
 
 // spikeOwnerOf names the entity a spike hangs on and links to it.
 func (s *Server) spikeOwnerOf(ctx context.Context, sp *store.Spike) (name, url string) {
-	if sp.FeatureID != nil {
-		if f, err := store.GetFeature(ctx, s.Store.Pool, *sp.FeatureID); err == nil {
-			if p, err := s.featurePath(ctx, f); err == nil {
-				return f.PublicID + " " + f.Name, "/ui/f/" + p
-			}
-		}
+	o := s.spikeOwnerRef(ctx, sp)
+	if o.Path == "" {
 		return "", ""
 	}
-	if in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID); err == nil {
-		if p, err := s.initiativePath(ctx, in.ID); err == nil {
-			return in.PublicID + " " + in.Name, "/ui/i/" + p
-		}
-	}
-	return "", ""
+	return o.ID + " " + o.Name, "/ui/" + o.Type[:1] + "/" + o.Path
 }
 
 func (s *Server) spikeRows(ctx context.Context, spikes []store.Spike, withOwner bool) []spikeRow {
@@ -164,25 +191,22 @@ type spikePage struct {
 	ID       uuid.UUID
 	PublicID string
 	Question string
-	State    string
 	Badge    spikeBadge
 	Crumbs   []crumb
 
 	OwnerName, OwnerURL string
 	StateSentence       string
 
-	HasBudget    bool
-	Used, Budget int64
-	Pct          int
-	TokensLine   string // "31,004 of 40,000 tokens"
-	BudgetLine   string // before the start: what the budget will be
-	OverLine     string // when the run went past its budget
-	TokensNote   string
+	HasBudget  bool
+	Pct        int
+	TokensLine string // "31,004 of 40,000 tokens"
+	BudgetLine string // before the start: what the budget will be
+	OverLine   string // when the run went past its budget
+	TokensNote string
 
-	Running      bool
-	Draft        string
-	DraftSavedAt *time.Time
-	DraftWhen    string
+	Running   bool
+	Draft     string
+	DraftWhen string
 
 	FindingsTitle string
 	FindingsURL   string
@@ -190,19 +214,17 @@ type spikePage struct {
 
 	WorktreeLine string
 
-	CanStart     bool
-	CanCloseIdea bool
-	CanCloseRun  bool
-	AgainBudget  int64
-	Answered     bool
-	SD12         string
-	FindingsID   string
+	CanStart    bool
+	CanCloseRun bool
+	AgainBudget int64
+	// BuildOnSentence says how to build on an answered spike's findings.
+	BuildOnSentence string
 
-	Timeline []spikeMoment
-	RunURL   string
-	RunNote  string
-	Follows  *spikeLink
-	FollowBy *spikeLink
+	Timeline   []spikeMoment
+	RunURL     string
+	RunNote    string
+	Follows    *spikeLink
+	FollowedBy *spikeLink
 
 	Notice string
 	Error  string
@@ -216,7 +238,7 @@ func spikeStateSentence(sp *store.Spike) string {
 	case store.SpikeRunning:
 		return "This spike is running."
 	case store.SpikeEnded:
-		return "This spike's run has ended: " + spikeEndedWords(sp.EndedHow) + ". It's waiting for you to read the findings."
+		return "This spike's run has ended: " + store.SpikeEndingOf(sp.EndedHow).Phrase + ". It's waiting for you to read the findings."
 	case store.SpikeClosed:
 		if sp.ClosedAs == store.SpikeAnswered {
 			return "This spike is closed: the question is answered."
@@ -241,8 +263,8 @@ func strField(m map[string]any, key string) string {
 }
 
 func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, errMsg string) (*spikePage, error) {
-	p := &spikePage{ID: sp.ID, PublicID: sp.PublicID, Question: sp.Question, State: sp.State,
-		Badge: spikeBadgeFor(sp), Notice: notice, Error: errMsg, Used: sp.TokensUsed,
+	p := &spikePage{ID: sp.ID, PublicID: sp.PublicID, Question: sp.Question,
+		Badge: spikeBadgeFor(sp), Notice: notice, Error: errMsg,
 		StateSentence: spikeStateSentence(sp), Running: sp.State == store.SpikeRunning}
 	p.OwnerName, p.OwnerURL = s.spikeOwnerOf(ctx, sp)
 
@@ -261,17 +283,18 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 
 	// Tokens against the budget.
 	if sp.TokenBudget != nil {
-		p.HasBudget, p.Budget = true, *sp.TokenBudget
+		budget := *sp.TokenBudget
+		p.HasBudget = true
 		p.TokensLine = tokensOfBudget(sp)
-		if p.Budget > 0 {
-			p.Pct = int(sp.TokensUsed * 100 / p.Budget)
+		if budget > 0 {
+			p.Pct = int(sp.TokensUsed * 100 / budget)
 			if p.Pct > 100 {
 				p.Pct = 100
 			}
 		}
-		if sp.TokensUsed > p.Budget {
+		if sp.TokensUsed > budget {
 			p.OverLine = fmt.Sprintf("It used %s tokens, which is more than its budget of %s.",
-				groupThousands(sp.TokensUsed), groupThousands(p.Budget))
+				groupThousands(sp.TokensUsed), groupThousands(budget))
 		}
 		p.TokensNote = "These tokens count every model call the run made, including attempts that failed and were tried again."
 	} else if cfg, err := s.freshConfig(); err == nil {
@@ -285,14 +308,15 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 
 	// The draft while it runs, the findings once it has ended.
 	if p.Running {
-		p.Draft, p.DraftSavedAt = strings.TrimSpace(sp.Draft), sp.DraftSavedAt
-		if p.DraftSavedAt != nil {
-			p.DraftWhen = spikeWhen(*p.DraftSavedAt)
+		p.Draft = strings.TrimSpace(sp.Draft)
+		if sp.DraftSavedAt != nil {
+			p.DraftWhen = spikeWhen(*sp.DraftSavedAt)
 		}
 	}
+	findingsID := sp.PublicID + "-findings"
 	if sp.State == store.SpikeEnded || sp.State == store.SpikeClosed {
 		if d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "findings", "spike", sp.ID); err == nil {
-			p.FindingsTitle, p.FindingsURL, p.FindingsState, p.FindingsID = d.Title, "/ui/d/"+d.Path, string(d.State), d.PublicID
+			p.FindingsTitle, p.FindingsURL, p.FindingsState, findingsID = d.Title, "/ui/d/"+d.Path, string(d.State), d.PublicID
 		}
 	}
 
@@ -309,7 +333,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 	// What a person can do.
 	switch sp.State {
 	case store.SpikeIdea:
-		p.CanStart, p.CanCloseIdea = true, true
+		p.CanStart = true
 	case store.SpikeEnded:
 		p.CanCloseRun = true
 		if sp.TokenBudget != nil {
@@ -317,12 +341,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 		}
 	case store.SpikeClosed:
 		if sp.ClosedAs == store.SpikeAnswered {
-			p.Answered = true
-			id := sp.PublicID + "-findings"
-			if p.FindingsID != "" {
-				id = p.FindingsID
-			}
-			p.SD12 = "To build on this, cite " + id + " in a design, then create a feature in the normal way."
+			p.BuildOnSentence = "To build on this, cite " + findingsID + " in a design, then create a feature in the normal way."
 		}
 	}
 
@@ -359,7 +378,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 			m.Label = fmt.Sprintf("Started by %s, with a budget of %s tokens.", e.Actor, groupThousands(numField(pl, "budget")))
 			m.Icon, m.URL = "run", run
 		case "spike.ended":
-			m.Label = "Ended: " + spikeEndedWords(strField(pl, "how")) + "."
+			m.Label = "Ended: " + store.SpikeEndingOf(strField(pl, "how")).Phrase + "."
 			if b := numField(pl, "token_budget"); b > 0 {
 				m.Label += fmt.Sprintf(" It used %s of its %s tokens.", groupThousands(numField(pl, "tokens_used")), groupThousands(b))
 			} else {
@@ -401,7 +420,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 		}
 	}
 	if o, err := store.SpikeFollowedBy(ctx, s.Store.Pool, sp.ID); err == nil {
-		p.FollowBy = link(o)
+		p.FollowedBy = link(o)
 	}
 	return p, nil
 }
@@ -423,7 +442,33 @@ func (s *Server) handleUISpike(w http.ResponseWriter, r *http.Request) {
 		s.notFoundOrErr(w, r, "spike", id, err)
 		return
 	}
-	s.renderSpike(w, r, sp, "", "")
+	s.renderSpike(w, r, sp, spikeNoticeFor(sp, r.URL.Query().Get("did")), "")
+}
+
+// Starting and closing redirect to the spike's page, so a reload doesn't post
+// again (FR-3.3, FR-7.1). "did" names what was done; the page words it from
+// the spike as it is, and says nothing the spike's state doesn't bear out.
+const (
+	spikeDidStart      = "started"
+	spikeDidAnswered   = "answered"
+	spikeDidUnanswered = "unanswered"
+)
+
+func spikeNoticeFor(sp *store.Spike, did string) string {
+	switch {
+	case did == spikeDidStart && sp.TokenBudget != nil:
+		return sp.PublicID + " has started, with a budget of " + groupThousands(*sp.TokenBudget) + " tokens."
+	case did == spikeDidAnswered && sp.State == store.SpikeClosed:
+		return sp.PublicID + " is closed: the question is answered."
+	case did == spikeDidUnanswered && sp.State == store.SpikeClosed:
+		return sp.PublicID + " is closed without an answer."
+	}
+	return ""
+}
+
+// redirectToSpike sends a person to a spike's page after an act of theirs.
+func redirectToSpike(w http.ResponseWriter, r *http.Request, sp *store.Spike, did string) {
+	http.Redirect(w, r, "/ui/s/"+sp.PublicID+"?did="+did, http.StatusSeeOther)
 }
 
 // ---- The list (FR-8.5) ----
@@ -584,7 +629,7 @@ func (s *Server) renderStartScreen(w http.ResponseWriter, r *http.Request, sp *s
 func (s *Server) handleUISpikeStart(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(strings.TrimSpace(r.URL.Query().Get("spike")))
 	if err != nil {
-		s.uiNotFound(w, r, "spike", r.URL.Query().Get("spike"))
+		http.Error(w, "bad spike id", http.StatusBadRequest)
 		return
 	}
 	sp, err := store.GetSpike(r.Context(), s.Store.Pool, id)
@@ -641,11 +686,7 @@ func (s *Server) handleUISpikeStartPost(w http.ResponseWriter, r *http.Request) 
 		s.renderStartScreen(w, r, sp, err.Error())
 		return
 	}
-	notice := started.PublicID + " has started."
-	if started.TokenBudget != nil {
-		notice = started.PublicID + " has started, with a budget of " + groupThousands(*started.TokenBudget) + " tokens."
-	}
-	s.renderSpike(w, r, started, notice, "")
+	redirectToSpike(w, r, started, spikeDidStart)
 }
 
 // ---- Creating and closing (FR-1.3, FR-1.4, FR-7) ----
@@ -716,8 +757,8 @@ func (s *Server) handleUISpikeClose(w http.ResponseWriter, r *http.Request) {
 	case SpikeCloseAgain:
 		http.Redirect(w, r, "/ui/spikes/start?spike="+res.ID.String(), http.StatusSeeOther)
 	case store.SpikeAnswered:
-		s.renderSpike(w, r, res, res.PublicID+" is closed: the question is answered.", "")
+		redirectToSpike(w, r, res, spikeDidAnswered)
 	default:
-		s.renderSpike(w, r, res, res.PublicID+" is closed without an answer.", "")
+		redirectToSpike(w, r, res, spikeDidUnanswered)
 	}
 }
