@@ -21,7 +21,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"subutai/internal/config"
 	"subutai/internal/dispatch"
+	"subutai/internal/lifecycle"
 	"subutai/internal/store"
 )
 
@@ -31,8 +33,12 @@ type spikeRow struct {
 	Question string
 	URL      string
 	Badge    spikeBadge
-	// Tokens is "tokens used of budget" in words.
+	// Tokens is "tokens used of budget" in words; for a chat or person spike,
+	// its time box.
 	Tokens string
+	// Executor is who runs it as a word: "agent", "chat" or "by hand"; empty
+	// for an idea (SPEC-021 FR-16.3).
+	Executor string
 	// Owner is where the spike hangs, for the list page; empty on an owner's
 	// own page.
 	Owner    string
@@ -61,8 +67,27 @@ func spikeBadgeFor(sp *store.Spike) spikeBadge {
 	return spikeBadge{"idea", "idea", "Not started"}
 }
 
+// spikeExecutorWord is the executor as a word beside a spike's state.
+func spikeExecutorWord(executor string) string {
+	switch executor {
+	case store.ExecutorAgent:
+		return "agent"
+	case store.ExecutorChat:
+		return "chat"
+	case store.ExecutorPerson:
+		return "by hand"
+	}
+	return ""
+}
+
 // tokensOfBudget says "31,004 of 40,000 tokens", or that nothing has started.
 func tokensOfBudget(sp *store.Spike) string {
+	if unmeasuredExecutor(sp.Executor) {
+		if sp.TimeBoxHours == nil {
+			return "Not started"
+		}
+		return fmt.Sprintf("Time box: %d %s", *sp.TimeBoxHours, plural(*sp.TimeBoxHours, "hour", "hours"))
+	}
 	if sp.TokenBudget == nil {
 		return "Not started"
 	}
@@ -138,7 +163,7 @@ func (s *Server) spikeRows(ctx context.Context, spikes []store.Spike, withOwner 
 	for i := range spikes {
 		sp := &spikes[i]
 		r := spikeRow{PublicID: sp.PublicID, Question: sp.Question, URL: "/ui/s/" + sp.PublicID,
-			Badge: spikeBadgeFor(sp), Tokens: tokensOfBudget(sp)}
+			Badge: spikeBadgeFor(sp), Tokens: tokensOfBudget(sp), Executor: spikeExecutorWord(sp.Executor)}
 		if withOwner {
 			r.Owner, r.OwnerURL = s.spikeOwnerOf(ctx, sp)
 		}
@@ -201,6 +226,19 @@ type spikePage struct {
 	OwnerName, OwnerURL string
 	StateSentence       string
 
+	// ExecutorLine says who runs, or ran, the spike (FR-16.1); empty before the
+	// start.
+	ExecutorLine string
+	// Unmeasured is set for a chat or person spike: it has a time box and its
+	// tokens aren't measured, so the token bar is replaced (FR-16.1).
+	Unmeasured     bool
+	TimeBoxLine    string
+	UnmeasuredLine string
+	// ClosedBy is "Closed by sam, who also ran it." (FR-16.4), or "".
+	ClosedBy string
+	// Claim is the panel for a running chat or person spike.
+	Claim *spikeClaimPanel
+
 	HasBudget  bool
 	Pct        int
 	TokensLine string // "31,004 of 40,000 tokens"
@@ -208,7 +246,10 @@ type spikePage struct {
 	OverLine   string // when the run went past its budget
 	TokensNote string
 
-	Running   bool
+	Running bool
+	// ByAgent is set for an agent spike (or one not yet started), whose draft
+	// is the agent's.
+	ByAgent   bool
 	Draft     string
 	DraftWhen string
 
@@ -220,7 +261,10 @@ type spikePage struct {
 
 	CanStart    bool
 	CanCloseRun bool
-	AgainBudget int64
+	// AgainBudget is an agent spike's token budget; ShowAgainBudget is false
+	// for a chat or person spike, whose Ask again has no budget (FR-15.5).
+	AgainBudget     int64
+	ShowAgainBudget bool
 	// BuildOnSentence says how to build on an answered spike's findings.
 	BuildOnSentence string
 
@@ -250,6 +294,62 @@ func spikeStateSentence(sp *store.Spike) string {
 		return "This spike is closed: the question wasn't answered."
 	}
 	return "This spike hasn't started yet."
+}
+
+// Claim panel states for a running chat or person spike (FR-16.1).
+const (
+	spikePanelFree = "free" // a person spike nobody holds: I'll run this spike
+	spikePanelAsk  = "ask"  // a chat spike nobody holds
+	spikePanelMine = "mine" // a person's own open claim: the editor
+	spikePanelHeld = "held" // held by the chat agent, or by someone else
+)
+
+// spikeClaimPanel is the claim panel of a running chat or person spike.
+type spikeClaimPanel struct {
+	State    string
+	SpikeID  uuid.UUID
+	PublicID string
+	Holder   string
+	Since    string
+	Activity string
+	Path     string
+	TimeLeft string
+	Draft    string
+}
+
+// spikeClaimPanelFor decides what the page offers to whoever runs a running
+// chat or person spike.
+func (s *Server) spikeClaimPanelFor(ctx context.Context, sp *store.Spike) (*spikeClaimPanel, error) {
+	if sp.State != store.SpikeRunning || !unmeasuredExecutor(sp.Executor) {
+		return nil, nil
+	}
+	p := &spikeClaimPanel{SpikeID: sp.ID, PublicID: sp.PublicID}
+	cur, err := currentSpikeClaim(ctx, s.Store.Pool, sp.ID, false)
+	if err != nil {
+		return nil, err
+	}
+	if cur == nil {
+		if sp.Executor == store.ExecutorChat {
+			p.State = spikePanelAsk
+		} else {
+			p.State = spikePanelFree
+		}
+		return p, nil
+	}
+	now := time.Now()
+	p.Holder = whoWords(cur.Kind, cur.Actor, "")
+	p.Since = agoWords(cur.ClaimedAt, now)
+	p.Activity = claimActivityWords(cur.LastActivity) + ", " + agoWords(cur.LastActivityAt, now)
+	p.State = spikePanelHeld
+	if s.PersonClaimant().holds(cur) && cur.State == lifecycle.ClaimOpen {
+		p.State = spikePanelMine
+		if sp.WorktreePath != "" {
+			p.Path = s.worktreeAbs(sp.WorktreePath)
+		}
+		p.TimeLeft = spikeTimeLeft(sp, now)
+		p.Draft = sp.Draft
+	}
+	return p, nil
 }
 
 func numField(m map[string]any, key string) int64 {
@@ -285,8 +385,25 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 	}
 	p.Crumbs = append(crumbs, crumb{ID: sp.PublicID, Label: shortQuestion(sp.Question), Kind: "spike", Here: true})
 
-	// Tokens against the budget.
-	if sp.TokenBudget != nil {
+	p.ByAgent = sp.Executor == store.ExecutorAgent || sp.Executor == ""
+	if sp.Executor != "" {
+		ex, err := s.spikeExecutor(ctx, s.Store.Pool, sp)
+		if err != nil {
+			return nil, err
+		}
+		p.ExecutorLine = ex.Sentence
+	}
+	if p.Claim, err = s.spikeClaimPanelFor(ctx, sp); err != nil {
+		return nil, err
+	}
+	p.ClosedBy = s.spikeClosedBySentence(ctx, sp)
+
+	// Tokens against the budget, or, for a chat or person spike, its time box.
+	if unmeasuredExecutor(sp.Executor) {
+		p.Unmeasured = true
+		p.TimeBoxLine = spikeTimeBoxLine(sp, time.Now())
+		p.UnmeasuredLine = spikeUnmeasuredLine(sp)
+	} else if sp.TokenBudget != nil {
 		budget := *sp.TokenBudget
 		p.HasBudget = true
 		p.TokensLine = tokensOfBudget(sp)
@@ -343,6 +460,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 		if sp.TokenBudget != nil {
 			p.AgainBudget = *sp.TokenBudget
 		}
+		p.ShowAgainBudget = !unmeasuredExecutor(sp.Executor)
 	case store.SpikeClosed:
 		if sp.ClosedAs == store.SpikeAnswered {
 			p.BuildOnSentence = "To build on this, cite " + findingsID + " in a design, then create a feature in the normal way."
@@ -379,11 +497,17 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 			}
 			m.Label = "Created by " + e.Actor + " " + how + "."
 		case "spike.started":
-			m.Label = fmt.Sprintf("Started by %s, with a budget of %s tokens.", e.Actor, groupThousands(numField(pl, "budget")))
+			if h := int(numField(pl, "time_box_hours")); h > 0 {
+				m.Label = fmt.Sprintf("Started by %s, with a time box of %d %s.", e.Actor, h, plural(h, "hour", "hours"))
+			} else {
+				m.Label = fmt.Sprintf("Started by %s, with a budget of %s tokens.", e.Actor, groupThousands(numField(pl, "budget")))
+			}
 			m.Icon, m.URL = "run", run
 		case "spike.ended":
 			m.Label = "Ended: " + store.SpikeEndingOf(strField(pl, "how")).Phrase + "."
-			if b := numField(pl, "token_budget"); b > 0 {
+			if unmeasuredExecutor(sp.Executor) {
+				// Its tokens weren't measured, so there is nothing to count.
+			} else if b := numField(pl, "token_budget"); b > 0 {
 				m.Label += fmt.Sprintf(" It used %s of its %s tokens.", groupThousands(numField(pl, "tokens_used")), groupThousands(b))
 			} else {
 				m.Label += fmt.Sprintf(" It used %s tokens.", groupThousands(numField(pl, "tokens_used")))
@@ -461,12 +585,32 @@ const (
 	spikeDidStart      = "started"
 	spikeDidAnswered   = "answered"
 	spikeDidUnanswered = "unanswered"
+	// What a person did to a running chat or person spike's claim (FR-16.1).
+	spikeDidClaimed  = "claimed"
+	spikeDidSaved    = "saved"
+	spikeDidFinished = "finished"
+	spikeDidReleased = "released"
 )
 
 func spikeNoticeFor(sp *store.Spike, did string) string {
 	switch {
+	case did == spikeDidStart && sp.StartedAt != nil && unmeasuredExecutor(sp.Executor) && sp.TimeBoxHours != nil:
+		h := *sp.TimeBoxHours
+		start := fmt.Sprintf("%s has started, with a time box of %d %s.", sp.PublicID, h, plural(h, "hour", "hours"))
+		if sp.Executor == store.ExecutorChat {
+			return start + " Ask the chat agent to run it."
+		}
+		return start + " Claim it below when you are ready."
 	case did == spikeDidStart && sp.StartedAt != nil && sp.TokenBudget != nil:
 		return sp.PublicID + " has started, with a budget of " + groupThousands(*sp.TokenBudget) + " tokens."
+	case did == spikeDidClaimed && sp.State == store.SpikeRunning && sp.Executor == store.ExecutorPerson:
+		return "You are running " + sp.PublicID + ". Its working copy is below."
+	case did == spikeDidSaved && sp.State == store.SpikeRunning && sp.Draft != "":
+		return "Your findings are saved."
+	case did == spikeDidFinished && sp.State == store.SpikeEnded && sp.EndedHow == store.SpikeConcluded:
+		return "You finished " + sp.PublicID + ". Read its findings below, then say whether they answer the question."
+	case did == spikeDidReleased && sp.State == store.SpikeRunning:
+		return "You released the claim on " + sp.PublicID + ". The spike keeps running, and its draft and working copy are kept."
 	case did == spikeDidAnswered && sp.State == store.SpikeClosed && sp.ClosedAs == store.SpikeAnswered:
 		return sp.PublicID + " is closed: the question is answered."
 	case did == spikeDidUnanswered && sp.State == store.SpikeClosed && sp.ClosedAs == store.SpikeUnanswered:
@@ -542,11 +686,21 @@ type startScreen struct {
 	Started bool
 
 	Runner   string // "The spike runner runs it, on model."
+	Model    string
 	Refusal  string // why nobody can run it, when nobody can
 	CanStart bool
 
-	Budget     int64
-	BudgetNote string
+	// Executor is the radio that is chosen: agent, chat or person. TimeBox is
+	// what the time box field holds.
+	Executor string
+	TimeBox  string
+	// TimeBoxDefault is the project's default, in hours.
+	TimeBoxDefault int
+
+	Budget int64
+	// BudgetTyped is what a refused start had in the budget field.
+	BudgetTyped string
+	BudgetNote  string
 
 	Block     string // the decisions and conventions the agent will be given
 	PrevID    string
@@ -564,7 +718,13 @@ type startScreen struct {
 func (p startScreen) headTitle() string   { return "Start " + p.PublicID }
 func (p startScreen) headCrumbs() []crumb { return p.Crumbs }
 
-func (s *Server) startScreenFor(ctx context.Context, sp *store.Spike, errMsg string) (*startScreen, error) {
+// startForm is what a person had chosen on the start screen, to show it again
+// when a start was refused. The zero value is the defaults.
+type startForm struct {
+	Executor, Budget, TimeBox string
+}
+
+func (s *Server) startScreenFor(ctx context.Context, sp *store.Spike, errMsg string, form startForm) (*startScreen, error) {
 	cfg, err := s.freshConfig()
 	if err != nil {
 		return nil, err
@@ -584,10 +744,23 @@ func (s *Server) startScreenFor(ctx context.Context, sp *store.Spike, errMsg str
 		p.Refusal = refusal
 	} else {
 		p.Runner = "The spike runner runs it, on " + model + "."
-		p.CanStart = !p.Started
+		p.Model = model
 		if r, _, err := s.roleAndSkill(role); err == nil {
 			p.Tools = append(p.Tools, r.Tools...)
 		}
+	}
+	p.CanStart = !p.Started
+	p.TimeBoxDefault = cfg.SpikeDefaultTimeBoxHours()
+	p.TimeBox = strconv.Itoa(p.TimeBoxDefault)
+	p.Executor = store.ExecutorAgent
+	if p.Refusal != "" {
+		p.Executor = store.ExecutorChat
+	}
+	if form.Executor == store.ExecutorChat || form.Executor == store.ExecutorPerson || (form.Executor == store.ExecutorAgent && p.Refusal == "") {
+		p.Executor = form.Executor
+	}
+	if form.TimeBox != "" {
+		p.TimeBox = form.TimeBox
 	}
 	for _, t := range []string{dispatch.SaveFindingsTool().Name, dispatch.FinishSpikeTool().Name} {
 		if !slices.Contains(p.Tools, t) && p.Refusal == "" {
@@ -597,6 +770,9 @@ func (s *Server) startScreenFor(ctx context.Context, sp *store.Spike, errMsg str
 
 	b, src := spikeBudgetFor(cfg, sp)
 	p.Budget = b
+	if form.Budget != "" {
+		p.BudgetTyped = form.Budget
+	}
 	if src == store.BudgetFromDefault {
 		p.BudgetNote = "This is the project's default budget, from `spikes.default_token_budget`."
 	}
@@ -621,8 +797,12 @@ func (s *Server) startScreenFor(ctx context.Context, sp *store.Spike, errMsg str
 	return p, nil
 }
 
-func (s *Server) renderStartScreen(w http.ResponseWriter, r *http.Request, sp *store.Spike, errMsg string) {
-	p, err := s.startScreenFor(r.Context(), sp, errMsg)
+func (s *Server) renderStartScreen(w http.ResponseWriter, r *http.Request, sp *store.Spike, errMsg string, form ...startForm) {
+	var f startForm
+	if len(form) > 0 {
+		f = form[0]
+	}
+	p, err := s.startScreenFor(r.Context(), sp, errMsg, f)
 	if err != nil {
 		s.uiError(w, err)
 		return
@@ -643,6 +823,21 @@ func (s *Server) handleUISpikeStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderStartScreen(w, r, sp, "")
+}
+
+// parseTimeBoxField reads the time box a person typed: nothing, which means
+// the project's default, or a whole number of hours from 1 to 168. A typed 0
+// is refused (FR-12.5).
+func parseTimeBoxField(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > config.MaxSpikeTimeBoxHours {
+		return 0, ErrSpikeTimeBox
+	}
+	return n, nil
 }
 
 // parseBudgetField reads the budget a person typed: nothing, or a positive
@@ -677,18 +872,37 @@ func (s *Server) handleUISpikeStartPost(w http.ResponseWriter, r *http.Request) 
 		s.notFoundOrErr(w, r, "spike", id.String(), err)
 		return
 	}
-	budget, err := parseBudgetField(r.FormValue("budget"))
-	if err != nil {
-		s.renderStartScreen(w, r, sp, err.Error())
+	// An older form with no choice means the spike runner, as in stage 1.
+	form := startForm{Executor: strings.TrimSpace(r.FormValue("executor")), Budget: strings.TrimSpace(r.FormValue("budget")),
+		TimeBox: strings.TrimSpace(r.FormValue("time_box"))}
+	if form.Executor == "" {
+		form.Executor = store.ExecutorAgent
+	}
+	req := SpikeStartRequest{Executor: form.Executor}
+	switch form.Executor {
+	case store.ExecutorAgent:
+		budget, err := parseBudgetField(form.Budget)
+		if err != nil {
+			s.renderStartScreen(w, r, sp, err.Error(), form)
+			return
+		}
+		if budget != nil {
+			req.Budget = *budget
+		}
+	case store.ExecutorChat, store.ExecutorPerson:
+		hours, err := parseTimeBoxField(form.TimeBox)
+		if err != nil {
+			s.renderStartScreen(w, r, sp, err.Error(), form)
+			return
+		}
+		req.TimeBoxHours = hours
+	default:
+		s.renderStartScreen(w, r, sp, "A spike is run by the spike runner, the chat agent or a person.")
 		return
 	}
-	var want int64
-	if budget != nil {
-		want = *budget
-	}
-	started, err := s.StartSpike(ctx, id, SpikeStartRequest{Executor: store.ExecutorAgent, Budget: want}, s.uiActor())
+	started, err := s.StartSpike(ctx, id, req, s.uiActor())
 	if err != nil {
-		s.renderStartScreen(w, r, sp, err.Error())
+		s.renderStartScreen(w, r, sp, err.Error(), form)
 		return
 	}
 	redirectToSpike(w, r, started, spikeDidStart)
@@ -744,7 +958,9 @@ func (s *Server) handleUISpikeClose(w http.ResponseWriter, r *http.Request) {
 	}
 	as := strings.TrimSpace(r.FormValue("as"))
 	var budget *int64
-	if as == SpikeCloseAgain {
+	// Asking again after a chat or person spike has no budget: the new spike's
+	// executor and limit are chosen on its own start screen (FR-15.5).
+	if as == SpikeCloseAgain && !unmeasuredExecutor(cur.Executor) {
 		if budget, err = parseBudgetField(r.FormValue("budget")); err != nil {
 			s.renderSpike(w, r, cur, "", err.Error())
 			return
@@ -766,4 +982,93 @@ func (s *Server) handleUISpikeClose(w http.ResponseWriter, r *http.Request) {
 	default:
 		redirectToSpike(w, r, res, spikeDidUnanswered)
 	}
+}
+
+// ---- Running a spike by hand, and releasing a claim (FR-16.1, FR-17.3) ----
+
+// spikeClaimFromForm reads the spike's public ID from the form and finds it.
+// These routes change a claim and end a spike a person finished, so they
+// refuse a post from another site, as the task routes do. None of them can
+// start, close or reopen a spike (FR-17.3): each calls the service method the
+// MCP tool of the same name calls, and a spike in the wrong state is a
+// refusal banner.
+func (s *Server) spikeClaimFromForm(w http.ResponseWriter, r *http.Request) (*store.Spike, string, bool) {
+	if !sameOrigin(r) {
+		http.Error(w, "Claims are only changed from Subutai's own pages.", http.StatusForbidden)
+		return nil, "", false
+	}
+	if err := r.ParseForm(); err != nil {
+		s.uiError(w, err)
+		return nil, "", false
+	}
+	ref := strings.TrimSpace(r.FormValue("spike"))
+	id, err := uuid.Parse(ref)
+	if err != nil {
+		http.Error(w, "bad spike id", http.StatusBadRequest)
+		return nil, "", false
+	}
+	sp, err := store.GetSpike(r.Context(), s.Store.Pool, id)
+	if err != nil {
+		s.notFoundOrErr(w, r, "spike", ref, err)
+		return nil, "", false
+	}
+	return sp, sp.PublicID, true
+}
+
+// renderSpikeAgain shows the spike's page as it now stands, with a refusal.
+func (s *Server) renderSpikeAgain(w http.ResponseWriter, r *http.Request, sp *store.Spike, err error) {
+	if fresh, gerr := store.GetSpike(r.Context(), s.Store.Pool, sp.ID); gerr == nil {
+		sp = fresh
+	}
+	s.renderSpike(w, r, sp, "", refusalWords(err))
+}
+
+func (s *Server) handleUISpikeClaim(w http.ResponseWriter, r *http.Request) {
+	sp, ref, ok := s.spikeClaimFromForm(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.ClaimSpike(r.Context(), ref, s.PersonClaimant()); err != nil {
+		s.renderSpikeAgain(w, r, sp, err)
+		return
+	}
+	redirectToSpike(w, r, sp, spikeDidClaimed)
+}
+
+func (s *Server) handleUISpikeDraft(w http.ResponseWriter, r *http.Request) {
+	sp, ref, ok := s.spikeClaimFromForm(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.SaveSpikeFindings(r.Context(), ref, s.PersonClaimant(), r.FormValue("findings")); err != nil {
+		s.renderSpikeAgain(w, r, sp, err)
+		return
+	}
+	redirectToSpike(w, r, sp, spikeDidSaved)
+}
+
+func (s *Server) handleUISpikeSubmit(w http.ResponseWriter, r *http.Request) {
+	sp, ref, ok := s.spikeClaimFromForm(w, r)
+	if !ok {
+		return
+	}
+	// The draft in the editor is what is submitted; a blank one falls back to
+	// the saved draft.
+	if _, err := s.SubmitSpike(r.Context(), ref, s.PersonClaimant(), r.FormValue("findings")); err != nil {
+		s.renderSpikeAgain(w, r, sp, err)
+		return
+	}
+	redirectToSpike(w, r, sp, spikeDidFinished)
+}
+
+func (s *Server) handleUISpikeRelease(w http.ResponseWriter, r *http.Request) {
+	sp, ref, ok := s.spikeClaimFromForm(w, r)
+	if !ok {
+		return
+	}
+	if err := s.ReleaseSpikeClaim(r.Context(), ref, s.uiActor()); err != nil {
+		s.renderSpikeAgain(w, r, sp, err)
+		return
+	}
+	redirectToSpike(w, r, sp, spikeDidReleased)
 }
