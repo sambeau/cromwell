@@ -52,6 +52,7 @@ var uiFuncs = template.FuncMap{
 	"tokensExact": groupThousands, // SPEC-020 FR-7.3 quotes the exact figure
 	"shortID":     func(id uuid.UUID) string { return id.String()[:8] },
 	"ago":         ago,
+	"agoWords":    func(t time.Time) string { return agoWords(t, time.Now()) },
 	"signed": func(v int64) string {
 		if v >= 0 {
 			return fmt.Sprintf("+%d", v)
@@ -824,6 +825,17 @@ type inboxItem struct {
 	LastActivity string
 }
 
+// ContextLabel names the disclosure that holds the checkpoint's context. The
+// claim questions and the unclaimed-commit notice come from no agent run, so
+// "what the agent was doing" would mislead (SPEC-020).
+func (i inboxItem) ContextLabel() string {
+	switch i.Kind {
+	case "claim-stale", "claim-deadline", "unclaimed-commit":
+		return "Details"
+	}
+	return "What the agent was doing"
+}
+
 // revisionSpecView is one line of the design-revision form.
 type revisionSpecView struct {
 	SpecDocID   string `json:"spec_doc_id"`
@@ -866,14 +878,7 @@ func claimLastActivity(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &c); err != nil || c.LastActivity == "" {
 		return ""
 	}
-	what := map[string]string{
-		"claimed": "claimed", "renewed": "renewed", "resumed": "resumed", "submitted": "submitted",
-		"sent_back": "sent back by its code reviewer", "kept": "kept by a person",
-		"worktree": "a change in the working copy",
-	}[c.LastActivity]
-	if what == "" {
-		what = c.LastActivity
-	}
+	what := claimActivityWords(c.LastActivity)
 	if at, err := time.Parse(time.RFC3339, c.LastActivityAt); err == nil {
 		return "Last activity: " + what + ", " + agoWords(at, time.Now()) + "."
 	}
@@ -1158,7 +1163,8 @@ func groupThousands(n int64) string {
 	return b.String()
 }
 
-// ago renders a compact relative age.
+// ago renders a compact relative age: "3h". Pages that follow it with " ago"
+// use it; agoWords is the full phrase for new text.
 func ago(t time.Time) string {
 	d := time.Since(t)
 	switch {
@@ -1171,4 +1177,26 @@ func ago(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// agoWords says how long ago a time was as a whole phrase: "3 hours ago", or
+// "just now" under a minute. It is the one formatter for claim text; ago is the
+// compact form older pages append " ago" to.
+func agoWords(t, now time.Time) string {
+	d := now.Sub(t)
+	plural := func(n int, unit string) string {
+		if n == 1 {
+			return fmt.Sprintf("1 %s ago", unit)
+		}
+		return fmt.Sprintf("%d %ss ago", n, unit)
+	}
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return plural(int(d.Minutes()), "minute")
+	case d < 24*time.Hour:
+		return plural(int(d.Hours()), "hour")
+	}
+	return plural(int(d.Hours()/24), "day")
 }

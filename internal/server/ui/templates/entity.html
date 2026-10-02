@@ -253,17 +253,21 @@
       <div class="rail-divider"></div>
       <div class="rail-field">
         <span class="rail-field-label">Spent so far</span>
+        {{if .DoneUnmeasured}}
+        {{/* The sentence carries the figure, so no bare number above it. */}}
+        {{if .Done}}<span class="t-meta">Not measured: at least {{tokensExact .Done}} tokens, plus work done in chat or by a person.</span>
+        {{else}}<span class="t-meta">Not measured: the work so far was done in chat or by a person.</span>{{end}}
+        {{else}}
         <span class="rail-field-value">
           <span class="tokens">
             <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
             <span class="tokens-num">{{tokens .Done}}</span><span class="visually-hidden">tokens</span>
           </span>
         </span>
-        {{if .DoneUnmeasured}}
-        <span class="t-meta">Not measured: at least {{tokensExact .Done}} tokens, plus work done in chat or by a person.</span>
-        {{else if .Size.Estimated}}
+        {{if .Size.Estimated}}
         <div class="bar"><div class="bar-fill bar-fill--running" style="width:{{spentPct .Done .Size.Tokens}}%"></div></div>
         <span class="t-meta">{{spentPct .Done .Size.Tokens}}% of the estimate</span>
+        {{end}}
         {{end}}
       </div>
       {{end}}

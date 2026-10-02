@@ -205,11 +205,11 @@ func TestUnmeasuredActualReadsAsAtLeast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	render := func(unmeasured bool) string {
+	renderDone := func(done int64, unmeasured bool) string {
 		page := &entityPage{
 			Kind: "feature", RefType: "feature", ID: uuid.New(), Title: "Login form",
 			Breadcrumbs: []crumb{{Label: "Project", URL: "/ui/project"}},
-			State:       "building", Done: 12400, DoneUnmeasured: unmeasured,
+			State:       "building", Done: done, DoneUnmeasured: unmeasured,
 		}
 		var buf bytes.Buffer
 		if err := tmpl.t.ExecuteTemplate(&buf, "page-entity", pageData{Active: "browse", Actor: "op", Data: page}); err != nil {
@@ -217,12 +217,26 @@ func TestUnmeasuredActualReadsAsAtLeast(t *testing.T) {
 		}
 		return buf.String()
 	}
+	render := func(unmeasured bool) string { return renderDone(12400, unmeasured) }
 	const want = "Not measured: at least 12,400 tokens, plus work done in chat or by a person."
 	if !strings.Contains(render(true), want) {
 		t.Errorf("an unmeasured actual should read %q", want)
 	}
 	if strings.Contains(render(false), "Not measured") {
 		t.Error("a measured actual should not carry the sentence")
+	}
+	// The sentence stands alone: no bare figure above it.
+	if strings.Contains(render(true), "tokens-num") {
+		t.Error("an unmeasured actual shows only the sentence, not a bare number as well")
+	}
+	if !strings.Contains(render(false), "tokens-num") {
+		t.Error("a measured actual shows its figure")
+	}
+	// Nothing measured yet: no "at least 0".
+	zero := renderDone(0, true)
+	if !strings.Contains(zero, "Not measured: the work so far was done in chat or by a person.") ||
+		strings.Contains(zero, "at least 0") || strings.Contains(zero, "tokens-num") {
+		t.Errorf("an unmeasured actual of nothing should read as the work done in chat or by a person; got:\n%s", zero)
 	}
 }
 

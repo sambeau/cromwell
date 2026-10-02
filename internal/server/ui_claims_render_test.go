@@ -75,7 +75,7 @@ func TestTaskClaimPanelRenders(t *testing.T) {
 		return &store.Claim{ID: uuid.New(), Kind: kind, Actor: "sam", State: state,
 			ClaimedAt: now.Add(-3 * time.Hour), LastActivityAt: now.Add(-time.Hour), LastActivity: "the working copy changed"}
 	}
-	base := claimPanel{TaskID: "FEAT-001-T01"}
+	base := claimPanel{TaskID: "FEAT-001-T01", Activity: claimActivityWords("worktree")}
 
 	t.Run("claimable", func(t *testing.T) {
 		p := base
@@ -101,7 +101,7 @@ func TestTaskClaimPanelRenders(t *testing.T) {
 		p.Path, p.Branch, p.SpecURL, p.PlanURL = "/work/feat-001", "feature/login", "/ui/d/specs/a.md", "/ui/d/plans/a.md"
 		p.Comments = &ReviewComments{Comments: []ReviewFinding{{Severity: "major", File: "a.go", Line: 12, Text: "Check the error."}}}
 		html := renderNamed(t, "task-claim", p)
-		htmlHas(t, html, "Claimed by sam", "3h ago", "Last activity: the working copy changed",
+		htmlHas(t, html, "Claimed by sam", "3 hours ago", "Last activity: a change in the working copy",
 			"<code>/work/feat-001</code>", "<code>feature/login</code>",
 			`href="/ui/d/specs/a.md"`, `href="/ui/d/plans/a.md"`,
 			"What the code reviewer asked for", "<code>a.go:12</code>", "Check the error.",
@@ -132,7 +132,7 @@ func TestTaskClaimPanelRenders(t *testing.T) {
 		p.State, p.Claim, p.Holder = claimPanelChat, claim("chat", lifecycle.ClaimOpen), "the chat agent"
 		p.Path = "/work/feat-001"
 		html := renderNamed(t, "task-claim", p)
-		htmlHas(t, html, "Claimed by the chat agent", "3h ago", "<code>/work/feat-001</code>",
+		htmlHas(t, html, "Claimed by the chat agent", "3 hours ago", "<code>/work/feat-001</code>",
 			"The chat agent is working on this. Releasing it gives the task to an agent, and keeps what is in the working copy.",
 			"Release", `action="/ui/task/release"`)
 		htmlLacks(t, html, "Resume", "Submit for code review")
