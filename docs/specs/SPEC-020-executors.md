@@ -505,8 +505,9 @@ directly under the page heading, in the new template file `executors.html`.
 It shows the executor line. For an unmeasured task, it adds "This work was
 done in chat or by a person, so its tokens aren't measured."
 
-**FR-1.6 — On the feature page's task list**, and the plan page's, each task
-shows an executor icon (agent, chat or person), with the executor line as its
+**FR-1.6 — On the feature page's task list** (a new section, "Tasks in this
+feature": no page listed a feature's tasks before, and the plan page lists
+none), each task shows an executor icon (agent, chat or person), with the executor line as its
 accessible name and title text. A task with a claim that hasn't ended shows a
 short label beside it, "Claimed by the chat agent" or "Claimed by sam".
 
