@@ -185,9 +185,14 @@ func spikeUnmeasuredLine(sp *store.Spike) string            // "" for an agent s
 
 | id | state | merged at |
 |----|-------|-----------|
-| T1 | pending | |
-| T2 | pending | |
-| T3 | pending | |
-| T4 | pending | |
-| T5 | pending | |
-| T6 | pending | |
+| T1 | done | `6bb71f8` |
+| T2 | done | `faa9890`, merged at `8e4ec84` |
+| T3 | done | `d94b172` |
+| T4 | done | `587a265` |
+| T5 | done | `153bb15`, merged at `654d8b4` |
+| T6 | done | `0dd4279`, merged at `2296ade` |
+| Round 1 fixes | done | `3967c3d` |
+| Round 2 fixes | done | `ab981c3`, merged at `e3f5a29` |
+
+Every task was built by an implementer in its own worktree, merged by the
+lead, and its worktree removed.
