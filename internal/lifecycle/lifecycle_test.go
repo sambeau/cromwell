@@ -232,16 +232,20 @@ func TestG0SpecReady(t *testing.T) {
 // Open spikes block G5 as unfinished features do, and the reason names them
 // (SPEC-021 SD-14).
 func TestG5CountsOpenSpikes(t *testing.T) {
-	if r := G5Open(0, 0); !r.Pass {
-		t.Errorf("G5Open(0, 0) should pass: %+v", r)
+	if r := G5Open(0, nil); !r.Pass {
+		t.Errorf("G5Open(0, none) should pass: %+v", r)
 	}
-	if r := G5Open(0, 2); r.Pass || r.Reason != "2 open spike(s) in subtree" {
-		t.Errorf("G5Open(0, 2) = %+v", r)
+	if r := G5Open(0, []string{"SPK-002"}); r.Pass || r.Reason != "SPK-002 is still open" {
+		t.Errorf("G5Open(0, one) = %+v", r)
 	}
-	if r := G5Open(1, 3); r.Pass || r.Reason != "1 non-terminal feature(s) and 3 open spike(s) in subtree" {
-		t.Errorf("G5Open(1, 3) = %+v", r)
+	if r := G5Open(0, []string{"SPK-002", "SPK-004"}); r.Pass || r.Reason != "SPK-002 and SPK-004 are still open" {
+		t.Errorf("G5Open(0, two) = %+v", r)
 	}
-	if G5(2) != G5Open(2, 0) {
-		t.Error("G5 and G5Open(n, 0) differ")
+	if r := G5Open(1, []string{"SPK-001", "SPK-002", "SPK-003"}); r.Pass ||
+		r.Reason != "1 non-terminal feature(s) in subtree, and SPK-001, SPK-002 and SPK-003 are still open" {
+		t.Errorf("G5Open(1, three) = %+v", r)
+	}
+	if G5(2) != G5Open(2, nil) {
+		t.Error("G5 and G5Open(n, none) differ")
 	}
 }

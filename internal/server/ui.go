@@ -50,6 +50,7 @@ var uiFuncs = template.FuncMap{
 	"tokens":  humanTokens,
 	"shortID": func(id uuid.UUID) string { return id.String()[:8] },
 	"ago":     ago,
+	"code":    codeSpans,
 	"signed": func(v int64) string {
 		if v >= 0 {
 			return fmt.Sprintf("+%d", v)

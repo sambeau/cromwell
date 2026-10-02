@@ -337,7 +337,7 @@ func (s *Server) handleEntityInitiativeArchive(w http.ResponseWriter, r *http.Re
 		s.uiError(w, err)
 		return
 	}
-	spikes, err := store.OpenSpikesUnderInitiative(ctx, s.Store.Pool, in.ID)
+	spikes, err := store.OpenSpikeIDsUnderInitiative(ctx, s.Store.Pool, in.ID)
 	if err != nil {
 		s.uiError(w, err)
 		return

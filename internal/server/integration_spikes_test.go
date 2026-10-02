@@ -1458,12 +1458,12 @@ func TestOpenSpikesBlockArchivingTheirInitiative(t *testing.T) {
 	sp := h.newSpike(in, "Is it safe to archive?", nil)
 
 	code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf"})
-	if code != 409 || !strings.Contains(out["reason"].(string), "1 open spike(s)") {
+	if code != 409 || !strings.Contains(out["reason"].(string), sp.PublicID+" is still open") {
 		t.Fatalf("archive with an open spike: %d %v", code, out)
 	}
 	// The UI route says so too, in the page a person reads.
 	code, page := h.postForm("/ui/initiative/archive", map[string]string{"id": in.String()})
-	if code != 200 || !strings.Contains(page, "open spike") {
+	if code != 200 || !strings.Contains(page, sp.PublicID+" is still open") {
 		t.Errorf("the UI archive: %d\n%s", code, truncate(page, 600))
 	}
 	if st, _ := h.srv.Store.InitiativeBySlugPath(ctx, []string{"pf"}); st.Archived {

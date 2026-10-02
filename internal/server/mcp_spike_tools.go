@@ -19,8 +19,9 @@ import (
 	"subutai/internal/store"
 )
 
-// spikeRefRe matches a spike's public ID, such as "SPK-003".
-var spikeRefRe = regexp.MustCompile(`(?i)^SPK-\d+$`)
+// spikeRefRe matches a spike's public ID, such as "SPK-003". It is
+// case-sensitive, so an initiative whose slug is "spk-001" isn't taken for one.
+var spikeRefRe = regexp.MustCompile(`^SPK-\d+$`)
 
 // spikeNotDeliverableRefusal is what adding a spike to a milestone says
 // (SD-11).

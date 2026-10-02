@@ -166,7 +166,7 @@ func (s *Server) handleArchiveInitiative(w http.ResponseWriter, r *http.Request)
 		writeErr(w, 500, err)
 		return
 	}
-	spikes, err := store.OpenSpikesUnderInitiative(ctx, s.Store.Pool, in.ID)
+	spikes, err := store.OpenSpikeIDsUnderInitiative(ctx, s.Store.Pool, in.ID)
 	if err != nil {
 		writeErr(w, 500, err)
 		return

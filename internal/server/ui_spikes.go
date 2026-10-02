@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
@@ -64,6 +65,25 @@ func tokensOfBudget(sp *store.Spike) string {
 		return "Not started"
 	}
 	return groupThousands(sp.TokensUsed) + " of " + groupThousands(*sp.TokenBudget) + " tokens"
+}
+
+// codeSpans shows a sentence with its `backticked` words as code: the text is
+// escaped first, so only the marks the sentence carried become markup. A
+// sentence with an unmatched backtick is shown as it is.
+func codeSpans(s string) template.HTML {
+	parts := strings.Split(template.HTMLEscapeString(s), "`")
+	if len(parts)%2 == 0 {
+		return template.HTML(strings.Join(parts, "`"))
+	}
+	var b strings.Builder
+	for i, p := range parts {
+		if i%2 == 1 {
+			b.WriteString("<code>" + p + "</code>")
+		} else {
+			b.WriteString(p)
+		}
+	}
+	return template.HTML(b.String())
 }
 
 // spikeWhen is a moment in words: "2 October at 14:05".
@@ -414,7 +434,33 @@ func (s *Server) handleUISpike(w http.ResponseWriter, r *http.Request) {
 		s.notFoundOrErr(w, r, "spike", id, err)
 		return
 	}
-	s.renderSpike(w, r, sp, "", "")
+	s.renderSpike(w, r, sp, spikeNoticeFor(sp, r.URL.Query().Get("did")), "")
+}
+
+// Starting and closing redirect to the spike's page, so a reload doesn't post
+// again (FR-3.3, FR-7.1). "did" names what was done; the page words it from
+// the spike as it is, and says nothing the spike's state doesn't bear out.
+const (
+	spikeDidStart      = "started"
+	spikeDidAnswered   = "answered"
+	spikeDidUnanswered = "unanswered"
+)
+
+func spikeNoticeFor(sp *store.Spike, did string) string {
+	switch {
+	case did == spikeDidStart && sp.TokenBudget != nil:
+		return sp.PublicID + " has started, with a budget of " + groupThousands(*sp.TokenBudget) + " tokens."
+	case did == spikeDidAnswered && sp.State == store.SpikeClosed:
+		return sp.PublicID + " is closed: the question is answered."
+	case did == spikeDidUnanswered && sp.State == store.SpikeClosed:
+		return sp.PublicID + " is closed without an answer."
+	}
+	return ""
+}
+
+// redirectToSpike sends a person to a spike's page after an act of theirs.
+func redirectToSpike(w http.ResponseWriter, r *http.Request, sp *store.Spike, did string) {
+	http.Redirect(w, r, "/ui/s/"+sp.PublicID+"?did="+did, http.StatusSeeOther)
 }
 
 // ---- The list (FR-8.5) ----
@@ -575,7 +621,7 @@ func (s *Server) renderStartScreen(w http.ResponseWriter, r *http.Request, sp *s
 func (s *Server) handleUISpikeStart(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(strings.TrimSpace(r.URL.Query().Get("spike")))
 	if err != nil {
-		s.uiNotFound(w, r, "spike", r.URL.Query().Get("spike"))
+		http.Error(w, "bad spike id", http.StatusBadRequest)
 		return
 	}
 	sp, err := store.GetSpike(r.Context(), s.Store.Pool, id)
@@ -632,11 +678,7 @@ func (s *Server) handleUISpikeStartPost(w http.ResponseWriter, r *http.Request) 
 		s.renderStartScreen(w, r, sp, err.Error())
 		return
 	}
-	notice := started.PublicID + " has started."
-	if started.TokenBudget != nil {
-		notice = started.PublicID + " has started, with a budget of " + groupThousands(*started.TokenBudget) + " tokens."
-	}
-	s.renderSpike(w, r, started, notice, "")
+	redirectToSpike(w, r, started, spikeDidStart)
 }
 
 // ---- Creating and closing (FR-1.3, FR-1.4, FR-7) ----
@@ -707,8 +749,8 @@ func (s *Server) handleUISpikeClose(w http.ResponseWriter, r *http.Request) {
 	case SpikeCloseAgain:
 		http.Redirect(w, r, "/ui/spikes/start?spike="+res.ID.String(), http.StatusSeeOther)
 	case store.SpikeAnswered:
-		s.renderSpike(w, r, res, res.PublicID+" is closed: the question is answered.", "")
+		redirectToSpike(w, r, res, spikeDidAnswered)
 	default:
-		s.renderSpike(w, r, res, res.PublicID+" is closed without an answer.", "")
+		redirectToSpike(w, r, res, spikeDidUnanswered)
 	}
 }

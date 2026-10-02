@@ -28,11 +28,15 @@ func (h *harness) uiText(path string) string {
 	return html.UnescapeString(body)
 }
 
-// postText posts a form and returns the status and the unescaped body (or the
-// Location of a redirect).
+// postText posts a form and returns the status and the unescaped body. A
+// redirect to a spike's page is followed, as a browser does, and its page
+// returned.
 func (h *harness) postText(path string, v url.Values) (int, string) {
 	h.t.Helper()
 	code, body := h.postValues(path, v)
+	if code == http.StatusSeeOther && strings.HasPrefix(body, "/ui/s/") {
+		return http.StatusOK, h.uiText(body)
+	}
 	return code, html.UnescapeString(body)
 }
 
@@ -78,7 +82,7 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 	wants(t, "the start screen", screen,
 		"Does the API honour the header?", "The pf initiative",
 		"The spike runner runs it, on "+model+".",
-		`value="1000000"`, "This is the project's default budget, from `spikes.default_token_budget`.",
+		`value="1000000"`, "This is the project's default budget, from <code>spikes.default_token_budget</code>.",
 		"The run stops when it reaches this many tokens. Whatever findings it has saved by then are written up, and you decide whether to ask again.",
 		"No decisions apply here.",
 		"It works in a throwaway copy of the code, made from the current main line. Nothing it writes there is kept: the copy is discarded when the run ends, and Subutai never merges it.",
@@ -103,7 +107,7 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 	h.editConfig("  run-spike: spike-runner\n", "  # run-spike: spike-runner\n")
 	screen = h.uiText(startURL(plain))
 	wants(t, "the start screen with no runner", screen,
-		"Nobody is assigned to run spikes, so this spike can't start. Assign `run-spike` to a role in `config.yaml`.",
+		"Nobody is assigned to run spikes, so this spike can't start. Assign <code>run-spike</code> to a role in <code>config.yaml</code>.",
 		"disabled")
 	if code, body := h.postText("/ui/spikes/start", url.Values{"spike": {plain.ID.String()}}); code != 200 {
 		t.Errorf("starting with no runner = %d", code)
@@ -117,10 +121,11 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 
 	// The POST starts it once.
 	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
-	code, body := h.postText("/ui/spikes/start", url.Values{"spike": {own.ID.String()}, "budget": {"40,000"}})
-	if code != 200 {
-		t.Fatalf("POST /ui/spikes/start = %d\n%s", code, truncate(body, 600))
+	code, loc := h.postValues("/ui/spikes/start", url.Values{"spike": {own.ID.String()}, "budget": {"40,000"}})
+	if code != http.StatusSeeOther || !strings.HasPrefix(loc, "/ui/s/"+own.PublicID) {
+		t.Fatalf("POST /ui/spikes/start = %d %q, want a 303 to the spike's page", code, loc)
 	}
+	body := h.uiText(loc)
 	wants(t, "the page after the start", body, own.PublicID+" has started, with a budget of 40,000 tokens.", "This spike is running.")
 	started := h.getSpike(own.ID)
 	if started.TokenBudget == nil || *started.TokenBudget != 40_000 || started.StartedBy == "" {
@@ -459,7 +464,11 @@ func TestSpikeUICreateCloseAndAgain(t *testing.T) {
 	// An ended spike closes as answered; the findings are left as they are.
 	ended := h.endedSpike(in, "Does the API honour the header?", nil)
 	doc, _ := h.findingsOf(ended)
-	_, body = h.postText("/ui/spikes/close", url.Values{"spike": {ended.ID.String()}, "as": {"answered"}})
+	code, loc := h.postValues("/ui/spikes/close", url.Values{"spike": {ended.ID.String()}, "as": {"answered"}})
+	if code != http.StatusSeeOther || !strings.HasPrefix(loc, "/ui/s/"+ended.PublicID) {
+		t.Fatalf("closing as answered = %d %q, want a 303 to the spike's page", code, loc)
+	}
+	body = h.uiText(loc)
 	wants(t, "answered", body, ended.PublicID+" is closed: the question is answered.", "Closed as answered, by ")
 	if after, _ := h.findingsOf(ended); after.State != doc.State {
 		t.Errorf("the findings went from %s to %s", doc.State, after.State)
@@ -467,7 +476,7 @@ func TestSpikeUICreateCloseAndAgain(t *testing.T) {
 
 	// Asking again redirects to the new spike's start screen.
 	first := h.endedSpike(in, "Does the API retry?", nil)
-	code, loc := h.postValues("/ui/spikes/close", url.Values{"spike": {first.ID.String()}, "as": {"again"}, "budget": {"30,000"}})
+	code, loc = h.postValues("/ui/spikes/close", url.Values{"spike": {first.ID.String()}, "as": {"again"}, "budget": {"30,000"}})
 	if code != 303 || !strings.HasPrefix(loc, "/ui/spikes/start?spike=") {
 		t.Fatalf("ask again = %d %q, want a 303 to the start screen", code, loc)
 	}

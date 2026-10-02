@@ -138,7 +138,7 @@
 {{end}}
 {{if .Error}}
 <div class="banner banner--error" role="alert">
-  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{code .Error}}</div></div>
 {{end}}
 
 <section class="panel u-mt-4" id="spike-state">
@@ -289,7 +289,7 @@
 
 {{if .Error}}
 <div class="banner banner--error" role="alert">
-  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{code .Error}}</div></div>
 {{end}}
 
 <section class="panel u-mt-4">
@@ -316,7 +316,7 @@
     </div>
     <div class="panel-body">
       {{if .Refusal}}
-      <p class="action-reason" id="start-runner"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{.Refusal}}</span></p>
+      <p class="action-reason" id="start-runner"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{code .Refusal}}</span></p>
       {{else}}
       <p id="start-runner">{{.Runner}}</p>
       {{end}}
@@ -333,7 +333,7 @@
       <div class="field">
         <label class="field-label" for="start-budget">Budget in tokens</label>
         <input class="input" id="start-budget" name="budget" inputmode="numeric" value="{{.Budget}}" required>
-        {{if .BudgetNote}}<p class="field-hint" id="start-budget-note">{{.BudgetNote}}</p>{{end}}
+        {{if .BudgetNote}}<p class="field-hint" id="start-budget-note">{{code .BudgetNote}}</p>{{end}}
       </div>
       <p class="t-meta">The run stops when it reaches this many tokens. Whatever findings it has saved by then are written up, and you decide whether to ask again.</p>
     </div>
