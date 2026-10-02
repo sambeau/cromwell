@@ -32,6 +32,8 @@ func (s *Server) Execute(ctx context.Context, tctx *toolhost.Context, name strin
 		return s.toolRunCommand(ctx, tctx, input)
 	case "report_bug":
 		return s.toolReportBug(ctx, tctx, input)
+	case "save_findings":
+		return s.toolSaveFindings(ctx, tctx, input)
 	default:
 		return fmt.Sprintf("unknown tool %q", name), true
 	}

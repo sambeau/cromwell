@@ -181,6 +181,15 @@ func (s *Server) ownerCrumb(ctx context.Context, ownerType string, ownerID *uuid
 			return project
 		}
 		return crumb{ID: f.PublicID, Label: f.Name, URL: "/ui/f/" + path}
+	case "spike":
+		// A spike's findings lead to the spike, whose page leads on to its
+		// owner (SPEC-021 Appendix A).
+		sp, err := store.GetSpike(ctx, s.Store.Pool, *ownerID)
+		if err != nil {
+			return project
+		}
+		return crumb{ID: sp.PublicID, Label: shortQuestion(sp.Question),
+			URL: "/ui/s/" + sp.PublicID, Kind: "spike"}
 	}
 	return project
 }

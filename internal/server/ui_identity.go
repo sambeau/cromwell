@@ -75,8 +75,13 @@ func (s *Server) urlForID(ctx context.Context, raw string) (string, error) {
 				return "", ignoreNotFound(err)
 			}
 			return checklistURL(c.ID), nil
+		case "spike":
+			sp, err := store.SpikeByPublicID(ctx, pool, ref.ID)
+			if err != nil {
+				return "", ignoreNotFound(err)
+			}
+			return "/ui/s/" + sp.PublicID, nil
 		}
-		// Bugs and spikes don't exist yet.
 		return "", nil
 	case ident.ShapeTask:
 		t, err := store.TaskByPublicID(ctx, pool, ref.ID)

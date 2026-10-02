@@ -33,6 +33,8 @@ func (s *Server) Plan(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, e
 		return s.planEstimate(ctx, d)
 	case "write-spec", "write-dev-plan":
 		return s.planAuthor(ctx, d)
+	case "run-spike":
+		return s.planSpike(ctx, d)
 	default:
 		// review-<type>: read-only document review (phase 1).
 		system, user, turnCap, err := s.buildReview(ctx, d)

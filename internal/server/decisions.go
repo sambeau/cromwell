@@ -403,6 +403,13 @@ func (s *Server) scopeForDocument(ctx context.Context, doc *store.Document) surf
 	case doc.OwnerType == "initiative" && doc.OwnerID != nil:
 		id := *doc.OwnerID
 		sc.InitiativeID = &id
+	case doc.OwnerType == "spike" && doc.OwnerID != nil:
+		// A spike's findings are on its initiative's branch (SPEC-021
+		// Appendix A).
+		if sp, err := store.GetSpike(ctx, s.Store.Pool, *doc.OwnerID); err == nil {
+			id := sp.InitiativeID
+			sc.InitiativeID = &id
+		}
 	}
 	if doc.Type == "decision" {
 		sc.Exclude = doc.PublicID

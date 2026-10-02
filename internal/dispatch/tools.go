@@ -108,6 +108,8 @@ func toolDef(name string) (provider.ToolDef, bool) {
 		}, true
 	case "report_bug":
 		return ReportBugTool(), true
+	case "save_findings":
+		return SaveFindingsTool(), true
 	}
 	return provider.ToolDef{}, false
 }
@@ -129,6 +131,35 @@ func ReportBugTool() provider.ToolDef {
 			"actual":   str("What happens instead"),
 			"notes":    str("Optional: where in the code you saw it, a guess at the cause, a log line"),
 		}, "title", "steps", "expected", "actual"),
+	}
+}
+
+// SaveFindingsTool keeps a spike's draft findings (SPEC-021 FR-4.3). It is not
+// an outcome tool: each call replaces the draft on the spike's row and the run
+// carries on. The run can stop at any call, and what was saved last is kept.
+func SaveFindingsTool() provider.ToolDef {
+	return provider.ToolDef{
+		Name: "save_findings",
+		Description: "Save your findings so far. Each call replaces the last, so give the whole of what you know, not just what is new. " +
+			"Do this early and often: the run can stop at any call, and whatever you have saved when it stops is what is kept. " +
+			"Write the sections after the question: Answer, What we found, and, if they help, How we found out and What to do next. " +
+			"This doesn't end the run, and it writes no file.",
+		InputSchema: obj(map[string]any{
+			"findings": str("The findings so far, in Markdown, as level-2 sections (## Answer, ## What we found, ...), without the Question section"),
+		}, "findings"),
+	}
+}
+
+// FindingsOutcomeTool completes a run-spike dispatch (SPEC-021 FR-4.4).
+func FindingsOutcomeTool() provider.ToolDef {
+	return provider.ToolDef{
+		Name: "finish_spike",
+		Description: "Finish the spike with your final findings, when you have an answer to the question, or when you can say why it can't be answered. " +
+			"Give the whole of the findings, not just what changed since you last saved. They are checked against the findings template, " +
+			"and if they don't fit you will be told why and can call this again. This ends the run, so call it once.",
+		InputSchema: obj(map[string]any{
+			"findings": str("The final findings, in Markdown, as level-2 sections: ## Answer, ## What we found, and, if they help, ## How we found out and ## What to do next. Leave out the Question section."),
+		}, "findings"),
 	}
 }
 

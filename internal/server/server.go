@@ -52,6 +52,11 @@ type Server struct {
 	// editMu serialises the browser editor's saves, so a second save sees
 	// the first's write as a change on disk (SPEC-016 FR-3.2).
 	editMu sync.Mutex
+
+	// spikeEndMu lets one spike end at a time, so the rules and the
+	// heartbeat's reconciliation can't both write a spike's findings
+	// (SPEC-021 FR-6.2).
+	spikeEndMu sync.Mutex
 }
 
 // New validates the compartment, connects the store, and assembles the
@@ -141,6 +146,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.ReconcileWorktrees(ctx); err != nil {
 		s.Log.Error("boot worktree reconciliation", "err", err)
 	}
+	s.ReconcileSpikes(ctx)
 	if err := s.ReconcileGates(ctx); err != nil {
 		s.Log.Error("boot gate reconciliation", "err", err)
 	}
@@ -260,6 +266,7 @@ func (s *Server) heartbeat(ctx context.Context) {
 			s.ReconcileAuthoringSweep(ctx)
 			s.findMovedDocuments(ctx)
 			s.GCWorktrees(ctx)
+			s.ReconcileSpikes(ctx)
 			s.PruneTranscriptsSweep(ctx, time.Now())
 			s.Dispatcher.Kick()
 		}

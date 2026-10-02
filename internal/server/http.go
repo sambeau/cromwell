@@ -166,7 +166,12 @@ func (s *Server) handleArchiveInitiative(w http.ResponseWriter, r *http.Request)
 		writeErr(w, 500, err)
 		return
 	}
-	g := lifecycle.G5(n)
+	spikes, err := store.OpenSpikesUnderInitiative(ctx, s.Store.Pool, in.ID)
+	if err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	g := lifecycle.G5Open(n, spikes)
 	var raised *store.Checkpoint
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.Audit(ctx, tx, actor(r), "gate.evaluated", "initiative", &in.ID,

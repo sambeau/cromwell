@@ -337,7 +337,12 @@ func (s *Server) handleEntityInitiativeArchive(w http.ResponseWriter, r *http.Re
 		s.uiError(w, err)
 		return
 	}
-	g := lifecycle.G5(n)
+	spikes, err := store.OpenSpikesUnderInitiative(ctx, s.Store.Pool, in.ID)
+	if err != nil {
+		s.uiError(w, err)
+		return
+	}
+	g := lifecycle.G5Open(n, spikes)
 	reason := strings.TrimSpace(r.FormValue("reason"))
 	actor := s.uiActor()
 	var raised *store.Checkpoint

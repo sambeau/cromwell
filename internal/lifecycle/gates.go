@@ -133,6 +133,20 @@ func G4(resolvedItems, doneItems int) GateResult {
 // G5 — initiative-archivable: no non-terminal features in the subtree.
 // Failure is overridable only via an answered gate-override checkpoint (L-6).
 func G5(nonTerminalFeatures int) GateResult {
+	return G5Open(nonTerminalFeatures, 0)
+}
+
+// G5Open is G5 that also counts the spikes in the subtree that aren't closed:
+// a running one is spending tokens and an ended one waits for a person to read
+// it (SPEC-021 SD-14).
+func G5Open(nonTerminalFeatures, openSpikes int) GateResult {
+	if openSpikes > 0 {
+		reason := fmt.Sprintf("%d open spike(s) in subtree", openSpikes)
+		if nonTerminalFeatures > 0 {
+			reason = fmt.Sprintf("%d non-terminal feature(s) and %s", nonTerminalFeatures, reason)
+		}
+		return GateResult{Gate: GateG5, Pass: false, Reason: reason}
+	}
 	if nonTerminalFeatures > 0 {
 		return GateResult{
 			Gate:   GateG5,

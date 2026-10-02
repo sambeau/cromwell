@@ -49,6 +49,8 @@ func (s *Server) snapshot(ctx context.Context, ev bus.Event) (rules.Snapshot, er
 		if snap.Doc.OpenIssues, err = s.openIssueIDs(ctx, doc.ID); err != nil {
 			return err
 		}
+		// A document owned by a spike (its findings) has no owning feature, so
+		// the rules that need one don't fire for it (SPEC-021 Appendix A).
 		if doc.OwnerType == "feature" && doc.OwnerID != nil {
 			f, err := store.GetFeature(ctx, s.Store.Pool, *doc.OwnerID)
 			if err == nil {
@@ -224,6 +226,8 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 	case rules.KickQueue:
 		s.Dispatcher.Kick()
 		return nil
+	case rules.EndSpike:
+		return s.endSpikeAction(ctx, a)
 	}
 	// Phase-2 implementation-loop actions.
 	if handled, err := s.executePhase2(ctx, action); handled {

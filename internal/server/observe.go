@@ -78,6 +78,8 @@ func runPurpose(purpose, label string) string {
 		return "Checking the feature against its specification"
 	case "estimate":
 		return "Estimating the size"
+	case "run-spike":
+		return "Running a spike"
 	}
 	if strings.HasPrefix(purpose, "review-") {
 		return "Reviewing the document" + about
@@ -591,6 +593,20 @@ func (s *Server) runContext(ctx context.Context, d *store.Dispatch) (about, feat
 		if in, err := store.GetInitiative(ctx, s.Store.Pool, d.RefID); err == nil {
 			if path, err := s.initiativePath(ctx, in.ID); err == nil {
 				about = crumb{Label: in.Name, URL: "/ui/i/" + path, Kind: "initiative"}
+			}
+		}
+	case "spike":
+		// The run's crumbs lead to the spike and to what it was written on
+		// (SPEC-021 FR-8.4).
+		if sp, err := store.GetSpike(ctx, s.Store.Pool, d.RefID); err == nil {
+			label = sp.Question
+			about = crumb{ID: sp.PublicID, Label: sp.PublicID, URL: "/ui/s/" + sp.PublicID, Kind: "spike"}
+			if sp.FeatureID != nil {
+				feature = featureCrumb(*sp.FeatureID)
+			} else if in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID); err == nil {
+				if path, err := s.initiativePath(ctx, in.ID); err == nil {
+					feature = crumb{Label: in.Name, URL: "/ui/i/" + path, Kind: "initiative"}
+				}
 			}
 		}
 	}
