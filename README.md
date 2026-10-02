@@ -33,9 +33,9 @@ Phase C has begun. **M11** (decisions and conventions pushed into every
 agent's prompt) and **M12** (bugs: report, triage, and the normal pipeline)
 are merged, with SPEC-018 and SPEC-019 approved. **M13** (executors: the chat
 agent or a person claims a task, and its work is judged like an agent's) and
-**M14** stage 1 (spikes: a budgeted question that can't ship code) are merged,
-with SPEC-020 and SPEC-021 waiting for approval. M14 stage 2 (spikes run in
-chat or by a person) is next.
+**M14** (spikes: a question with a budget or a time box that can't ship code,
+run by an agent, in chat or by a person) are merged, with SPEC-020 and
+SPEC-021 waiting for approval. That completes phase C.
 
 What stands between this and "Subutai usable" is the live smoke runs against a
 real provider. Their checklists are in the M0, M3 and M6 handoffs.
@@ -108,7 +108,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [REVIEW-018](docs/reviews/REVIEW-018-decisions.md) | Independent review of SPEC-018 |
 | [REVIEW-019](docs/reviews/REVIEW-019-bugs.md) | Independent review of SPEC-019 |
 | [REVIEW-020](docs/reviews/REVIEW-020-executors.md) | Independent review of SPEC-020; its code reviews and [verification](docs/reviews/VERIFICATION-020-executors.md) sit beside it |
-| [REVIEW-021](docs/reviews/REVIEW-021-spikes.md) | Independent review of SPEC-021; its code reviews and verification are in [REVIEW-021-spikes/](docs/reviews/REVIEW-021-spikes/) |
+| [REVIEW-021](docs/reviews/REVIEW-021-spikes.md) | Independent review of SPEC-021; its code reviews and verification are in [REVIEW-021-spikes/](docs/reviews/REVIEW-021-spikes/), and stage 2's in [VERIFICATION-021-stage2](docs/reviews/VERIFICATION-021-stage2.md) and beside it |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
 | [walkthrough-phase-3](docs/walkthrough-phase-3.md) | Phase 3: sizing, calibration and milestones |
@@ -128,6 +128,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [walkthrough-spec-019](docs/walkthrough-spec-019.md) | SPEC-019: the demo, with screenshots |
 | [walkthrough-spec-020](docs/walkthrough-spec-020.md) | SPEC-020: the demo, with screenshots |
 | [walkthrough-spec-021](docs/walkthrough-spec-021.md) | SPEC-021: the demo, with screenshots |
+| [walkthrough-spec-021-stage2](docs/walkthrough-spec-021-stage2.md) | SPEC-021 stage 2: chat and person spikes, the demo |
 | [manual testing](docs/manual-testing.md) | Running Subutai by hand, and rebuilding the smoke project |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
 | [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |
