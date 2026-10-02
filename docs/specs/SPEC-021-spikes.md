@@ -1487,7 +1487,7 @@ Neither says a number of tokens. Both add: "It ran in chat, so its tokens
 weren't measured." or "It was run by hand, so its tokens weren't measured."
 
 `store.spikeEndings` gains a `time_box` entry with every field the other
-endings have: the timeline's phrase ("Reached its time box"), the page's run
+endings have: the timeline's phrase ("it reached its time box"), the page's run
 line ("The spike reached the end of its time box."), the commit message's
 words ("time box ended"), the lead and the not-answered sentence above.
 
