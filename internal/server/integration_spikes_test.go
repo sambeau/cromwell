@@ -948,6 +948,11 @@ func TestExhaustedSpikeEndsWithoutRetryQuestion(t *testing.T) {
 	}
 	h.startSpike(sp, 0)
 	sp = h.sweepUntilSettled(sp)
+	// The run is cancelled just after the spike ends, so wait for that too.
+	h.eventually("the exhausted run to be cancelled", func() bool {
+		runs := h.runsFor("spike", sp.ID)
+		return len(runs) == 1 && runs[0].State == "cancelled"
+	})
 
 	if sp.EndedHow != store.SpikeFailed || !strings.Contains(sp.EndNote, "provider says no") {
 		t.Errorf("ended %q with note %q", sp.EndedHow, sp.EndNote)
