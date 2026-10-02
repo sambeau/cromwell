@@ -118,15 +118,25 @@ func TasksForFeature(ctx context.Context, q Querier, featureID uuid.UUID) ([]Tas
 	return out, rows.Err()
 }
 
+// ErrStaleState refuses an update whose row has moved on since the caller
+// read it: a lost race refuses rather than overwrites (SPEC-020 FR-2.7).
+var ErrStaleState = errors.New("the state changed while this was being done; look again and retry")
+
 // TransitionTask applies a task lifecycle event, audit row in the same
-// transaction. The lifecycle engine is the sole authority on legality.
+// transaction. The lifecycle engine is the sole authority on legality, and
+// the update is guarded on the state the caller read (SPEC-020 FR-2.7): if the
+// task has moved, nothing changes and ErrStaleState is returned.
 func TransitionTask(ctx context.Context, tx pgx.Tx, t *Task, event lifecycle.TaskEvent, actor string, payload map[string]any) error {
 	next, err := lifecycle.TaskTransition(t.State, event)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = $2 WHERE id = $1`, t.ID, next); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE tasks SET state = $2 WHERE id = $1 AND state = $3`, t.ID, next, t.State)
+	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrStaleState
 	}
 	if payload == nil {
 		payload = map[string]any{}

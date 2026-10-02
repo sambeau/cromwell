@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Worktree struct {
@@ -17,6 +18,9 @@ type Worktree struct {
 	GraphProject *string
 	CreatedAt    time.Time
 	RemovedAt    *time.Time
+	// WatchedHead is the branch head the branch watch last accounted for;
+	// empty until the watch starts (SPEC-020 FR-5.6).
+	WatchedHead string
 }
 
 // CreateWorktreeRow inserts the DB record for a worktree; the git operation
@@ -41,9 +45,9 @@ func CreateWorktreeRow(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, path
 func LiveWorktreeForFeature(ctx context.Context, q Querier, featureID uuid.UUID) (*Worktree, error) {
 	var w Worktree
 	err := q.QueryRow(ctx, `
-		SELECT id, feature_id, path, branch, graph_project, created_at, removed_at
+		SELECT id, feature_id, path, branch, graph_project, created_at, removed_at, COALESCE(watched_head, '')
 		FROM worktrees WHERE feature_id = $1 AND removed_at IS NULL`, featureID).
-		Scan(&w.ID, &w.FeatureID, &w.Path, &w.Branch, &w.GraphProject, &w.CreatedAt, &w.RemovedAt)
+		Scan(&w.ID, &w.FeatureID, &w.Path, &w.Branch, &w.GraphProject, &w.CreatedAt, &w.RemovedAt, &w.WatchedHead)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -60,7 +64,7 @@ func MarkWorktreeRemoved(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
 // reconciliation input (DESIGN-006 §7).
 func (s *Store) LiveWorktrees(ctx context.Context) ([]Worktree, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, feature_id, path, branch, graph_project, created_at, removed_at
+		SELECT id, feature_id, path, branch, graph_project, created_at, removed_at, COALESCE(watched_head, '')
 		FROM worktrees WHERE removed_at IS NULL`)
 	if err != nil {
 		return nil, err
@@ -69,7 +73,7 @@ func (s *Store) LiveWorktrees(ctx context.Context) ([]Worktree, error) {
 	var out []Worktree
 	for rows.Next() {
 		var w Worktree
-		if err := rows.Scan(&w.ID, &w.FeatureID, &w.Path, &w.Branch, &w.GraphProject, &w.CreatedAt, &w.RemovedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.FeatureID, &w.Path, &w.Branch, &w.GraphProject, &w.CreatedAt, &w.RemovedAt, &w.WatchedHead); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -103,4 +107,33 @@ func FeatureSpecStale(ctx context.Context, q Querier, featureID uuid.UUID) (bool
 func SetFeatureBranch(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, branch string) error {
 	_, err := tx.Exec(ctx, `UPDATE features SET branch = $2 WHERE id = $1`, featureID, branch)
 	return err
+}
+
+// SetWatchedHead records the branch head the watch has accounted for
+// (SPEC-020 FR-5.6).
+func SetWatchedHead(ctx context.Context, q interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}, worktreeID uuid.UUID, head string) error {
+	_, err := q.Exec(ctx, `UPDATE worktrees SET watched_head = $2 WHERE id = $1`, worktreeID, head)
+	return err
+}
+
+// RecordWorktreeCommit notes a commit Subutai made on the feature's branch,
+// so the watch doesn't mistake it for someone else's: act is implementation,
+// submit or release (SPEC-020 FR-5.6, FR-5.7). Recording one twice is a no-op.
+func RecordWorktreeCommit(ctx context.Context, tx pgx.Tx, worktreeID uuid.UUID, hash, act string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO worktree_commits (worktree_id, hash, act) VALUES ($1, $2, $3)
+		ON CONFLICT (worktree_id, hash) DO NOTHING`, worktreeID, hash, act)
+	return err
+}
+
+// IsWorktreeCommit reports whether Subutai made the commit on this worktree's
+// branch.
+func IsWorktreeCommit(ctx context.Context, q Querier, worktreeID uuid.UUID, hash string) (bool, error) {
+	var b bool
+	err := q.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM worktree_commits WHERE worktree_id = $1 AND hash = $2)`,
+		worktreeID, hash).Scan(&b)
+	return b, err
 }

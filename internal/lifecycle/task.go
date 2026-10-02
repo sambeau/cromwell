@@ -37,6 +37,9 @@ const (
 	TaskRequestChanges TaskEvent = "request_changes"
 	// TaskAbandon is always human, always with a reason.
 	TaskAbandon TaskEvent = "abandon"
+	// TaskRelease is a claim handed back to an agent (SPEC-020 FR-2.2): the
+	// task stays active, and the audit trail says what happened.
+	TaskRelease TaskEvent = "release"
 )
 
 var taskTransitions = map[TaskState]map[TaskEvent]TaskState{
@@ -50,6 +53,7 @@ var taskTransitions = map[TaskState]map[TaskEvent]TaskState{
 	},
 	TaskActive: {
 		TaskImplemented: TaskReview,
+		TaskRelease:     TaskActive,
 		TaskAbandon:     TaskAbandoned,
 	},
 	TaskReview: {
