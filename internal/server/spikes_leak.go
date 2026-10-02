@@ -72,7 +72,7 @@ func (s *Server) spikeKept(ctx context.Context, sp *store.Spike) (store.SpikeKep
 	if !errors.Is(err, store.ErrNotFound) {
 		return store.SpikeKept{}, err
 	}
-	kept := s.checkSpikeLeak(sp)
+	kept := s.checkSpikeLeak(ctx, sp)
 	if len(kept.Refs) == 0 && kept.CouldntCheck == "" {
 		return kept, nil
 	}
@@ -108,8 +108,8 @@ func (s *Server) spikeKept(ctx context.Context, sp *store.Spike) (store.SpikeKep
 }
 
 // checkSpikeLeak runs the check and turns a failure into a result.
-func (s *Server) checkSpikeLeak(sp *store.Spike) store.SpikeKept {
-	refs, err := s.leakedRefs(sp)
+func (s *Server) checkSpikeLeak(ctx context.Context, sp *store.Spike) store.SpikeKept {
+	refs, err := s.leakedRefs(ctx, sp)
 	if err != nil {
 		s.Log.Warn("spike leak check couldn't run", "spike", sp.PublicID, "err", err)
 		return store.SpikeKept{CouldntCheck: err.Error()}
@@ -119,7 +119,7 @@ func (s *Server) checkSpikeLeak(sp *store.Spike) store.SpikeKept {
 
 // leakedRefs is FR-6.3. An error is a reason, as a fragment that follows
 // "Subutai couldn't check whether code from this spike was kept: ".
-func (s *Server) leakedRefs(sp *store.Spike) ([]string, error) {
+func (s *Server) leakedRefs(ctx context.Context, sp *store.Spike) ([]string, error) {
 	if sp.WorktreePath == "" || sp.BaseCommit == "" {
 		return nil, nil
 	}
@@ -130,11 +130,15 @@ func (s *Server) leakedRefs(sp *store.Spike) ([]string, error) {
 	}
 	if admin == "" {
 		// The planner makes an agent spike's working copy before the run's
-		// first call, and a chat or person spike's is made at the start, so a
-		// spike that had one (spikeHadWorkingCopy) lost it. Only one that
-		// never did, and has no directory, was never made.
+		// first call, and a chat or person spike's is made at the start or at
+		// its first claim, so a spike that had one (spikeHadWorkingCopy) lost
+		// it. Only one that never did, and has no directory, was never made.
 		if _, err := os.Stat(abs); errors.Is(err, fs.ErrNotExist) {
-			if spikeHadWorkingCopy(sp) {
+			had, err := s.spikeHadWorkingCopy(ctx, sp)
+			if err != nil {
+				return nil, err
+			}
+			if had {
 				return nil, errors.New("the working copy was removed, so git's record of it is gone")
 			}
 			return nil, nil

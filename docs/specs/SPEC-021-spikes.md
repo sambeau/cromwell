@@ -1216,7 +1216,10 @@ registered under `spike`:
     can't be claimed." / "SPK-003 is to be run by a person in the web UI, not
     in chat." / "SPK-003 is to be run in chat, not in the web UI. Ask the chat
     agent to run it.";
-  - past the deadline: "SPK-003's time box ended at 17:04, so it is ending
+  - a spike whose claim already ended `done` (a submit whose ending was cut
+    short): "SPK-003 has been submitted, and is ending. A person reads its
+    findings on its page.";
+  - past the deadline: "SPK-003's time box ended at 17:04 UTC, so it is ending
     with the findings that were saved.";
   - held by someone else: SPEC-020's `heldBySentence`;
   - the worktree missing after FR-13.3's remake: "SPK-003's working copy
@@ -1225,7 +1228,7 @@ registered under `spike`:
   nothing;
 - `staleQuestion`: "SPK-003, *question*, was claimed by the chat agent 26
   hours ago, and nothing has changed in its working copy or its findings for
-  24 hours. Its time box ends at 17:04 on 3 October. Is someone still working
+  24 hours. Its time box ends at 17:04 UTC on 3 October. Is someone still working
   on it?", with the release answer **Release the claim**;
 - `deadlineQuestion`: never asked (SD-20); it returns the same words as the
   stale question, for completeness;
@@ -1265,11 +1268,15 @@ claim after a release, is its own row.
 
 **FR-13.3 — Claiming** (`Server.ClaimSpike(ctx, ref, who)`, used by
 `claim_spike` and the UI). Before the claim, outside any transaction and
-holding the worktree's lock, the worktree is made if it is missing, as the
+holding the worktree's lock, the spike is read again and refused if it has
+ended, been submitted or passed its deadline (nothing is made for a spike
+that is over), and then the worktree is made if it is missing, as the
 planner does (FR-4.2). Whether what it kept must be checked and recorded
 first is one predicate, `spikeHadWorkingCopy`: true for an agent spike that
-has used tokens (stage 1's rule), and for every started chat or person
-spike, since its worktree is made at the start. The leak check's "couldn't
+has used tokens (stage 1's rule), and for a chat or person spike whose
+worktree was made, which is audited as `spike.worktree_made` when it is made
+(at the start, or at the first claim if the start's make failed). The
+predicate is "the worktree was made", not "the spike started". The leak check's "couldn't
 check" path (FR-6.3) uses the same predicate in place of `TokensUsed > 0`,
 so a chat spike whose working copy vanished fails closed, as round 2 of
 the stage-1 review required. Then SPEC-020's claim, renewal or refusal. A claim by the holder of an
@@ -1516,8 +1523,8 @@ It is created with no budget override.
   "Run by hand by sam." It is built from the executions and the latest
   claim, by one function shared with `get_spike`.
 - **The limit**: an agent spike keeps stage 1's budget bar. A chat or person
-  spike shows the time box instead: "Time box: 4 hours, ending at 17:04 on 3
-  October (3 hours 12 minutes left)." while running, and "Time box: 4 hours."
+  spike shows the time box instead: "Time box: 4 hours, ending at 17:04 UTC on
+  3 October (3 hours 12 minutes left)." while running, and "Time box: 4 hours."
   after. In place of the token bar: "This spike ran in chat, so its tokens
   weren't measured." (or "by hand").
 - **A running person spike** shows, to the person: **I'll run this spike**

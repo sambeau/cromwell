@@ -145,6 +145,18 @@ func LatestClaimFor(ctx context.Context, q Querier, refType string, refID uuid.U
 		WHERE ref_type = $1 AND ref_id = $2 ORDER BY claimed_at DESC, id DESC LIMIT 1`, refType, refID))
 }
 
+// ClaimEndedDoneFor says whether any claim of the item ended done: for a
+// spike, that a submit got there and the spike is ending as concluded
+// (SPEC-021 FR-13.7). It is the one place that rule is written, and it looks
+// at every claim, not only the latest, so a claim made after the submit can't
+// hide it.
+func ClaimEndedDoneFor(ctx context.Context, q Querier, refType string, refID uuid.UUID) (bool, error) {
+	var done bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM work_claims
+		WHERE ref_type = $1 AND ref_id = $2 AND state = 'ended' AND end_reason = 'done')`, refType, refID).Scan(&done)
+	return done, err
+}
+
 // LockCurrentClaimFor is CurrentClaimFor with FOR UPDATE, in the lock order
 // of SPEC-020 FR-2.7.
 func LockCurrentClaimFor(ctx context.Context, tx pgx.Tx, refType string, refID uuid.UUID) (*Claim, error) {

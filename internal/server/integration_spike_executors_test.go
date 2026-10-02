@@ -65,8 +65,8 @@ func TestChatSpikeStartMakesAWorktreeAndQueuesNothing(t *testing.T) {
 	if execs, err := store.ExecutionsFor(ctx, h.srv.Store.Pool, "spike", sp.ID); err != nil || len(execs) != 0 {
 		t.Errorf("executions = %+v, %v", execs, err)
 	}
-	if !spikeHadWorkingCopy(started) {
-		t.Error("a started chat spike has had a working copy")
+	if had, err := h.srv.spikeHadWorkingCopy(ctx, started); err != nil || !had {
+		t.Errorf("a started chat spike whose worktree was made has had a working copy: %v, %v", had, err)
 	}
 
 	// A person spike starts the same way, with the project's default time box
@@ -156,9 +156,12 @@ func TestSpikeRunWritesItsAgentExecutionOnce(t *testing.T) {
 }
 
 // SD-27: ending takes the worktree's lock and then spikeEndMu, and the
-// reconciliation's finish does too; neither deadlocks with the other, with the
-// remake, or with a lock the caller already holds in the stated order.
-func TestSpikeLocksAreTakenInOrder(t *testing.T) {
+// reconciliation's finish does too. A caller holding the worktree's lock may
+// remake it and then take spikeEndMu, and the ending then goes through without
+// deadlocking. It doesn't prove the order: the claim and submit race tests in
+// integration_spikes_races_test.go run a claim and a submit against an ending
+// that holds the locks.
+func TestSpikeEndingUnderItsLocksDoesNotDeadlock(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	in := h.spikeInitiative("pf")

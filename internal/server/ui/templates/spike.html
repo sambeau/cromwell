@@ -214,14 +214,15 @@
       </div>
       <div class="action-row u-mt-2">
         <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-edit"/></svg>Save findings</button>
-        <button class="btn btn--primary" type="submit" formaction="/ui/spikes/submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>I've finished</button>
+        <button class="btn btn--primary" type="submit" formaction="/ui/spikes/submit" aria-describedby="spike-finish-hint"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>I've finished</button>
       </div>
+      <p class="field-hint" id="spike-finish-hint">Save findings keeps your draft and the spike running. I've finished hands the findings in and ends the spike.</p>
     </form>
     <form method="post" action="/ui/spikes/release" class="u-mt-4">
       <input type="hidden" name="spike" value="{{.SpikeID}}">
       <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Release the claim</button>
-      <p class="t-meta u-mt-2">Releasing ends your claim. The spike keeps running, and your draft and working copy are kept.</p>
     </form>
+    <p class="t-meta u-mt-2">Releasing ends your claim. The spike keeps running, and your draft and working copy are kept.</p>
     {{end}}
   </div>
 </section>
@@ -234,10 +235,10 @@
   </div>
   <div class="panel-body">
     {{if .Draft}}
-'    <p class="t-meta">{{if .ByAgent}}The agent{{else}}Whoever is running it{{end}} last saved this on {{.DraftWhen}}. If the run stops now, this is what is kept.</p>
+    <p class="t-meta">{{if .ByAgent}}The agent{{else}}Whoever is running it{{end}} last saved this on {{.DraftWhen}}. If the run stops now, this is what is kept.</p>
     <pre class="transcript-pre u-mt-2">{{.Draft}}</pre>
     {{else}}
-    <p>{{if .ByAgent}}The agent hasn't{{else}}No one has{{end}} saved any findings yet.</p>
+    <p>{{if .ByAgent}}The agent{{else}}Whoever is running it{{end}} hasn't saved any findings yet.</p>
     {{end}}
   </div>
 </section>
@@ -286,12 +287,16 @@
       <input type="hidden" name="as" value="again">
       {{if .ShowAgainBudget}}
       <label class="field-label" for="again-budget">A new budget, in tokens</label>
-      <input class="input" id="again-budget" name="budget" inputmode="numeric" aria-describedby="again-budget-hint"{{if .AgainBudget}} value="{{.AgainBudget}}"{{end}}>
+      <input class="input" id="again-budget" name="budget" inputmode="numeric" aria-describedby="again-hint"{{if .AgainBudget}} value="{{.AgainBudget}}"{{end}}>
       <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"/></svg>Ask again with a new budget</button>
       {{else}}
-      <button class="btn" type="submit" aria-describedby="again-budget-hint"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"/></svg>Ask again</button>
+      <button class="btn" type="submit" aria-describedby="again-hint"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"/></svg>Ask again</button>
       {{end}}
-      <p class="field-hint" id="again-budget-hint">{{if not .ShowAgainBudget}}This closes the spike without an answer and writes down a new one with the same question. You choose who runs it, and its budget or time box, on its start screen, and nothing starts until you press Start there. The new run is shown what this one found.{{else}}This closes the spike without an answer and writes down a new one with the same question and the budget you give. Nothing starts until you press Start on its screen. The new run is shown what this one found.{{end}}</p>
+      {{if .ShowAgainBudget}}
+      <p class="field-hint" id="again-hint">This closes the spike without an answer and writes down a new one with the same question and the budget you give. Nothing starts until you press Start on its screen. The new run is shown what this one found.</p>
+      {{else}}
+      <p class="field-hint" id="again-hint">This closes the spike without an answer and writes down a new one with the same question. You choose who runs it, and its budget or time box, on its start screen, and nothing starts until you press Start there. The new run is shown what this one found.</p>
+      {{end}}
     </form>
   </div>
 </section>
@@ -369,22 +374,22 @@
     </div>
     <div class="panel-body">
       <fieldset class="field" id="start-executors">
-        <legend class="field-label">Who runs it</legend>
-        <label class="radio-row" for="start-ex-agent">
-          <input type="radio" id="start-ex-agent" name="executor" value="agent" aria-describedby="start-ex-agent-hint"{{if eq .Executor "agent"}} checked{{end}}{{if .Refusal}} disabled{{end}}>
+        <legend class="field-label visually-hidden">Who runs it</legend>
+        <label class="radio-row">
+          <input type="radio" id="start-ex-agent" name="executor" value="agent" aria-describedby="{{if .Refusal}}start-runner{{else}}start-ex-agent-hint{{end}}"{{if eq .Executor "agent"}} checked{{end}}{{if .Refusal}} disabled{{end}}>
           <span>The spike runner</span>
         </label>
         {{if .Refusal}}
-        <p class="field-hint" id="start-ex-agent-hint">{{code .Refusal}}</p>
+        <p class="field-hint">It can't run this spike just now. The reason is under The spike runner, below.</p>
         {{else}}
         <p class="field-hint" id="start-ex-agent-hint">An agent runs it on {{.Model}}, with a token budget.</p>
         {{end}}
-        <label class="radio-row" for="start-ex-chat">
+        <label class="radio-row">
           <input type="radio" id="start-ex-chat" name="executor" value="chat" aria-describedby="start-ex-chat-hint"{{if eq .Executor "chat"}} checked{{end}}>
           <span>The chat agent</span>
         </label>
         <p class="field-hint" id="start-ex-chat-hint">You or the chat agent ask it to run {{.PublicID}} in a chat session. It claims the spike over MCP.</p>
-        <label class="radio-row" for="start-ex-person">
+        <label class="radio-row">
           <input type="radio" id="start-ex-person" name="executor" value="person" aria-describedby="start-ex-person-hint"{{if eq .Executor "person"}} checked{{end}}>
           <span>You</span>
         </label>
@@ -404,13 +409,13 @@
           <input class="input" id="start-budget" name="budget" inputmode="numeric" value="{{if .BudgetTyped}}{{.BudgetTyped}}{{else}}{{.Budget}}{{end}}"{{if .BudgetNote}} aria-describedby="start-budget-note"{{end}}>
           {{if .BudgetNote}}<p class="field-hint" id="start-budget-note">{{code .BudgetNote}}</p>{{end}}
         </div>
-        <p class="t-meta">The run stops when it reaches this many tokens. Whatever findings it has saved by then are written up, and you decide whether to ask again.</p>
+        <p class="t-meta">This field is read only when the spike runner runs it. The run stops when it reaches this many tokens. Whatever findings it has saved by then are written up, and you decide whether to ask again.</p>
       </div>
       <div data-for-executor="chat person">
         <div class="field">
           <label class="field-label" for="start-time-box">Time box, in hours <span class="t-meta">(for the chat agent or you)</span></label>
           <input class="input" id="start-time-box" name="time_box" inputmode="numeric" value="{{.TimeBox}}" aria-describedby="start-time-box-hint">
-          <p class="field-hint" id="start-time-box-hint">A whole number of hours, from 1 to 168. The project's default is {{.TimeBoxDefault}}.</p>
+          <p class="field-hint" id="start-time-box-hint">A whole number of hours, from 1 to 168. The project's default is {{.TimeBoxDefault}}. This field is read only when the chat agent or you run it.</p>
         </div>
         <p class="t-meta" id="start-time-box-sentence">Work done in chat or by hand can't be measured in tokens, so this spike is held to a time box instead. When the time box runs out, the spike ends with whatever findings have been saved.</p>
       </div>
@@ -471,7 +476,7 @@
     <div class="panel-body">
       <div class="action-row">
         <a class="btn" href="{{.SpikePath}}">Cancel</a>
-        <button class="btn btn--primary" type="submit">
+        <button class="btn btn--primary" type="submit"{{if not .CanStart}} disabled aria-describedby="start-runner"{{end}}>
           <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Start this spike</button>
       </div>
     </div>

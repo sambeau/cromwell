@@ -394,8 +394,8 @@ func SaveSpikeDraft(ctx context.Context, q Querier, id uuid.UUID, draft string) 
 // EndSpikeState moves a running spike to ended, with how the run ended (one of
 // the Spike* constants, SpikeTimeBox included; the table's checks refuse a
 // pairing the executor can't have) and, for a failure, its last error as a
-// note (FR-6.2 step 3). changed is false when
-// the spike wasn't running, which leaves it as it is and writes nothing.
+// note (FR-6.2 step 3). changed is false when the spike wasn't running, which
+// leaves it as it is and writes nothing.
 func EndSpikeState(ctx context.Context, tx pgx.Tx, id uuid.UUID, how, note string) (changed bool, err error) {
 	var used int64
 	var budget *int64
@@ -433,15 +433,10 @@ func MarkSpikeWorktreeRemoved(ctx context.Context, tx pgx.Tx, id uuid.UUID) (cha
 
 // CloseSpike closes a spike as a person has read it (FR-7.2). The update is
 // conditional: answered only from ended, unanswered from ended or from idea.
-// When no row changes it returns ErrSpikeCannotClose.
-func CloseSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, as, actor string) (*Spike, error) {
-	return CloseSpikeRanIt(ctx, tx, id, as, actor, false)
-}
-
-// CloseSpikeRanIt is CloseSpike for a closer who may also have run the spike:
-// when ranIt is set the spike.closed audit row carries closer_ran_it: true
-// (SPEC-021 SD-26, FR-16.4).
-func CloseSpikeRanIt(ctx context.Context, tx pgx.Tx, id uuid.UUID, as, actor string, ranIt bool) (*Spike, error) {
+// When no row changes it returns ErrSpikeCannotClose. ranIt says the closer
+// also ran the spike by hand: the spike.closed audit row then carries
+// closer_ran_it: true (SPEC-021 SD-26, FR-16.4).
+func CloseSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, as, actor string, ranIt bool) (*Spike, error) {
 	if as != SpikeAnswered && as != SpikeUnanswered {
 		return nil, errors.New("a spike closes as answered or unanswered, not " + strconv.Quote(as))
 	}
@@ -506,6 +501,27 @@ func SpikeKeptRecord(ctx context.Context, q Querier, id uuid.UUID) (*SpikeKept, 
 		return nil, err
 	}
 	return &k, nil
+}
+
+// RecordSpikeWorktreeMade audits that a chat or person spike's working copy was
+// made, once (SPEC-021 FR-13.3): the leak check reads it to tell a working
+// copy that went missing from one that was never made. It returns false, and
+// writes nothing, when the row is already there.
+func RecordSpikeWorktreeMade(ctx context.Context, tx pgx.Tx, id uuid.UUID) (bool, error) {
+	made, err := SpikeWorktreeMade(ctx, tx, id)
+	if err != nil || made {
+		return false, err
+	}
+	return true, Audit(ctx, tx, "subutai", "spike.worktree_made", "spike", &id, map[string]any{})
+}
+
+// SpikeWorktreeMade says whether the spike's working copy was ever recorded as
+// made.
+func SpikeWorktreeMade(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
+	var made bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM audit_events
+		WHERE kind = 'spike.worktree_made' AND ref_type = 'spike' AND ref_id = $1)`, id).Scan(&made)
+	return made, err
 }
 
 // SpikeRun is a running spike with its newest run-spike dispatch, for the

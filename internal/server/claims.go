@@ -209,8 +209,7 @@ type renewalRefuser interface {
 	renewalRefusal(ctx context.Context, tx pgx.Tx, t *claimTarget, who Claimant) string
 }
 
-// claimables is the registry by ref_type. M13 registers task; M14 registers
-// spike.
+// claimables is the registry of claimables by ref_type: task and spike.
 func (s *Server) claimables() map[string]claimable {
 	return map[string]claimable{"task": taskClaims{s: s}, "spike": spikeClaims{s: s}}
 }

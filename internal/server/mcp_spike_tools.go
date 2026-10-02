@@ -328,10 +328,13 @@ func (s *Server) spikeResult(ctx context.Context, sp *store.Spike) map[string]an
 	}
 	// Who runs it, and what limit it has (FR-16.2). A chat or person spike's
 	// tokens aren't measured, so its count is null rather than 0.
-	exec, err := s.spikeExecutor(ctx, s.Store.Pool, sp)
+	// Read once: the executor's sentence and the claim object are both made
+	// from it. A read that fails leaves a spike with no run to describe.
+	facts, err := readSpikeRunFacts(ctx, s.Store.Pool, sp)
 	if err != nil {
-		exec = spikeExecutorSentence(sp, nil, nil, time.Now())
+		facts = spikeRunFacts{}
 	}
+	exec := spikeExecutorSentence(sp, facts, time.Now())
 	executor := map[string]any{"sentence": exec.Sentence}
 	if exec.Kind != "" {
 		executor["kind"], executor["who"], executor["model"], executor["run_id"] = exec.Kind, exec.Who, exec.Model, exec.RunID
@@ -348,7 +351,7 @@ func (s *Server) spikeResult(ctx context.Context, sp *store.Spike) map[string]an
 			out["deadline"] = sp.DeadlineAt.UTC().Format(time.RFC3339)
 		}
 		out["claim"] = nil
-		if c, err := store.LatestClaimFor(ctx, s.Store.Pool, "spike", sp.ID); err == nil {
+		if c := facts.Claim; c != nil {
 			out["claim"] = map[string]any{
 				"kind": c.Kind, "who": whoWords(c.Kind, c.Actor, ""), "state": string(c.State),
 				"since":            c.ClaimedAt.UTC().Format(time.RFC3339),

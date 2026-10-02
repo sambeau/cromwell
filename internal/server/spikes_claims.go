@@ -27,7 +27,10 @@ import (
 )
 
 // spikeClaims is the claimable for a spike (FR-13.1).
-type spikeClaims struct{ s *Server }
+type spikeClaims struct {
+	noSubmitRelease
+	s *Server
+}
 
 // spikeClaimRuleSentences are a spike claimant's own rules (FR-13.4), said
 // once, here, so the chat skill can be checked against them.
@@ -37,12 +40,6 @@ var spikeClaimRuleSentences = []string{
 	"Save your findings with save_spike_findings early and often. When the time box ends, whatever you have saved is what is kept.",
 	"When you have an answer, or know the question can't be answered, call submit_spike with your findings in the template's sections.",
 	"A person reads the findings and decides whether the question is answered. You can't close the spike, release your claim or move its time box, and you can't approve its findings on your own judgement: only a person's verdict, in their words, approves them.",
-}
-
-// spikeClaimRules are the sentences a spike's claimant is given: the rules,
-// then the commands the project allows, as claim_task's rules list them.
-func (s *Server) spikeClaimRules() []string {
-	return s.withCommandRules(spikeClaimRuleSentences)
 }
 
 // spikeReleaseConsequence is what Release the claim does (FR-14.2).
@@ -63,28 +60,10 @@ func spikeTimeLeft(sp *store.Spike, now time.Time) string {
 	}
 	left := sp.DeadlineAt.Sub(now)
 	if left <= 0 {
-		return fmt.Sprintf("The time box ended at %s UTC. The spike ends with whatever findings were saved.", sp.DeadlineAt.UTC().Format("15:04"))
+		return fmt.Sprintf("The time box ended at %s. The spike ends with whatever findings were saved.", spikeClock(*sp.DeadlineAt))
 	}
-	mins := int(left / time.Minute)
-	var parts []string
-	if h := mins / 60; h > 0 {
-		parts = append(parts, countUnit(h, "hour"))
-	}
-	if m := mins % 60; m > 0 || len(parts) == 0 {
-		if mins == 0 {
-			return fmt.Sprintf("The time box ends at %s UTC, in less than a minute. Then the spike ends with whatever findings you have saved.", sp.DeadlineAt.UTC().Format("15:04"))
-		}
-		parts = append(parts, countUnit(m, "minute"))
-	}
-	return fmt.Sprintf("The time box ends at %s UTC, in %s. Then the spike ends with whatever findings you have saved.",
-		sp.DeadlineAt.UTC().Format("15:04"), strings.Join(parts, " "))
-}
-
-func countUnit(n int, unit string) string {
-	if n == 1 {
-		return "1 " + unit
-	}
-	return fmt.Sprintf("%d %ss", n, unit)
+	return fmt.Sprintf("The time box ends at %s, in %s. Then the spike ends with whatever findings you have saved.",
+		spikeClock(*sp.DeadlineAt), spikeSpanWords(left))
 }
 
 // ---- The claimable ----
@@ -101,15 +80,25 @@ func (sc spikeClaims) load(ctx context.Context, q store.Querier, refID uuid.UUID
 	return t, nil
 }
 
+// spikeStateWords is the sentence for a spike that isn't running, or "" for one
+// that is. consequence is what the idea can't do, as the caller's refusal puts
+// it: "it can't be claimed", "there is nothing to save".
+func spikeStateWords(sp *store.Spike, consequence string) string {
+	switch sp.State {
+	case store.SpikeIdea:
+		return fmt.Sprintf("%s isn't running, so %s. A person starts a spike from its page in the web UI.", sp.PublicID, consequence)
+	case store.SpikeEnded, store.SpikeClosed:
+		return fmt.Sprintf("%s has ended. A person reads its findings on its page.", sp.PublicID)
+	}
+	return ""
+}
+
 // spikeStateRefusal is FR-13.1's refusals for a spike that can't be claimed
 // whoever asks, and for an executor that isn't the claimant's; "" when neither
 // stands.
 func spikeStateRefusal(sp *store.Spike, who Claimant) string {
-	switch sp.State {
-	case store.SpikeIdea:
-		return fmt.Sprintf("%s isn't running, so it can't be claimed. A person starts a spike from its page in the web UI.", sp.PublicID)
-	case store.SpikeEnded, store.SpikeClosed:
-		return fmt.Sprintf("%s has ended. A person reads its findings on its page.", sp.PublicID)
+	if r := spikeStateWords(sp, "it can't be claimed"); r != "" {
+		return r
 	}
 	switch sp.Executor {
 	case store.ExecutorChat:
@@ -131,17 +120,41 @@ func spikeStateRefusal(sp *store.Spike, who Claimant) string {
 func spikeDeadlineRefusal(sp *store.Spike, now time.Time) string {
 	if sp.DeadlineAt != nil && !sp.DeadlineAt.After(now) {
 		return fmt.Sprintf("%s's time box ended at %s, so it is ending with the findings that were saved.",
-			sp.PublicID, sp.DeadlineAt.UTC().Format("15:04"))
+			sp.PublicID, spikeClock(*sp.DeadlineAt))
 	}
 	return ""
 }
 
-func (sc spikeClaims) refusal(ctx context.Context, tx pgx.Tx, t *claimTarget, who Claimant, resume bool) string {
-	sp := t.Spike
+// spikeSubmitted says whether a claim of the spike ended done, which makes the
+// spike's ending final: it is ending as concluded, and nothing may claim it
+// again (SPEC-021 FR-13.7). It reads every claim, not only the latest.
+func spikeSubmitted(ctx context.Context, q store.Querier, sp *store.Spike) (bool, error) {
+	return store.ClaimEndedDoneFor(ctx, q, "spike", sp.ID)
+}
+
+// spikeBarredRefusal is FR-13.1's refusals that no remake can mend, in its
+// order: the state and the executor, a submit that has ended the claim for
+// good, and the deadline. It is "" when none stands. A claim and a renewal are
+// both judged by it, and a claim judges it before anything is made.
+func spikeBarredRefusal(ctx context.Context, q store.Querier, sp *store.Spike, who Claimant, now time.Time) string {
 	if r := spikeStateRefusal(sp, who); r != "" {
 		return r
 	}
-	if r := spikeDeadlineRefusal(sp, time.Now()); r != "" {
+	done, err := spikeSubmitted(ctx, q, sp)
+	if err != nil {
+		return fmt.Sprintf("%s can't be claimed just now: %v.", sp.PublicID, err)
+	}
+	if done {
+		return fmt.Sprintf("%s has been submitted, and is ending. A person reads its findings on its page.", sp.PublicID)
+	}
+	return spikeDeadlineRefusal(sp, now)
+}
+
+// refusal is a claim's refusal, in FR-13.1's order. resume is a task's; a
+// spike's claim is never returned, so there is nothing to resume.
+func (sc spikeClaims) refusal(ctx context.Context, tx pgx.Tx, t *claimTarget, who Claimant, _ bool) string {
+	sp := t.Spike
+	if r := spikeBarredRefusal(ctx, tx, sp, who, time.Now()); r != "" {
 		return r
 	}
 	cur, err := store.CurrentClaimFor(ctx, tx, "spike", t.RefID)
@@ -160,14 +173,11 @@ func (sc spikeClaims) refusal(ctx context.Context, tx pgx.Tx, t *claimTarget, wh
 	return ""
 }
 
-// renewalRefusal is a renewal's refusal: only the state and the deadline are
-// judged (FR-13.2). The claim is already the claimant's, and its working copy
-// is whatever it left.
+// renewalRefusal is a renewal's refusal: only the state, a submit and the
+// deadline are judged (FR-13.2). The claim is already the claimant's, and its
+// working copy is whatever it left.
 func (sc spikeClaims) renewalRefusal(ctx context.Context, tx pgx.Tx, t *claimTarget, who Claimant) string {
-	if r := spikeStateRefusal(t.Spike, who); r != "" {
-		return r
-	}
-	return spikeDeadlineRefusal(t.Spike, time.Now())
+	return spikeBarredRefusal(ctx, tx, t.Spike, who, time.Now())
 }
 
 // onClaim gives the claim the spike's deadline and cancels nothing: a spike has
@@ -179,35 +189,36 @@ func (sc spikeClaims) onClaim(ctx context.Context, tx pgx.Tx, t *claimTarget, c 
 	return nil, store.SetClaimDeadline(ctx, tx, c.ID, *t.Spike.DeadlineAt)
 }
 
+// noSubmitRelease stands in for the claimable's submit and release methods: a
+// spike has its own, SubmitSpike and ReleaseSpikeClaim, because a task's commit,
+// review and implementer don't apply to it (FR-13.2).
+type noSubmitRelease struct{}
+
 var errSpikeOwnMethod = errors.New("a spike has its own submit and release: SubmitSpike and ReleaseSpikeClaim")
 
-func (sc spikeClaims) prepareSubmit(ctx context.Context, t *claimTarget, c *store.Claim, summary string) (submitted, error) {
+func (noSubmitRelease) prepareSubmit(context.Context, *claimTarget, *store.Claim, string) (submitted, error) {
 	return submitted{}, errSpikeOwnMethod
 }
 
-func (sc spikeClaims) onSubmit(ctx context.Context, tx pgx.Tx, t *claimTarget, c *store.Claim, sub submitted) (string, error) {
+func (noSubmitRelease) onSubmit(context.Context, pgx.Tx, *claimTarget, *store.Claim, submitted) (string, error) {
 	return "", errSpikeOwnMethod
 }
 
-func (sc spikeClaims) prepareRelease(ctx context.Context, t *claimTarget, c *store.Claim) (released, error) {
+func (noSubmitRelease) prepareRelease(context.Context, *claimTarget, *store.Claim) (released, error) {
 	return released{}, errSpikeOwnMethod
 }
 
-func (sc spikeClaims) onRelease(ctx context.Context, tx pgx.Tx, t *claimTarget, c *store.Claim, r released, by string) error {
+func (noSubmitRelease) onRelease(context.Context, pgx.Tx, *claimTarget, *store.Claim, released, string) error {
 	return errSpikeOwnMethod
 }
 
-// spikeDeadlineWords is "17:04 on 3 October", in UTC.
-func spikeDeadlineWords(sp *store.Spike) string {
-	if sp.DeadlineAt == nil {
-		return ""
-	}
-	return sp.DeadlineAt.UTC().Format("15:04 on 2 January")
-}
-
 func (sc spikeClaims) staleQuestion(t *claimTarget, c *store.Claim, idle time.Duration) (string, string) {
+	end := "a time that isn't recorded"
+	if d := t.Spike.DeadlineAt; d != nil {
+		end = spikeDeadlineWords(*d)
+	}
 	return fmt.Sprintf("%s, %s, was claimed by %s %s, and nothing has changed in its working copy or its findings for %d hours. Its time box ends at %s. Is someone still working on it?",
-		t.Label, t.Title, whoWords(c.Kind, c.Actor, ""), agoWords(c.ClaimedAt, time.Now()), int(idle.Hours()), spikeDeadlineWords(t.Spike)), "Release the claim"
+		t.Label, t.Title, whoWords(c.Kind, c.Actor, ""), agoWords(c.ClaimedAt, time.Now()), int(idle.Hours()), end), "Release the claim"
 }
 
 // deadlineQuestion is never asked of a spike (SD-20): its deadline ends it. It
@@ -221,7 +232,9 @@ func (sc spikeClaims) lock(ctx context.Context, tx pgx.Tx, t *claimTarget) error
 	return err
 }
 
-func (sc spikeClaims) rules() []string { return sc.s.spikeClaimRules() }
+// rules are the sentences a spike's claimant is given: the rules, then the
+// commands the project allows, as claim_task's rules list them.
+func (sc spikeClaims) rules() []string { return sc.s.withCommandRules(spikeClaimRuleSentences) }
 
 func (sc spikeClaims) releaseConsequence() string { return spikeReleaseConsequence }
 
@@ -317,14 +330,11 @@ func (s *Server) resolveSpikeRef(ctx context.Context, ref string) (*store.Spike,
 
 // spikeHolderRefusal says why a save or a submit isn't the claimant's to make
 // (FR-13.6, FR-13.7 step 1), or "". action is "save" or "submit". The deadline
-// is judged only when judgeDeadline is set: a submit that has passed it once is
-// honoured (FR-13.7 step 4).
-func spikeHolderRefusal(sp *store.Spike, cur *store.Claim, who Claimant, action string, now time.Time, judgeDeadline bool) string {
-	switch sp.State {
-	case store.SpikeIdea:
-		return fmt.Sprintf("%s isn't running, so there is nothing to %s. A person starts a spike from its page in the web UI.", sp.PublicID, action)
-	case store.SpikeEnded, store.SpikeClosed:
-		return fmt.Sprintf("%s has ended. A person reads its findings on its page.", sp.PublicID)
+// is left to the caller: a submit that has passed it once is honoured
+// (FR-13.7 step 4).
+func spikeHolderRefusal(sp *store.Spike, cur *store.Claim, who Claimant, action string) string {
+	if r := spikeStateWords(sp, "there is nothing to "+action); r != "" {
+		return r
 	}
 	if cur == nil {
 		if action == "save" {
@@ -341,10 +351,16 @@ func spikeHolderRefusal(sp *store.Spike, cur *store.Claim, who Claimant, action 
 	if cur.State != lifecycle.ClaimOpen {
 		return fmt.Sprintf("Your claim on %s isn't open, so there is nothing to %s.", sp.PublicID, action)
 	}
-	if judgeDeadline {
-		return spikeDeadlineRefusal(sp, now)
-	}
 	return ""
+}
+
+// spikeActRefusal is spikeHolderRefusal, then the deadline: a save, or a
+// submit's first look (FR-13.6, FR-13.7 step 1).
+func spikeActRefusal(sp *store.Spike, cur *store.Claim, who Claimant, action string, now time.Time) string {
+	if r := spikeHolderRefusal(sp, cur, who, action); r != "" {
+		return r
+	}
+	return spikeDeadlineRefusal(sp, now)
 }
 
 // currentSpikeClaim is the spike's claim that hasn't ended, or nil.
@@ -386,10 +402,12 @@ type SpikeClaimResult struct {
 
 // ClaimSpike claims a spike for the chat agent or a person, or renews a claim
 // the claimant already holds (FR-13.3). ref is the spike's public ID. Before
-// the claim, holding the worktree's lock, the worktree is made if it is
-// missing, as the planner makes an agent spike's (FR-4.2); a remake of a
-// working copy that existed first checks what it kept, and raises the leak
-// check's checkpoint if it couldn't (FR-13.3). A refusal is a *ClaimRefusal.
+// the claim, holding the worktree's lock, the spike is read again and refused
+// if nothing can mend it (it ended, or was submitted, or its deadline passed
+// while this waited), and only then is the worktree made if it is missing, as
+// the planner makes an agent spike's (FR-4.2); a remake of a working copy that
+// existed first checks what it kept, and raises the leak check's checkpoint if
+// it couldn't (FR-13.3). A refusal is a *ClaimRefusal.
 func (s *Server) ClaimSpike(ctx context.Context, ref string, who Claimant) (*SpikeClaimResult, error) {
 	if err := who.check(); err != nil {
 		return nil, err
@@ -398,24 +416,29 @@ func (s *Server) ClaimSpike(ctx context.Context, ref string, who Claimant) (*Spi
 	if err != nil {
 		return nil, err
 	}
-	c := s.claimables()["spike"]
-	t, err := c.load(ctx, s.Store.Pool, sp.ID)
-	if err != nil {
-		return nil, err
+	sc := spikeClaims{s: s}
+	lockPath := ""
+	if sp.WorktreePath != "" {
+		lockPath = s.worktreeAbs(sp.WorktreePath)
 	}
-	// What no remake can mend is refused first, before anything is made.
-	if r := spikeStateRefusal(sp, who); r != "" {
-		return nil, refuse("%s", r)
-	}
+	var t *claimTarget
 	var res *ClaimResult
-	err = s.withWorkingCopy(t.Path, func() error {
+	err = s.withWorkingCopy(lockPath, func() error {
+		// An ending may have held the lock first: what is read now is what
+		// the ending left, and nothing is made for a spike that is over.
+		var err error
+		if t, err = sc.load(ctx, s.Store.Pool, sp.ID); err != nil {
+			return err
+		}
+		if r := spikeBarredRefusal(ctx, s.Store.Pool, t.Spike, who, time.Now()); r != "" {
+			return refuse("%s", r)
+		}
 		if t.Path != "" {
-			if _, err := s.ensureSpikeWorktree(ctx, sp); err != nil {
+			if _, err := s.ensureSpikeWorktree(ctx, t.Spike); err != nil {
 				return refuse("%s's working copy couldn't be made, so it can't be claimed yet: %v.", sp.PublicID, err)
 			}
 		}
-		var err error
-		res, err = s.claimLocked(ctx, c, t, who)
+		res, err = s.claimLocked(ctx, sc, t, who)
 		return err
 	})
 	if err != nil {
@@ -460,7 +483,7 @@ func (s *Server) SaveSpikeFindings(ctx context.Context, ref string, who Claimant
 		if err != nil {
 			return err
 		}
-		if r := spikeHolderRefusal(locked, cur, who, "save", time.Now(), true); r != "" {
+		if r := spikeActRefusal(locked, cur, who, "save", time.Now()); r != "" {
 			return refuse("%s", r)
 		}
 		if err := store.SaveSpikeDraft(ctx, tx, sp.ID, text); err != nil {
@@ -501,7 +524,7 @@ func (s *Server) SubmitSpike(ctx context.Context, ref string, who Claimant, find
 	if err != nil {
 		return nil, err
 	}
-	if r := spikeHolderRefusal(sp, cur, who, "submit", time.Now(), true); r != "" {
+	if r := spikeActRefusal(sp, cur, who, "submit", time.Now()); r != "" {
 		return nil, refuse("%s", r)
 	}
 	// Step 2: the findings, validated as finish_spike validates them, so the
@@ -534,12 +557,15 @@ func (s *Server) SubmitSpike(ctx context.Context, ref string, who Claimant, find
 			// deadline isn't judged again: a submit that passed step 1 is
 			// honoured, even if the deadline passes while it runs.
 			if locked.State != store.SpikeRunning || held == nil || held.ID != cur.ID {
-				if r := spikeHolderRefusal(locked, held, who, "submit", time.Now(), false); r != "" && locked.State == store.SpikeRunning {
+				if locked.State == store.SpikeEnded && locked.EndedHow == store.SpikeTimeBox {
+					return refuse("%s", spikeTimeBoxEndedBeforeSubmit)
+				}
+				if r := spikeHolderRefusal(locked, held, who, "submit"); r != "" {
 					return refuse("%s", r)
 				}
-				return refuse("%s", spikeTimeBoxEndedBeforeSubmit)
+				return refuse("Your claim on %s changed while this was arriving. Read its page, and submit again if the claim is still yours.", sp.PublicID)
 			}
-			if r := spikeHolderRefusal(locked, held, who, "submit", time.Now(), false); r != "" {
+			if r := spikeHolderRefusal(locked, held, who, "submit"); r != "" {
 				return refuse("%s", r)
 			}
 			if err := store.SaveSpikeDraft(ctx, tx, sp.ID, findings); err != nil {
@@ -559,9 +585,10 @@ func (s *Server) SubmitSpike(ctx context.Context, ref string, who Claimant, find
 		if err != nil {
 			return err
 		}
-		// If the server stops here, reconciliation finishes the ending
-		// (FR-12.4).
-		return s.endSpikeLocked(ctx, sp.ID, store.SpikeConcluded, "")
+		// The claim has ended done, so the ending no longer depends on this
+		// request: a client that goes away must not stop it. If the server
+		// stops here, reconciliation finishes it (FR-12.4).
+		return s.endSpikeLocked(context.WithoutCancel(ctx), sp.ID, store.SpikeConcluded, "")
 	})
 	if err != nil {
 		return nil, err

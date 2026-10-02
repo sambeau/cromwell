@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -17,75 +16,10 @@ import (
 	"subutai/internal/store"
 )
 
-const tbDraft = "## Answer\n\nYes, it can be done.\n\n## What we found\n\nThe saved draft says it works.\n"
-
-// tbStart starts a spike run by executor, with a saved draft and, when who is
-// set, a claim held by them (as claim_spike or the page's claim would make it:
-// feature nil, a deadline of the spike's, an execution row).
-func (h *harness) tbStart(executor, who string, hours int) *store.Spike {
-	h.t.Helper()
-	ctx := context.Background()
-	in := h.spikeInitiative("tb" + strings.ToLower(uuid.NewString()[:6]))
-	sp := h.newSpike(in, "Does the time box hold?", nil)
-	started, err := h.srv.startSpike(ctx, sp.ID, SpikeStartRequest{Executor: executor, TimeBoxHours: hours}, "sam", false)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, started.ID, tbDraft); err != nil {
-		h.t.Fatal(err)
-	}
-	if who != "" {
-		h.tbClaim(started, who)
-	}
-	return h.getSpike(started.ID)
-}
-
-func (h *harness) tbClaim(sp *store.Spike, who string) *store.Claim {
-	h.t.Helper()
-	ctx := context.Background()
-	var c *store.Claim
-	err := h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		var err error
-		if c, err = store.CreateClaim(ctx, tx, "spike", sp.ID, nil, sp.Executor, who, "mcp", ""); err != nil {
-			return err
-		}
-		if err := store.SetClaimDeadline(ctx, tx, c.ID, *sp.DeadlineAt); err != nil {
-			return err
-		}
-		_, err = store.RecordClaimExecution(ctx, tx, "spike", sp.ID, c, "")
-		return err
-	})
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	return c
-}
-
-// tbPastDeadline backdates the spike's deadline, and its claim's, by an hour.
-func (h *harness) tbPastDeadline(sp *store.Spike) {
-	h.t.Helper()
-	ctx := context.Background()
-	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE spikes SET deadline_at = now() - interval '1 hour' WHERE id = $1`, sp.ID); err != nil {
-		h.t.Fatal(err)
-	}
-	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE work_claims SET deadline_at = now() - interval '1 hour' WHERE ref_type = 'spike' AND ref_id = $1`, sp.ID); err != nil {
-		h.t.Fatal(err)
-	}
-}
-
-func (h *harness) tbLatestClaim(sp *store.Spike) *store.Claim {
-	h.t.Helper()
-	c, err := store.LatestClaimFor(context.Background(), h.srv.Store.Pool, "spike", sp.ID)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	return c
-}
-
-// tbCheckEnded checks what FR-15's acceptance asks of a spike that ended at
+// checkEndedAtTimeBox checks what FR-15's acceptance asks of a spike that ended at
 // its time box: the draft and the sentences in the findings, committed, the
 // worktree discarded.
-func (h *harness) tbCheckEnded(sp *store.Spike, sentences ...string) string {
+func (h *harness) checkEndedAtTimeBox(sp *store.Spike, sentences ...string) string {
 	h.t.Helper()
 	cur := h.getSpike(sp.ID)
 	if cur.State != store.SpikeEnded || cur.EndedHow != store.SpikeTimeBox {
@@ -118,16 +52,16 @@ func (h *harness) tbCheckEnded(sp *store.Spike, sentences ...string) string {
 func TestHeartbeatEndsAClaimedChatSpikeAtItsTimeBox(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	sp := h.tbStart(store.ExecutorChat, "chat", 4)
-	h.tbPastDeadline(sp)
+	sp := h.spikeWithDraft(store.ExecutorChat, "chat", 4)
+	h.pastDeadline(sp)
 
 	h.srv.ReconcileSpikes(ctx)
 
-	text := h.tbCheckEnded(sp, "It ran in chat, so its tokens weren't measured.")
+	text := h.checkEndedAtTimeBox(sp, "It ran in chat, so its tokens weren't measured.")
 	if strings.Contains(text, "run was lost") {
 		t.Errorf("a chat spike's run was lost:\n%s", text)
 	}
-	if c := h.tbLatestClaim(sp); c.State != lifecycle.ClaimEnded || c.EndReason != "expired" || c.EndedBy != "" {
+	if c := h.latestSpikeClaim(sp); c.State != lifecycle.ClaimEnded || c.EndReason != "expired" || c.EndedBy != "" {
 		t.Errorf("claim = %+v", c)
 	}
 	var tokens bool
@@ -145,24 +79,24 @@ func TestHeartbeatEndsAClaimedChatSpikeAtItsTimeBox(t *testing.T) {
 func TestHeartbeatEndsAnUnclaimedSpikeAtItsTimeBox(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	chat := h.tbStart(store.ExecutorChat, "", 4)
-	person := h.tbStart(store.ExecutorPerson, "", 4)
-	held := h.tbStart(store.ExecutorPerson, "sam", 4)
+	chat := h.spikeWithDraft(store.ExecutorChat, "", 4)
+	person := h.spikeWithDraft(store.ExecutorPerson, "", 4)
+	held := h.spikeWithDraft(store.ExecutorPerson, "sam", 4)
 	for _, sp := range []*store.Spike{chat, person, held} {
-		h.tbPastDeadline(sp)
+		h.pastDeadline(sp)
 	}
 
 	h.srv.ReconcileSpikes(ctx)
 
-	h.tbCheckEnded(chat, "It ran in chat, so its tokens weren't measured.")
-	h.tbCheckEnded(person, "It was run by hand, so its tokens weren't measured.")
-	h.tbCheckEnded(held, "It was run by hand, so its tokens weren't measured.")
-	if c := h.tbLatestClaim(held); c.EndReason != "expired" {
+	h.checkEndedAtTimeBox(chat, "It ran in chat, so its tokens weren't measured.")
+	h.checkEndedAtTimeBox(person, "It was run by hand, so its tokens weren't measured.")
+	h.checkEndedAtTimeBox(held, "It was run by hand, so its tokens weren't measured.")
+	if c := h.latestSpikeClaim(held); c.EndReason != "expired" {
 		t.Errorf("the person's claim = %+v", c)
 	}
 	// A time box of one hour is singular.
-	one := h.tbStart(store.ExecutorChat, "", 1)
-	h.tbPastDeadline(one)
+	one := h.spikeWithDraft(store.ExecutorChat, "", 1)
+	h.pastDeadline(one)
 	h.srv.ReconcileSpikes(ctx)
 	if _, text := h.findingsOf(one); !strings.Contains(text, "its time box of 1 hour.") {
 		t.Errorf("the findings:\n%s", text)
@@ -174,8 +108,8 @@ func TestHeartbeatEndsAnUnclaimedSpikeAtItsTimeBox(t *testing.T) {
 func TestReconcileLeavesARunningChatSpikeBeforeItsDeadline(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	sp := h.tbStart(store.ExecutorChat, "chat", 4)
-	other := h.tbStart(store.ExecutorPerson, "", 4)
+	sp := h.spikeWithDraft(store.ExecutorChat, "chat", 4)
+	other := h.spikeWithDraft(store.ExecutorPerson, "", 4)
 
 	h.srv.ReconcileSpikes(ctx)
 
@@ -188,7 +122,7 @@ func TestReconcileLeavesARunningChatSpikeBeforeItsDeadline(t *testing.T) {
 			t.Errorf("%s: the directory was taken: %v", s.PublicID, err)
 		}
 	}
-	if c := h.tbLatestClaim(sp); c.State != lifecycle.ClaimOpen {
+	if c := h.latestSpikeClaim(sp); c.State != lifecycle.ClaimOpen {
 		t.Errorf("claim = %+v", c)
 	}
 }
@@ -198,10 +132,10 @@ func TestReconcileLeavesARunningChatSpikeBeforeItsDeadline(t *testing.T) {
 func TestReconcileEndsADoneClaimConcludedBeforeTheDeadline(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	chat := h.tbStart(store.ExecutorChat, "chat", 4)
-	person := h.tbStart(store.ExecutorPerson, "sam", 4)
+	chat := h.spikeWithDraft(store.ExecutorChat, "chat", 4)
+	person := h.spikeWithDraft(store.ExecutorPerson, "sam", 4)
 	for _, sp := range []*store.Spike{chat, person} {
-		c := h.tbLatestClaim(sp)
+		c := h.latestSpikeClaim(sp)
 		err := h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			if err := store.TransitionClaim(ctx, tx, c, lifecycle.ClaimEventSubmit, c.Actor, "", nil); err != nil {
 				return err
@@ -211,7 +145,7 @@ func TestReconcileEndsADoneClaimConcludedBeforeTheDeadline(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		h.tbPastDeadline(sp)
+		h.pastDeadline(sp)
 	}
 
 	h.srv.ReconcileSpikes(ctx)
@@ -231,13 +165,13 @@ func TestReconcileEndsADoneClaimConcludedBeforeTheDeadline(t *testing.T) {
 		if !strings.Contains(text, c.want) || strings.Contains(text, "end of its time box") {
 			t.Errorf("the findings don't say %q:\n%s", c.want, text)
 		}
-		if got := h.tbLatestClaim(c.sp); got.EndReason != "done" {
+		if got := h.latestSpikeClaim(c.sp); got.EndReason != "done" {
 			t.Errorf("the claim's end reason = %q", got.EndReason)
 		}
 	}
 	// Asked for the time box when the claim is done, EndSpike still concludes.
-	late := h.tbStart(store.ExecutorChat, "chat", 4)
-	c := h.tbLatestClaim(late)
+	late := h.spikeWithDraft(store.ExecutorChat, "chat", 4)
+	c := h.latestSpikeClaim(late)
 	if err := h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionClaim(ctx, tx, c, lifecycle.ClaimEventSubmit, c.Actor, "", nil); err != nil {
 			return err
@@ -261,7 +195,7 @@ func TestTimeBoxEndingRunsTheLeakCheck(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
-	made := h.tbStart(store.ExecutorChat, "chat", 4)
+	made := h.spikeWithDraft(store.ExecutorChat, "chat", 4)
 	abs := h.srv.worktreeAbs(made.WorktreePath)
 	for _, args := range [][]string{
 		{"config", "user.email", "t@example.com"}, {"config", "user.name", "T"},
@@ -271,14 +205,14 @@ func TestTimeBoxEndingRunsTheLeakCheck(t *testing.T) {
 			t.Fatalf("git %v: %v", args, err)
 		}
 	}
-	h.tbPastDeadline(made)
+	h.pastDeadline(made)
 
-	gone := h.tbStart(store.ExecutorPerson, "sam", 4)
+	gone := h.spikeWithDraft(store.ExecutorPerson, "sam", 4)
 	if err := os.RemoveAll(h.srv.worktreeAbs(gone.WorktreePath)); err != nil {
 		t.Fatal(err)
 	}
 	h.gitOut("worktree", "prune")
-	h.tbPastDeadline(gone)
+	h.pastDeadline(gone)
 
 	h.srv.ReconcileSpikes(ctx)
 
@@ -313,7 +247,7 @@ func TestEndSpikeRefusesAWayItsExecutorCantHave(t *testing.T) {
 	if cur := h.getSpike(agent.ID); cur.State != store.SpikeRunning {
 		t.Errorf("the agent spike is %s", cur.State)
 	}
-	chat := h.tbStart(store.ExecutorChat, "", 4)
+	chat := h.spikeWithDraft(store.ExecutorChat, "", 4)
 	for _, how := range []string{store.SpikeBudget, store.SpikeTurnLimit} {
 		if err := h.srv.EndSpike(ctx, chat.ID, how, ""); err == nil || !strings.Contains(err.Error(), "time box, not a token budget") {
 			t.Errorf("%s on a chat spike: %v", how, err)
@@ -332,16 +266,26 @@ func (h *harness) startAgentSpikeQuiet(sp *store.Spike) (*store.Spike, *store.Di
 	return started, nil, err
 }
 
+// closedBySentence is the page's "Closed by ..." sentence for sp.
+func (h *harness) closedBySentence(sp *store.Spike) string {
+	h.t.Helper()
+	facts, err := readSpikeRunFacts(context.Background(), h.srv.Store.Pool, sp)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return spikeClosedBySentence(sp, facts)
+}
+
 // FR-16.4, SD-26: the person who ran a spike by hand may close it, and the
 // audit row and the page's sentence say so.
 func TestCloserWhoRanTheSpikeIsRecorded(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	ranByMe := h.tbStart(store.ExecutorPerson, "sam", 4)
-	other := h.tbStart(store.ExecutorPerson, "pat", 4)
-	chat := h.tbStart(store.ExecutorChat, "chat", 4)
+	ranByMe := h.spikeWithDraft(store.ExecutorPerson, "sam", 4)
+	other := h.spikeWithDraft(store.ExecutorPerson, "pat", 4)
+	chat := h.spikeWithDraft(store.ExecutorChat, "chat", 4)
 	for _, sp := range []*store.Spike{ranByMe, other, chat} {
-		h.tbPastDeadline(sp)
+		h.pastDeadline(sp)
 	}
 	h.srv.ReconcileSpikes(ctx)
 
@@ -365,7 +309,7 @@ func TestCloserWhoRanTheSpikeIsRecorded(t *testing.T) {
 	if ran = row(ranByMe.ID); ran == nil || !*ran {
 		t.Errorf("closer_ran_it = %v", ran)
 	}
-	if got, want := h.srv.spikeClosedBySentence(ctx, closed), "Closed by sam, who also ran it."; got != want {
+	if got, want := h.closedBySentence(closed), "Closed by sam, who also ran it."; got != want {
 		t.Errorf("sentence = %q, want %q", got, want)
 	}
 
@@ -378,7 +322,7 @@ func TestCloserWhoRanTheSpikeIsRecorded(t *testing.T) {
 		if ran = row(sp.ID); ran != nil {
 			t.Errorf("%s: closer_ran_it = %v", sp.PublicID, *ran)
 		}
-		if got := h.srv.spikeClosedBySentence(ctx, closed); got != "" {
+		if got := h.closedBySentence(closed); got != "" {
 			t.Errorf("%s: sentence = %q", sp.PublicID, got)
 		}
 	}
@@ -390,8 +334,8 @@ func TestAskAgainAfterAChatSpikeHasNoBudget(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	for _, executor := range []string{store.ExecutorChat, store.ExecutorPerson} {
-		sp := h.tbStart(executor, "", 4)
-		h.tbPastDeadline(sp)
+		sp := h.spikeWithDraft(executor, "", 4)
+		h.pastDeadline(sp)
 		h.srv.ReconcileSpikes(ctx)
 		next, err := h.srv.CloseSpike(ctx, sp.ID, SpikeCloseAgain, nil, "sam")
 		if err != nil {
@@ -403,94 +347,5 @@ func TestAskAgainAfterAChatSpikeHasNoBudget(t *testing.T) {
 		if old := h.getSpike(sp.ID); old.State != store.SpikeClosed || old.ClosedAs != store.SpikeUnanswered {
 			t.Errorf("%s: old spike = %s, %q", executor, old.State, old.ClosedAs)
 		}
-	}
-}
-
-func TestSpikeExecutorSentences(t *testing.T) {
-	now := time.Date(2026, 10, 3, 13, 0, 0, 0, time.Local)
-	id := uuid.New()
-	exec := func(kind, actor, model string) store.Execution {
-		e := store.Execution{Kind: kind, Actor: actor, Model: model}
-		if kind == store.ExecutorAgent {
-			e.DispatchID = &id
-		}
-		return e
-	}
-	claim := func(kind, actor string, state lifecycle.ClaimState, ago time.Duration) *store.Claim {
-		return &store.Claim{Kind: kind, Actor: actor, State: state, ClaimedAt: now.Add(-ago)}
-	}
-	for _, c := range []struct {
-		name  string
-		sp    store.Spike
-		execs []store.Execution
-		claim *store.Claim
-		want  string
-		kind  string
-		meas  bool
-	}{
-		{"idea", store.Spike{State: store.SpikeIdea}, nil, nil, "Not started yet.", "", true},
-		{"agent before the run", store.Spike{State: store.SpikeRunning, Executor: "agent"}, nil, nil, "To be run by the spike runner.", "agent", true},
-		{"agent", store.Spike{State: store.SpikeEnded, Executor: "agent"}, []store.Execution{exec("agent", "spike-runner", "the-model")}, nil, "Run by the spike runner (the-model).", "agent", true},
-		{"chat unclaimed", store.Spike{State: store.SpikeRunning, Executor: "chat"}, nil, nil, "To be run in chat. Waiting for the chat agent to claim it.", "chat", false},
-		{"chat released", store.Spike{State: store.SpikeRunning, Executor: "chat"}, []store.Execution{exec("chat", "chat", "")},
-			claim("chat", "chat", lifecycle.ClaimEnded, time.Hour), "To be run in chat. Waiting for the chat agent to claim it.", "chat", false},
-		{"chat claimed", store.Spike{State: store.SpikeRunning, Executor: "chat"}, []store.Execution{exec("chat", "chat", "")},
-			claim("chat", "chat", lifecycle.ClaimOpen, 2*time.Hour), "Being run in chat by the chat agent, who claimed it 2 hours ago.", "chat", false},
-		{"person unclaimed", store.Spike{State: store.SpikeRunning, Executor: "person"}, nil, nil, "To be run by hand. Waiting for a person to claim it.", "person", false},
-		{"person claimed", store.Spike{State: store.SpikeRunning, Executor: "person"}, []store.Execution{exec("person", "sam", "")},
-			claim("person", "sam", lifecycle.ClaimOpen, time.Hour), "Being run by hand by sam.", "person", false},
-		{"chat ran", store.Spike{State: store.SpikeEnded, Executor: "chat"}, []store.Execution{exec("chat", "chat", "")},
-			claim("chat", "chat", lifecycle.ClaimEnded, time.Hour), "Run in chat by the chat agent.", "chat", false},
-		{"person ran", store.Spike{State: store.SpikeClosed, Executor: "person"}, []store.Execution{exec("person", "sam", "")},
-			claim("person", "sam", lifecycle.ClaimEnded, time.Hour), "Run by hand by sam.", "person", false},
-		{"nobody came", store.Spike{State: store.SpikeEnded, Executor: "chat"}, nil, nil, "It was to be run in chat, but nobody claimed it.", "chat", false},
-	} {
-		sp := c.sp
-		got := spikeExecutorSentence(&sp, c.execs, c.claim, now)
-		if got.Sentence != c.want || got.Kind != c.kind || got.Measured != c.meas {
-			t.Errorf("%s: %+v, want %q kind %q measured %v", c.name, got, c.want, c.kind, c.meas)
-		}
-	}
-	if got := spikeExecutorSentence(&store.Spike{State: store.SpikeEnded, Executor: "agent"}, []store.Execution{exec("agent", "spike-runner", "m")}, nil, now); got.RunID != id.String() || got.Model != "m" {
-		t.Errorf("run id and model = %+v", got)
-	}
-}
-
-func TestSpikeTimeBoxAndUnmeasuredLines(t *testing.T) {
-	end := time.Date(2026, 10, 3, 17, 4, 0, 0, time.Local)
-	hours := 4
-	running := &store.Spike{State: store.SpikeRunning, Executor: "chat", TimeBoxHours: &hours, DeadlineAt: &end}
-	now := end.Add(-(3*time.Hour + 12*time.Minute))
-	if got, want := spikeTimeBoxLine(running, now), "Time box: 4 hours, ending at 17:04 on 3 October (3 hours 12 minutes left)."; got != want {
-		t.Errorf("running = %q, want %q", got, want)
-	}
-	for d, want := range map[time.Duration]string{
-		time.Hour: "1 hour left", 42 * time.Minute: "42 minutes left", time.Minute: "1 minute left",
-		30 * time.Second: "less than a minute left", 0: "no time left", -time.Hour: "no time left",
-		2*time.Hour + time.Minute: "2 hours 1 minute left",
-	} {
-		if got := spikeLeftWords(d); got != want {
-			t.Errorf("%v = %q, want %q", d, got, want)
-		}
-	}
-	ended := *running
-	ended.State = store.SpikeEnded
-	if got := spikeTimeBoxLine(&ended, now); got != "Time box: 4 hours." {
-		t.Errorf("ended = %q", got)
-	}
-	one := 1
-	ended.TimeBoxHours = &one
-	if got := spikeTimeBoxLine(&ended, now); got != "Time box: 1 hour." {
-		t.Errorf("one hour = %q", got)
-	}
-	agent := &store.Spike{State: store.SpikeRunning, Executor: "agent"}
-	if spikeTimeBoxLine(agent, now) != "" || spikeUnmeasuredLine(agent) != "" || spikeUnmeasuredLine(&store.Spike{}) != "" {
-		t.Error("an agent spike has no time box line and no unmeasured line")
-	}
-	if got := spikeUnmeasuredLine(&store.Spike{Executor: "chat"}); got != "This spike ran in chat, so its tokens weren't measured." {
-		t.Errorf("chat = %q", got)
-	}
-	if got := spikeUnmeasuredLine(&store.Spike{Executor: "person"}); got != "This spike was run by hand, so its tokens weren't measured." {
-		t.Errorf("person = %q", got)
 	}
 }

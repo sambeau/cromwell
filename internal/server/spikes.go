@@ -105,6 +105,15 @@ func checkSpikeBudget(budget *int64) error {
 	return nil
 }
 
+// checkSpikeTimeBox refuses a time box outside 1 to 168 hours (FR-12.2). The
+// web form's parse and the start both use it, so the range is written once.
+func checkSpikeTimeBox(hours int) error {
+	if hours < 1 || hours > config.MaxSpikeTimeBoxHours {
+		return ErrSpikeTimeBox
+	}
+	return nil
+}
+
 // createSpikeIn is CreateSpike in the caller's transaction. Every refusal
 // happens before the row is inserted, so a refusal costs no number (FR-1.3).
 func (s *Server) createSpikeIn(ctx context.Context, tx pgx.Tx, ownerType string, ownerID uuid.UUID, question string,
@@ -271,8 +280,8 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, req SpikeSta
 		if hours == 0 {
 			hours = cfg.SpikeDefaultTimeBoxHours()
 		}
-		if hours < 1 || hours > config.MaxSpikeTimeBoxHours {
-			return nil, ErrSpikeTimeBox
+		if err := checkSpikeTimeBox(hours); err != nil {
+			return nil, err
 		}
 		st.TimeBoxHours = hours
 	}
@@ -325,8 +334,9 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, req SpikeSta
 }
 
 // makeStartedSpikeWorktree makes a chat or person spike's worktree at its
-// base commit, holding the worktree's lock. Nothing was ever there, so the
-// leak check that a remake runs first has nothing to read.
+// base commit, holding the worktree's lock, and records that it was made.
+// Nothing was ever there, so the leak check that a remake runs first has
+// nothing to read.
 func (s *Server) makeStartedSpikeWorktree(ctx context.Context, sp *store.Spike) error {
 	return s.withWorkingCopy(s.worktreeAbs(sp.WorktreePath), func() error {
 		_, err := s.makeSpikeWorktree(ctx, sp, false)
@@ -365,10 +375,11 @@ func (s *Server) CloseSpike(ctx context.Context, id uuid.UUID, as string, budget
 		if err != nil {
 			return err
 		}
-		ranIt, err := spikeRunBy(ctx, tx, cur, actor)
+		facts, err := readSpikeRunFacts(ctx, tx, cur)
 		if err != nil {
 			return err
 		}
+		ranIt := spikeRunBy(cur, facts, actor)
 		if as == SpikeCloseAgain {
 			// Only an ended spike is asked again: an idea has no answer to
 			// improve on, and a running one isn't over.
@@ -380,7 +391,7 @@ func (s *Server) CloseSpike(ctx context.Context, id uuid.UUID, as string, budget
 		if as == SpikeCloseAgain {
 			how = store.SpikeUnanswered
 		}
-		closed, err = store.CloseSpikeRanIt(ctx, tx, id, how, actor, ranIt)
+		closed, err = store.CloseSpike(ctx, tx, id, how, actor, ranIt)
 		if errors.Is(err, store.ErrSpikeCannotClose) {
 			return ErrSpikeNotClosable
 		}
@@ -528,16 +539,7 @@ func unmeasuredEndedSentence(e findingsEnd) string {
 		}
 		how = fmt.Sprintf("%s: %s. The findings above are what it had saved by then.", store.SpikeEndingOf(store.SpikeFailed).Lead, note)
 	}
-	return how + " " + spikeTokensNotMeasured(e.Executor)
-}
-
-// spikeTokensNotMeasured is the sentence the findings add for a spike whose
-// tokens weren't counted.
-func spikeTokensNotMeasured(executor string) string {
-	if executor == store.ExecutorChat {
-		return "It ran in chat, so its tokens weren't measured."
-	}
-	return "It was run by hand, so its tokens weren't measured."
+	return how + " " + tokensNotMeasured(e.Executor, "It")
 }
 
 // keptParagraph is what follows the How this spike ended sentence when the

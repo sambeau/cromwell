@@ -334,12 +334,15 @@ func (tc taskClaims) staleQuestion(t *claimTarget, c *store.Claim, idle time.Dur
 		t.Label, t.Title, who, agoWords(c.ClaimedAt, time.Now()), hours), "Release it to an agent"
 }
 
+// lock takes the feature's row lock, then the task's (SPEC-021 FR-13.2).
 func (tc taskClaims) lock(ctx context.Context, tx pgx.Tx, t *claimTarget) error {
 	return store.LockFeatureAndTask(ctx, tx, t.Feature.ID, t.RefID)
 }
 
+// rules are the claimant's rules for a task, with the commands the project allows.
 func (tc taskClaims) rules() []string { return tc.s.claimRules() }
 
+// releaseConsequence is what Release it to an agent does (SPEC-021 FR-14.2).
 func (tc taskClaims) releaseConsequence() string {
 	return "The claim ends, the work in the working copy is kept, and an agent takes the task."
 }

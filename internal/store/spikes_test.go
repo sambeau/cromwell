@@ -93,7 +93,7 @@ func (fx *spikeFixture) close(t *testing.T, id uuid.UUID, as string) error {
 	t.Helper()
 	ctx := context.Background()
 	return fx.s.WithTx(ctx, func(tx pgx.Tx) error {
-		_, err := CloseSpike(ctx, tx, id, as, "sam")
+		_, err := CloseSpike(ctx, tx, id, as, "sam", false)
 		return err
 	})
 }

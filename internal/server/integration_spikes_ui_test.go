@@ -9,6 +9,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -228,6 +229,13 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 		"31,004 of 40,000 tokens", "A draft note.", "The agent last saved this on "+spikeWhen(*live.DraftSavedAt),
 		"If the run stops now, this is what is kept.")
 	lacks(t, "a running spike's page with a draft", page, "The agent hasn't saved any findings yet.")
+	// The panel's first paragraph is exactly the sentence, with no stray mark
+	// before it.
+	_, raw := h.getUI("/ui/s/" + live.PublicID)
+	panel := regexp.MustCompile(`(?s)id="spike-draft">.*?<div class="panel-body">\s*(<p[^>]*>.*?</p>)`).FindStringSubmatch(raw)
+	if panel == nil || !strings.HasPrefix(panel[1], `<p class="t-meta">The agent last saved this on `) {
+		t.Errorf("the draft panel's first paragraph = %q", panel)
+	}
 
 	// One that stopped at its budget, on the feature, as T4's hard-stop test.
 	for i := 1; i <= 8; i++ {
