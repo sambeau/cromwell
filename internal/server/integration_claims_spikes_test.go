@@ -20,8 +20,10 @@ func TestSpikeCantBeClaimedYet(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, isErr, text := h.callTool("claim_task", map[string]any{"task": sp.PublicID})
-	if !isErr || !strings.Contains(text, onlyTasksSentence) {
-		t.Errorf("claim_task on %s: want the only-tasks refusal, got %v %q", sp.PublicID, isErr, text)
+	// Stage 2 points claim_task at claim_spike (SPEC-021 FR-13.5); T4 replaces
+	// this test with TestSpikeIsClaimedOnlyByItsExecutor.
+	if want := sp.PublicID + " is a spike, not a task. Use claim_spike to run it."; !isErr || !strings.Contains(text, want) {
+		t.Errorf("claim_task on %s: want %q, got %v %q", sp.PublicID, want, isErr, text)
 	}
 	var claims int
 	if err := h.srv.Store.Pool.QueryRow(ctx, `SELECT count(*) FROM work_claims`).Scan(&claims); err != nil {

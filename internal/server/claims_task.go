@@ -334,6 +334,16 @@ func (tc taskClaims) staleQuestion(t *claimTarget, c *store.Claim, idle time.Dur
 		t.Label, t.Title, who, agoWords(c.ClaimedAt, time.Now()), hours), "Release it to an agent"
 }
 
+func (tc taskClaims) lock(ctx context.Context, tx pgx.Tx, t *claimTarget) error {
+	return store.LockFeatureAndTask(ctx, tx, t.Feature.ID, t.RefID)
+}
+
+func (tc taskClaims) rules() []string { return tc.s.claimRules() }
+
+func (tc taskClaims) releaseConsequence() string {
+	return "The claim ends, the work in the working copy is kept, and an agent takes the task."
+}
+
 func (tc taskClaims) deadlineQuestion(t *claimTarget, c *store.Claim) (string, string) {
 	return fmt.Sprintf("%s, %s, claimed by %s, has passed its deadline. This feature's agents are waiting. Should it go on?",
 		t.Label, t.Title, whoWords(c.Kind, c.Actor, "")), "Release it to an agent"

@@ -20,6 +20,13 @@ import (
 	"subutai/internal/store"
 )
 
+// deadlineEnder is the optional hook of a claimable whose deadline ends the
+// item instead of asking a question: the sweep calls endAtDeadline for a claim
+// past its deadline (SPEC-021 FR-14.4).
+type deadlineEnder interface {
+	endAtDeadline(ctx context.Context, t *claimTarget) error
+}
+
 // ClaimSweep runs one pass of FR-5.1. It is the heartbeat's duty after
 // StallSweep, and tests call it directly.
 func (s *Server) ClaimSweep(ctx context.Context) {
@@ -57,6 +64,15 @@ func (s *Server) sweepClaim(ctx context.Context, c store.Claim, expiry time.Dura
 		return err
 	}
 
+	// A claimable with a hard deadline of its own, a spike's time box, has the
+	// deadline judged first: past it, the item ends and the claim with it, so
+	// neither question is asked a moment before the ending withdraws it, and
+	// no claim-deadline is ever raised (SPEC-021 FR-14.4, SD-20).
+	de, hardDeadline := cl.(deadlineEnder)
+	if hardDeadline && c.DeadlineAt != nil && !c.DeadlineAt.After(time.Now()) {
+		return de.endAtDeadline(ctx, t)
+	}
+
 	// Step 1: the working copy, before expiry is judged, so that work done
 	// while the server was down is seen first (SD-9).
 	if c.State == lifecycle.ClaimOpen && t.Path != "" {
@@ -77,16 +93,16 @@ func (s *Server) sweepClaim(ctx context.Context, c store.Claim, expiry time.Dura
 	if now.Sub(c.LastActivityAt) >= expiry {
 		idle := now.Sub(c.LastActivityAt)
 		q, release := cl.staleQuestion(t, &c, idle)
-		if err := s.raiseClaimCheckpoint(ctx, "claim-stale", t, &c, q, release, func(cur *store.Claim) bool {
+		if err := s.raiseClaimCheckpoint(ctx, cl, "claim-stale", t, &c, q, release, func(cur *store.Claim) bool {
 			return now.Sub(cur.LastActivityAt) >= expiry
 		}); err != nil {
 			return err
 		}
 	}
 	// Step 3: the deadline.
-	if c.DeadlineAt != nil && !c.DeadlineAt.After(now) {
+	if !hardDeadline && c.DeadlineAt != nil && !c.DeadlineAt.After(now) {
 		q, release := cl.deadlineQuestion(t, &c)
-		if err := s.raiseClaimCheckpoint(ctx, "claim-deadline", t, &c, q, release, func(cur *store.Claim) bool {
+		if err := s.raiseClaimCheckpoint(ctx, cl, "claim-deadline", t, &c, q, release, func(cur *store.Claim) bool {
 			return cur.DeadlineAt != nil && !cur.DeadlineAt.After(now)
 		}); err != nil {
 			return err
@@ -142,7 +158,7 @@ func (s *Server) sweepFingerprint(ctx context.Context, path string, claimID uuid
 // the claimed item, unless one is already pending. It looks at the claim again
 // under its row lock, so an activity that has just withdrawn the question
 // isn't followed by a stale one (FR-5.4); stillDue judges the fresh claim.
-func (s *Server) raiseClaimCheckpoint(ctx context.Context, kind string, t *claimTarget, c *store.Claim, question, releaseLabel string, stillDue func(*store.Claim) bool) error {
+func (s *Server) raiseClaimCheckpoint(ctx context.Context, cl claimable, kind string, t *claimTarget, c *store.Claim, question, releaseLabel string, stillDue func(*store.Claim) bool) error {
 	var cp *store.Checkpoint
 	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		cp = nil
@@ -163,6 +179,9 @@ func (s *Server) raiseClaimCheckpoint(ctx context.Context, kind string, t *claim
 			"last_activity_at": cur.LastActivityAt.UTC().Format(time.RFC3339),
 			"working_copy":     t.Path,
 			"release_label":    releaseLabel,
+			// What the release answer does, which the Inbox says beside it
+			// (SPEC-021 FR-14.2). A question raised before it was stored has none.
+			"release_consequence": cl.releaseConsequence(),
 		})
 		return err
 	})
@@ -196,6 +215,7 @@ func (s *Server) KeepClaimAnswered(ctx context.Context, a rules.KeepClaim) error
 }
 
 // ReleaseClaimAnswered is a person's "Release it to an agent": ReleaseClaim,
+// or, for a spike, "Release the claim": ReleaseSpikeClaim (SPEC-021 FR-14.2),
 // with the person who answered as the one who released it. A claim that has
 // moved on is left alone.
 func (s *Server) ReleaseClaimAnswered(ctx context.Context, a rules.ReleaseClaim) error {
@@ -210,14 +230,25 @@ func (s *Server) ReleaseClaimAnswered(ctx context.Context, a rules.ReleaseClaim)
 		(cur.State != lifecycle.ClaimOpen && cur.State != lifecycle.ClaimReturned) {
 		return nil
 	}
-	if a.RefType != "task" {
-		return nil // M14 adds the spike's own release
+	var ref string
+	var release func(ctx context.Context, ref, by string) error
+	switch a.RefType {
+	case "task":
+		task, err := store.GetTask(ctx, s.Store.Pool, a.RefID)
+		if err != nil {
+			return err
+		}
+		ref, release = task.PublicID, s.ReleaseClaim
+	case "spike":
+		sp, err := store.GetSpike(ctx, s.Store.Pool, a.RefID)
+		if err != nil {
+			return err
+		}
+		ref, release = sp.PublicID, s.ReleaseSpikeClaim
+	default:
+		return nil
 	}
-	task, err := store.GetTask(ctx, s.Store.Pool, a.RefID)
-	if err != nil {
-		return err
-	}
-	if err := s.ReleaseClaim(ctx, task.PublicID, a.Actor); err != nil {
+	if err := release(ctx, ref, a.Actor); err != nil {
 		if _, ok := AsClaimRefusal(err); ok {
 			s.Log.Info("release after a claim question did nothing", "claim", cur.ID, "why", err)
 			return nil
