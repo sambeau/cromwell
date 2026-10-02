@@ -197,8 +197,10 @@ func (s *Server) mcpTools() []mcpTool {
 			Handler: s.mcpGetInitiative,
 		},
 		{
-			Name:        "get_feature",
-			Description: "Return one feature in detail: its name, description, lifecycle state, and the documents attached to it.",
+			Name: "get_feature",
+			Description: "Return one feature in detail: its name, description, lifecycle state, and the documents attached to it. " +
+				"It also lists the feature's tasks in plan order, each with its state, who is implementing it, its latest claim, " +
+				"the code reviewer's comments after a send-back, and whether you can claim it now and, if not, why.",
 			Schema: objectSchema(map[string]any{
 				"path": stringProp("The path of the feature, for example \"auth/login\", or its ID, such as \"FEAT-012\"."),
 			}, "path"),
@@ -213,7 +215,7 @@ func (s *Server) mcpTools() []mcpTool {
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
-	}, append(append(append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...), s.mcpDecisionTools()...), s.mcpBugTools()...)...)
+	}, append(append(append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...), s.mcpDecisionTools()...), append(s.mcpBugTools(), s.mcpClaimTools()...)...)...)
 }
 
 // mcpToolNames is the sorted list of advertised tool names — the assertion
@@ -315,7 +317,9 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				"done (relay_tick_job), always quoting their words; " +
 				"you can report bugs and read them (report_bug, list_bugs, get_bug), and carry a person's " +
 				"decision to accept or reject one (relay_triage), quoting them — whether a bug is fixed is theirs; " +
-				"you hold no verdict of your own. You cannot send work to development, start " +
+				"you hold no verdict of your own. You may claim a task of a feature that is being built, work it with the " +
+				"person, and submit it (claim_task, submit_task); its work is reviewed and verified by others, never by you, " +
+				"and the work-a-task skill says how. You cannot send work to development, start " +
 				"building, override a gate or answer the Inbox — a person does " +
 				"those from the command centre.",
 		})
