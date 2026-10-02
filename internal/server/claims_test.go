@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,5 +178,27 @@ func TestWorktreeFingerprintChangesWithTheWorkingCopy(t *testing.T) {
 	}
 	if fp() == "" {
 		t.Fatal("a deletion still fingerprints")
+	}
+}
+
+// The Inbox labels a claim question's or an unclaimed commit's context as
+// details, since no agent was doing anything; every other kind keeps its label.
+func TestInboxContextLabel(t *testing.T) {
+	for _, kind := range []string{"claim-stale", "claim-deadline", "unclaimed-commit"} {
+		if got := (inboxItem{Checkpoint: store.Checkpoint{Kind: kind}}).ContextLabel(); got != "Details" {
+			t.Errorf("%s is labelled %q", kind, got)
+		}
+	}
+	if got := (inboxItem{Checkpoint: store.Checkpoint{Kind: "dispatch-failure"}}).ContextLabel(); got != "What the agent was doing" {
+		t.Errorf("another kind keeps its label, got %q", got)
+	}
+}
+
+// claimActivityWords never returns a machine word.
+func TestClaimActivityWords(t *testing.T) {
+	for _, a := range []string{"claimed", "renewed", "resumed", "submitted", "sent_back", "kept", "worktree", "other"} {
+		if w := claimActivityWords(a); strings.Contains(w, "_") || w == "" || w == "worktree" {
+			t.Errorf("%s reads %q", a, w)
+		}
 	}
 }

@@ -215,9 +215,6 @@ func TestKeepTheClaimRestartsTheClock(t *testing.T) {
 	}
 	// A claim question isn't about what an agent was doing.
 	mustContain(t, "inbox label", page, `<span class="t-label">Details</span>`)
-	if strings.Contains(page, "What the agent was doing") {
-		t.Error("the claim question's context is labelled as an agent's work")
-	}
 
 	if code, out := h.respond(cp, "keep"); code != 200 {
 		t.Fatalf("respond: %d %s", code, out)
