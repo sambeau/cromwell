@@ -716,10 +716,12 @@ republishing it (R21-2).
 first wording checked only the newest commit, and failed open.)* When the
 spike starts, `StartSpike` records every ref and its commit
 (`refs_at_start`). Before the discard, `EndSpike` finds:
-- **the commits made in the worktree**: every commit named in the worktree's
-  own `HEAD` reflog, read from the repository's administrative copy
-  (`.git/worktrees/<name>/logs/HEAD`, so a damaged `.git` file in the
-  worktree doesn't hide it), less everything reachable from `base_commit`;
+- **the commits made in the worktree**: every commit the worktree's own
+  `HEAD` reflog records as made there (a checkout or a reset only moves
+  `HEAD`, so those entries don't count), read from the repository's
+  administrative copy (`.git/worktrees/<name>/logs/HEAD`, so a damaged `.git`
+  file in the worktree doesn't hide it), less everything reachable from
+  `base_commit` or from any ref in `refs_at_start`;
 - **the refs that changed during the spike**: new, or moved, since
   `refs_at_start`.
 

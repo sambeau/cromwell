@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -40,6 +41,13 @@ const (
 	SpikeUnanswered = "unanswered"
 )
 
+// Where a spike's token budget came from, as audited at the start (SD-6).
+const (
+	BudgetFromOverride    = "override"
+	BudgetFromDefault     = "default"
+	BudgetFromStartScreen = "start screen"
+)
+
 // Sentinels for the conditional updates. Each says the spike wasn't in a state
 // the move needs, which the service turns into a sentence.
 var (
@@ -72,7 +80,10 @@ type Spike struct {
 	FollowsID *uuid.UUID
 	// BaseCommit and WorktreePath are set at the start; WorktreeRemovedAt
 	// when the worktree was discarded.
-	BaseCommit        string
+	BaseCommit string
+	// RefsAtStart is every ref and its commit when the run started, for the
+	// leak check (FR-6.3); nil when none was recorded.
+	RefsAtStart       map[string]string
 	WorktreePath      string
 	WorktreeRemovedAt *time.Time
 	CreatedBy         string
@@ -84,6 +95,16 @@ type Spike struct {
 	ClosedAt          *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+}
+
+// Owner is what the spike hangs off (SD-3): its feature when it has one, else
+// its initiative. refType is the ref type of that owner, "feature" or
+// "initiative".
+func (s *Spike) Owner() (refType string, id uuid.UUID) {
+	if s.FeatureID != nil {
+		return "feature", *s.FeatureID
+	}
+	return "initiative", s.InitiativeID
 }
 
 // NewSpike is what CreateSpike needs.
@@ -101,23 +122,31 @@ type NewSpike struct {
 const spikeCols = `s.id, s.public_id, s.initiative_id, s.feature_id, s.question, s.state,
 	s.budget_override, s.token_budget, s.tokens_used, coalesce(s.draft, ''), s.draft_saved_at,
 	coalesce(s.ended_how, ''), coalesce(s.end_note, ''), coalesce(s.closed_as, ''), s.follows_id,
-	coalesce(s.base_commit, ''), coalesce(s.worktree_path, ''), s.worktree_removed_at,
+	coalesce(s.base_commit, ''), s.refs_at_start, coalesce(s.worktree_path, ''), s.worktree_removed_at,
 	s.created_by, s.created_via, coalesce(s.started_by, ''), s.started_at, s.ended_at,
 	coalesce(s.closed_by, ''), s.closed_at, s.created_at, s.updated_at`
 
-func scanSpike(row pgx.Row) (*Spike, error) {
+// scanSpike scans a row of spikeCols, then any extra columns the query adds.
+func scanSpike(row pgx.Row, extra ...any) (*Spike, error) {
 	var s Spike
-	err := row.Scan(&s.ID, &s.PublicID, &s.InitiativeID, &s.FeatureID, &s.Question, &s.State,
+	var refs []byte
+	dest := append([]any{&s.ID, &s.PublicID, &s.InitiativeID, &s.FeatureID, &s.Question, &s.State,
 		&s.BudgetOverride, &s.TokenBudget, &s.TokensUsed, &s.Draft, &s.DraftSavedAt,
 		&s.EndedHow, &s.EndNote, &s.ClosedAs, &s.FollowsID,
-		&s.BaseCommit, &s.WorktreePath, &s.WorktreeRemovedAt,
+		&s.BaseCommit, &refs, &s.WorktreePath, &s.WorktreeRemovedAt,
 		&s.CreatedBy, &s.CreatedVia, &s.StartedBy, &s.StartedAt, &s.EndedAt,
-		&s.ClosedBy, &s.ClosedAt, &s.CreatedAt, &s.UpdatedAt)
+		&s.ClosedBy, &s.ClosedAt, &s.CreatedAt, &s.UpdatedAt}, extra...)
+	err := row.Scan(dest...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
+	}
+	if len(refs) > 0 {
+		if err := json.Unmarshal(refs, &s.RefsAtStart); err != nil {
+			return nil, err
+		}
 	}
 	return &s, nil
 }
@@ -219,28 +248,44 @@ func ListSpikes(ctx context.Context, q Querier, f SpikeFilter) ([]Spike, error) 
 		`(s.state = 'closed'), s.created_at, s.id`, args...)
 }
 
+// SpikeStart is what StartSpike records about a run's beginning.
+type SpikeStart struct {
+	Budget int64
+	// BudgetSource is where Budget came from: BudgetFromOverride,
+	// BudgetFromDefault or BudgetFromStartScreen. It is audited.
+	BudgetSource string
+	BaseCommit   string
+	WorktreePath string
+	// RefsAtStart is every ref and its commit, for the leak check (FR-6.3).
+	RefsAtStart map[string]string
+	Actor       string
+}
+
 // StartSpike moves an idea to running, recording the budget it was given, the
-// commit and path of its worktree, and a spike.started audit row (FR-3). The
-// update is conditional on the state, so two starts can't both win; the loser
-// gets ErrSpikeNotIdea. budgetSource says where the figure came from
-// ("override", "default" or "entered") and is audited.
-func StartSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, budget int64, budgetSource, baseCommit, worktreePath, actor string) (*Spike, error) {
+// commit and path of its worktree, the refs as they stood, and a spike.started
+// audit row (FR-3). The update is conditional on the state, so two starts
+// can't both win; the loser gets ErrSpikeNotIdea.
+func StartSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, st SpikeStart) (*Spike, error) {
+	refs, err := json.Marshal(st.RefsAtStart)
+	if err != nil {
+		return nil, err
+	}
 	s, err := scanSpike(tx.QueryRow(ctx, `
 		WITH upd AS (
 			UPDATE spikes SET state = 'running', token_budget = $2, base_commit = $3, worktree_path = $4,
-			       started_by = $5, started_at = now()
+			       refs_at_start = $5, started_by = $6, started_at = now()
 			WHERE id = $1 AND state = 'idea'
 			RETURNING *)
 		SELECT `+spikeCols+` FROM upd s`,
-		id, budget, baseCommit, worktreePath, actor))
+		id, st.Budget, st.BaseCommit, st.WorktreePath, refs, st.Actor))
 	if errors.Is(err, ErrNotFound) {
 		return nil, ErrSpikeNotIdea
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := Audit(ctx, tx, actor, "spike.started", "spike", &id,
-		map[string]any{"budget": budget, "source": budgetSource}); err != nil {
+	if err := Audit(ctx, tx, st.Actor, "spike.started", "spike", &id,
+		map[string]any{"budget": st.Budget, "source": st.BudgetSource}); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -345,13 +390,45 @@ func CloseSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, as, actor string) 
 	return s, nil
 }
 
-// RecordSpikeCodeKept audits the refs that kept commits made in a spike's
-// worktree (FR-6.3). Nothing is deleted; a person decides.
-func RecordSpikeCodeKept(ctx context.Context, tx pgx.Tx, id uuid.UUID, refs []string) error {
-	if refs == nil {
-		refs = []string{}
+// SpikeKept is what the leak check found (FR-6.3): the refs that kept code,
+// or, when the check couldn't run, why not (and no refs).
+type SpikeKept struct {
+	Refs []string `json:"refs"`
+	// CouldntCheck is the reason the check failed, or "".
+	CouldntCheck string `json:"couldnt_check,omitempty"`
+}
+
+// RecordSpikeCodeKept audits what the leak check found. Nothing is deleted; a
+// person decides.
+func RecordSpikeCodeKept(ctx context.Context, tx pgx.Tx, id uuid.UUID, kept SpikeKept) error {
+	if kept.Refs == nil {
+		kept.Refs = []string{}
 	}
-	return Audit(ctx, tx, "subutai", "spike.code_kept", "spike", &id, map[string]any{"refs": refs})
+	payload := map[string]any{"refs": kept.Refs}
+	if kept.CouldntCheck != "" {
+		payload["couldnt_check"] = kept.CouldntCheck
+	}
+	return Audit(ctx, tx, "subutai", "spike.code_kept", "spike", &id, payload)
+}
+
+// SpikeKeptRecord reads what an earlier leak check audited, or ErrNotFound
+// when none did.
+func SpikeKeptRecord(ctx context.Context, q Querier, id uuid.UUID) (*SpikeKept, error) {
+	var raw []byte
+	err := q.QueryRow(ctx, `SELECT payload FROM audit_events
+		WHERE kind = 'spike.code_kept' AND ref_type = 'spike' AND ref_id = $1
+		ORDER BY occurred_at DESC, id DESC LIMIT 1`, id).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var k SpikeKept
+	if err := json.Unmarshal(raw, &k); err != nil {
+		return nil, err
+	}
+	return &k, nil
 }
 
 // SpikeRun is a running spike with its newest run-spike dispatch, for the
@@ -387,16 +464,11 @@ func SpikesToReconcile(ctx context.Context, q Querier) ([]SpikeRun, error) {
 	var out []SpikeRun
 	for rows.Next() {
 		var r SpikeRun
-		s := &r.Spike
-		if err := rows.Scan(&s.ID, &s.PublicID, &s.InitiativeID, &s.FeatureID, &s.Question, &s.State,
-			&s.BudgetOverride, &s.TokenBudget, &s.TokensUsed, &s.Draft, &s.DraftSavedAt,
-			&s.EndedHow, &s.EndNote, &s.ClosedAs, &s.FollowsID,
-			&s.BaseCommit, &s.WorktreePath, &s.WorktreeRemovedAt,
-			&s.CreatedBy, &s.CreatedVia, &s.StartedBy, &s.StartedAt, &s.EndedAt,
-			&s.ClosedBy, &s.ClosedAt, &s.CreatedAt, &s.UpdatedAt,
-			&r.DispatchID, &r.DispatchState, &r.Outcome, &r.Error, &r.Attempt); err != nil {
+		sp, err := scanSpike(rows, &r.DispatchID, &r.DispatchState, &r.Outcome, &r.Error, &r.Attempt)
+		if err != nil {
 			return nil, err
 		}
+		r.Spike = *sp
 		out = append(out, r)
 	}
 	return out, rows.Err()

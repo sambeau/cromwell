@@ -150,8 +150,8 @@ func SaveFindingsTool() provider.ToolDef {
 	}
 }
 
-// FindingsOutcomeTool completes a run-spike dispatch (SPEC-021 FR-4.4).
-func FindingsOutcomeTool() provider.ToolDef {
+// FinishSpikeTool completes a run-spike dispatch (SPEC-021 FR-4.4).
+func FinishSpikeTool() provider.ToolDef {
 	return provider.ToolDef{
 		Name: "finish_spike",
 		Description: "Finish the spike with your final findings, when you have an answer to the question, or when you can say why it can't be answered. " +

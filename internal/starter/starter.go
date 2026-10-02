@@ -96,8 +96,8 @@ spec_review:
 # it is started with its own budget. It is a hard stop: every token counts,
 # including the context re-sent on each turn, and the run ends when the total
 # reaches it. 1,000,000 is roughly 30 turns of a modest spike.
-# spikes:
-#   default_token_budget: 1000000
+spikes:
+  default_token_budget: 1000000
 
 # Tool-host command whitelist (DESIGN-006 §4.6). Edit these to your project's
 # build and test commands; implementers and the verifier may run only these.

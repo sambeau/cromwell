@@ -37,10 +37,7 @@ const spikeWorkingCopy = "This is a throwaway copy of the project's main line. N
 // committed (FR-4.1).
 func (s *Server) spikeOwnerSection(ctx context.Context, sp *store.Spike, worktree string) string {
 	var b strings.Builder
-	ownerType, ownerID := "initiative", sp.InitiativeID
-	if sp.FeatureID != nil {
-		ownerType, ownerID = "feature", *sp.FeatureID
-	}
+	ownerType, ownerID := sp.Owner()
 	if ownerType == "feature" {
 		if f, err := store.GetFeature(ctx, s.Store.Pool, ownerID); err == nil {
 			fmt.Fprintf(&b, "This spike was written down on the %s %s, %s.\n", bugOrFeature(f), f.PublicID, f.Name)
@@ -146,14 +143,10 @@ func (s *Server) planSpike(ctx context.Context, d *store.Dispatch) (*dispatch.Pl
 	for _, t := range role.Tools {
 		profile[t] = true
 	}
-	turnCap := cfg.Dispatch.TurnCap
-	if role.Limits != nil && role.Limits.TurnCap > 0 {
-		turnCap = role.Limits.TurnCap
-	}
 	id := sp.ID
 	return &dispatch.Plan{
-		System: roleSystemPrompt(role, skillBody), User: b.String(), TurnCap: turnCap,
-		Tools:           append(dispatch.ProfileToolDefs(role.Tools), dispatch.FindingsOutcomeTool()),
+		System: roleSystemPrompt(role, skillBody), User: b.String(), TurnCap: turnCapFor(cfg, role),
+		Tools:           append(dispatch.ProfileToolDefs(role.Tools), dispatch.FinishSpikeTool()),
 		OutcomeTool:     "finish_spike",
 		ValidateOutcome: s.validateFinishSpike(sp, s.spikeOwnerPath(ctx, sp)),
 		ToolCtx: &toolhost.Context{
@@ -190,11 +183,10 @@ func (s *Server) validateFinishSpike(sp *store.Spike, ownerPath string) func(jso
 			body[strings.ToLower(sec.Heading)] += sec.Body
 		}
 		for _, h := range []string{headingAnswer, headingFound} {
-			if t := body[strings.ToLower(h)]; isPlaceholderAnswer(t) || (h == headingFound && strings.TrimSpace(t) == "") {
+			if needsFill(body[strings.ToLower(h)]) {
 				return fmt.Errorf("the findings need a %s section with something in it", h)
 			}
 		}
-		text := s.buildFindings(sp.PublicID, sp.Question, ownerPath, in.Findings, findingsEnd{How: store.SpikeConcluded}, false)
-		return s.validateFindings(text)
+		return s.checkFindings(sp, ownerPath, in.Findings, findingsEnd{How: store.SpikeConcluded})
 	}
 }

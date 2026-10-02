@@ -7,7 +7,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"subutai/internal/config"
 	"subutai/internal/rules"
 	"subutai/internal/store"
 )
@@ -89,10 +89,13 @@ func (s *Server) EndSpike(ctx context.Context, spikeID uuid.UUID, how, note stri
 
 // recordSpikeEnd is steps 1 to 3 of FR-6.2.
 func (s *Server) recordSpikeEnd(ctx context.Context, sp *store.Spike, how, note string) error {
-	refs := s.spikeKeptRefs(ctx, sp)
+	kept, err := s.spikeKept(ctx, sp)
+	if err != nil {
+		return err
+	}
 	turnCap := s.spikeTurnCap()
 	undo := func() {}
-	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		changed, err := store.EndSpikeState(ctx, tx, sp.ID, how, note)
 		if err != nil || !changed {
 			return err
@@ -113,7 +116,7 @@ func (s *Server) recordSpikeEnd(ctx context.Context, sp *store.Spike, how, note 
 			budget = *cur.TokenBudget
 		}
 		_, u, err := s.writeFindings(ctx, tx, cur, cur.Draft, findingsEnd{
-			How: how, Note: note, Used: cur.TokensUsed, Budget: budget, TurnCap: turnCap, Refs: refs,
+			How: how, Note: note, Used: cur.TokensUsed, Budget: budget, TurnCap: turnCap, Refs: kept.Refs, CheckFailed: kept.CouldntCheck,
 		})
 		undo = u
 		return err
@@ -126,30 +129,26 @@ func (s *Server) recordSpikeEnd(ctx context.Context, sp *store.Spike, how, note 
 }
 
 // spikeTurnCap is the turn limit the spike runner has, for the findings'
-// sentence about stopping at it.
+// sentence about stopping at it. A project whose config can't be read has none
+// to name.
 func (s *Server) spikeTurnCap() int {
 	cfg, err := s.freshConfig()
 	if err != nil {
 		return 0
 	}
-	if name, ok := cfg.Assignments["run-spike"]; ok {
-		if role, err := s.roleOnly(name); err == nil && role > 0 {
-			return role
-		}
+	role, _, err := s.roleAndSkill(cfg.Assignments["run-spike"])
+	if err != nil {
+		return cfg.Dispatch.TurnCap
 	}
-	return cfg.Dispatch.TurnCap
+	return turnCapFor(cfg, role)
 }
 
-// roleOnly is a role's own turn cap, or 0 when it sets none.
-func (s *Server) roleOnly(name string) (int, error) {
-	role, _, err := s.roleAndSkill(name)
-	if err != nil {
-		return 0, err
+// turnCapFor is a run's turn limit: the role's own, else the project's.
+func turnCapFor(cfg *config.Config, role *config.Role) int {
+	if role.Limits != nil && role.Limits.TurnCap > 0 {
+		return role.Limits.TurnCap
 	}
-	if role.Limits != nil {
-		return role.Limits.TurnCap, nil
-	}
-	return 0, nil
+	return cfg.Dispatch.TurnCap
 }
 
 // finishSpikeEnding is steps 4 and 5: commit the findings, discard the
@@ -178,11 +177,17 @@ func (s *Server) finishSpikeEnding(ctx context.Context, sp *store.Spike) error {
 // when it has never been committed. What a person edits later is theirs to
 // commit, and isn't swept up here.
 func (s *Server) commitSpikeFindings(sp *store.Spike, doc *store.Document) bool {
-	out, err := gitIn(s.RepoRoot, "ls-files", "--", doc.Path)
+	// In HEAD, not in the index: a commit that failed after the add leaves the
+	// file staged but still never committed.
+	out, err := gitIn(s.RepoRoot, "ls-tree", "--name-only", "HEAD", "--", doc.Path)
 	if err != nil || strings.TrimSpace(out) != "" {
 		return false
 	}
-	s.commitDocument(doc.Path, fmt.Sprintf("%s: findings (%s)", sp.PublicID, store.SpikeEndingOf(sp.EndedHow).Commit))
+	msg := fmt.Sprintf("%s: findings (%s)", sp.PublicID, store.SpikeEndingOf(sp.EndedHow).Commit)
+	if err := s.commitPath(doc.Path, msg); err != nil {
+		s.Log.Warn("could not commit a spike's findings", "spike", sp.PublicID, "err", err)
+		return false
+	}
 	return true
 }
 
@@ -250,93 +255,6 @@ func (s *Server) ensureSpikeWorktree(sp *store.Spike) (string, error) {
 	return abs, nil
 }
 
-// ---- The leak check (FR-6.3) ----
-
-// spikeKeptRefs finds the refs that hold a commit made in the spike's worktree.
-// When the worktree's HEAD is where it started there are none. The refs found
-// are audited once, with a checkpoint that asks a person; a later call, after
-// the worktree is gone, reads them back from the audit row, so the findings
-// still say so.
-func (s *Server) spikeKeptRefs(ctx context.Context, sp *store.Spike) []string {
-	if refs, ok := s.recordedKeptRefs(ctx, sp.ID); ok {
-		return refs
-	}
-	refs := s.leakedRefs(sp)
-	if len(refs) == 0 {
-		return nil
-	}
-	var cp *store.Checkpoint
-	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := store.RecordSpikeCodeKept(ctx, tx, sp.ID, refs); err != nil {
-			return err
-		}
-		quoted := make([]string, len(refs))
-		for i, r := range refs {
-			quoted[i] = "`" + r + "`"
-		}
-		var err error
-		cp, err = store.CreateCheckpoint(ctx, tx, "spike-code-kept", "spike", sp.ID,
-			fmt.Sprintf("Code from %s was kept on %s, outside its working copy. A spike's code is never merged. "+
-				"Delete the branch, or keep it knowing it won't be built from.", sp.PublicID, joinWords(quoted)),
-			map[string]any{"spike_id": sp.ID.String(), "refs": refs})
-		return err
-	})
-	if err != nil {
-		s.Log.Error("spike leak check: record", "spike", sp.PublicID, "err", err)
-		return refs
-	}
-	s.notifyCheckpointRaised(cp)
-	return refs
-}
-
-// recordedKeptRefs reads the refs an earlier call audited.
-func (s *Server) recordedKeptRefs(ctx context.Context, id uuid.UUID) ([]string, bool) {
-	var raw []byte
-	err := s.Store.Pool.QueryRow(ctx, `SELECT payload FROM audit_events
-		WHERE kind = 'spike.code_kept' AND ref_id = $1 ORDER BY occurred_at DESC LIMIT 1`, id).Scan(&raw)
-	if err != nil {
-		return nil, false
-	}
-	var p struct {
-		Refs []string `json:"refs"`
-	}
-	if json.Unmarshal(raw, &p) != nil {
-		return nil, false
-	}
-	return p.Refs, true
-}
-
-// leakedRefs asks git: if the worktree's HEAD isn't the base commit, the
-// newest commit made there, and every ref that contains it.
-func (s *Server) leakedRefs(sp *store.Spike) []string {
-	if sp.WorktreePath == "" || sp.BaseCommit == "" {
-		return nil
-	}
-	abs := s.worktreeAbs(sp.WorktreePath)
-	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
-		return nil // no worktree, nothing to check
-	}
-	head, err := gitIn(abs, "rev-parse", "HEAD")
-	if err != nil || strings.TrimSpace(head) == sp.BaseCommit {
-		return nil
-	}
-	out, err := gitIn(abs, "rev-list", "HEAD", "--not", sp.BaseCommit)
-	if err != nil {
-		s.Log.Warn("spike leak check: rev-list", "spike", sp.PublicID, "err", err)
-		return nil
-	}
-	commits := strings.Fields(out)
-	if len(commits) == 0 {
-		return nil
-	}
-	out, err = gitIn(s.RepoRoot, "for-each-ref", "--contains", commits[0], "--format=%(refname:short)")
-	if err != nil {
-		s.Log.Warn("spike leak check: for-each-ref", "spike", sp.PublicID, "err", err)
-		return nil
-	}
-	return strings.Fields(out)
-}
-
 // ---- Reconciliation (FR-6.4) ----
 
 // ReconcileSpikes finishes what an earlier call, or a restart, left. It runs
@@ -395,7 +313,6 @@ func (s *Server) ReconcileSpikes(ctx context.Context) {
 		finish(live)
 	}
 
-	removed := false
 	for _, name := range dirs {
 		if running[name] {
 			continue
@@ -404,11 +321,7 @@ func (s *Server) ReconcileSpikes(ctx context.Context) {
 			s.Log.Error("spike reconciliation: leftover directory", "dir", name, "err", err)
 			continue
 		}
-		removed = true
 		s.Log.Info("a leftover spike working copy was removed", "dir", name)
-	}
-	if removed {
-		_, _ = gitIn(s.RepoRoot, "worktree", "prune")
 	}
 }
 

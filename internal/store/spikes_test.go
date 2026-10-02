@@ -63,7 +63,9 @@ func (fx *spikeFixture) start(t *testing.T, id uuid.UUID, budget int64) *Spike {
 	var sp *Spike
 	err := fx.s.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		sp, err = StartSpike(ctx, tx, id, budget, "default", "abc123", "worktrees/spk-001", "sam")
+		sp, err = StartSpike(ctx, tx, id, SpikeStart{Budget: budget, BudgetSource: BudgetFromDefault,
+			BaseCommit: "abc123", WorktreePath: "worktrees/spk-001",
+			RefsAtStart: map[string]string{"refs/heads/main": "abc123"}, Actor: "sam"})
 		return err
 	})
 	if err != nil {
@@ -230,12 +232,14 @@ func TestStartSpikeIsConditional(t *testing.T) {
 	started := fx.start(t, sp.ID, 1_000_000)
 	if started.State != SpikeRunning || started.TokenBudget == nil || *started.TokenBudget != 1_000_000 ||
 		started.StartedBy != "sam" || started.StartedAt == nil ||
-		started.BaseCommit != "abc123" || started.WorktreePath != "worktrees/spk-001" {
+		started.BaseCommit != "abc123" || started.WorktreePath != "worktrees/spk-001" ||
+		started.RefsAtStart["refs/heads/main"] != "abc123" || len(started.RefsAtStart) != 1 {
 		t.Errorf("started = %+v", started)
 	}
 
 	err := fx.s.WithTx(ctx, func(tx pgx.Tx) error {
-		_, err := StartSpike(ctx, tx, sp.ID, 5, "entered", "def", "x", "sam")
+		_, err := StartSpike(ctx, tx, sp.ID, SpikeStart{Budget: 5, BudgetSource: BudgetFromStartScreen,
+			BaseCommit: "def", WorktreePath: "x", RefsAtStart: map[string]string{}, Actor: "sam"})
 		return err
 	})
 	if !errors.Is(err, ErrSpikeNotIdea) {
@@ -547,21 +551,36 @@ func TestSpikesToReconcile(t *testing.T) {
 	}
 }
 
+// FR-6.3: what the leak check found is audited once, and read back whole, a
+// failed check with its reason; a spike nothing was recorded for has no record.
 func TestRecordSpikeCodeKept(t *testing.T) {
 	fx := newSpikeFixture(t)
 	ctx := context.Background()
 	sp := fx.create(t, fx.parent.ID, nil, "Q")
+	if _, err := SpikeKeptRecord(ctx, fx.s.Pool, sp.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("before anything is recorded: %v, want ErrNotFound", err)
+	}
 	err := fx.s.WithTx(ctx, func(tx pgx.Tx) error {
-		return RecordSpikeCodeKept(ctx, tx, sp.ID, []string{"refs/heads/keep-this"})
+		return RecordSpikeCodeKept(ctx, tx, sp.ID, SpikeKept{Refs: []string{"keep-this", "refs/stash"}})
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var refs string
-	err = fx.s.Pool.QueryRow(ctx, `SELECT payload->'refs'->>0 FROM audit_events
-		WHERE ref_id = $1 AND kind = 'spike.code_kept'`, sp.ID).Scan(&refs)
-	if err != nil || refs != "refs/heads/keep-this" {
-		t.Errorf("refs = %q, %v", refs, err)
+	got, err := SpikeKeptRecord(ctx, fx.s.Pool, sp.ID)
+	if err != nil || len(got.Refs) != 2 || got.Refs[0] != "keep-this" || got.CouldntCheck != "" {
+		t.Errorf("record = %+v, %v", got, err)
+	}
+
+	other := fx.create(t, fx.parent.ID, nil, "Q2")
+	err = fx.s.WithTx(ctx, func(tx pgx.Tx) error {
+		return RecordSpikeCodeKept(ctx, tx, other.ID, SpikeKept{CouldntCheck: "git said no"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = SpikeKeptRecord(ctx, fx.s.Pool, other.ID)
+	if err != nil || len(got.Refs) != 0 || got.CouldntCheck != "git said no" {
+		t.Errorf("failed check = %+v, %v", got, err)
 	}
 }
 

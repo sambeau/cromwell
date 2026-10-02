@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"subutai/internal/bus"
+	"subutai/internal/dispatch"
 	"subutai/internal/store"
 )
 
@@ -1075,24 +1076,7 @@ func humanTokens(n int64) string {
 
 // groupThousands puts separators into a plain integer ("1240" → "1,240"), so a
 // large figure stays readable without changing unit.
-func groupThousands(n int64) string {
-	s := fmt.Sprintf("%d", n)
-	if len(s) <= 3 {
-		return s
-	}
-	var b strings.Builder
-	lead := len(s) % 3
-	if lead > 0 {
-		b.WriteString(s[:lead])
-	}
-	for i := lead; i < len(s); i += 3 {
-		if b.Len() > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(s[i : i+3])
-	}
-	return b.String()
-}
+func groupThousands(n int64) string { return dispatch.Thousands(n) }
 
 // ago renders a compact relative age.
 func ago(t time.Time) string {

@@ -6,15 +6,16 @@ package server
 // the tests check the directory and `git worktree list`, not only the row.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -67,51 +68,43 @@ func (h *harness) startSpike(sp *store.Spike, budget int64) *store.Spike {
 	return started
 }
 
-// startSpikeQuiet starts a spike in the database exactly as StartSpike does,
-// but never kicks the dispatcher, so a test can look at the plan, or finish
-// the run by hand, before anything runs.
+// startSpikeQuiet starts a spike with the real StartSpike, but never kicks the
+// dispatcher, so a test can look at the plan, or finish the run by hand,
+// before anything runs.
 func (h *harness) startSpikeQuiet(sp *store.Spike, budget int64) (*store.Spike, *store.Dispatch) {
 	h.t.Helper()
 	ctx := context.Background()
-	head := strings.TrimSpace(h.gitOut("rev-parse", "HEAD"))
-	var started *store.Spike
-	var d *store.Dispatch
-	err := h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		var err error
-		started, err = store.StartSpike(ctx, tx, sp.ID, budget, "start screen", head, h.srv.spikeWorktreeRel(sp.ID), "sam")
-		if err != nil {
-			return err
-		}
-		d, err = store.EnqueueDispatch(ctx, tx, "run-spike", "spike-runner", "claude-sonnet-5", "spike", sp.ID, "run-spike:"+sp.ID.String())
-		return err
-	})
+	started, err := h.srv.startSpike(ctx, sp.ID, budget, "sam", false)
 	if err != nil {
+		h.t.Fatal(err)
+	}
+	var id uuid.UUID
+	if err := h.srv.Store.Pool.QueryRow(ctx, `SELECT id FROM dispatches WHERE ref_type = 'spike' AND ref_id = $1`, sp.ID).Scan(&id); err != nil {
 		h.t.Fatal(err)
 	}
 	// Left queued, nobody kicks it; mark it running so no scan can claim it,
 	// and the reconciliation leaves a run that is still going alone.
-	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE dispatches SET state = 'running' WHERE id = $1`, d.ID); err != nil {
+	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE dispatches SET state = 'running' WHERE id = $1`, id); err != nil {
 		h.t.Fatal(err)
 	}
-	d.State = "running"
+	d, err := store.GetDispatch(ctx, h.srv.Store.Pool, id)
+	if err != nil {
+		h.t.Fatal(err)
+	}
 	return started, d
 }
 
 // spikeSettled waits until the spike's run has ended and its worktree is gone.
-func (h *harness) spikeSettled(sp *store.Spike) *store.Spike {
-	h.t.Helper()
-	h.eventually("the spike to end and its worktree to be discarded", func() bool {
-		cur, err := store.GetSpike(context.Background(), h.srv.Store.Pool, sp.ID)
-		return err == nil && cur.State == store.SpikeEnded && cur.WorktreeRemovedAt != nil
-	})
-	return h.getSpike(sp.ID)
-}
+func (h *harness) spikeSettled(sp *store.Spike) *store.Spike { return h.settle(sp, false) }
 
-// sweepUntilSettled does what the heartbeat does until the spike has ended.
-func (h *harness) sweepUntilSettled(sp *store.Spike) *store.Spike {
+// settle is spikeSettled, running the retry sweep while it waits when sweep is
+// set, as the heartbeat does.
+func (h *harness) settle(sp *store.Spike, sweep bool) *store.Spike {
 	h.t.Helper()
 	h.eventually("the spike to end and its worktree to be discarded", func() bool {
-		h.srv.Dispatcher.RetrySweep(context.Background())
+		if sweep {
+			h.srv.Dispatcher.RetrySweep(context.Background())
+		}
 		cur, err := store.GetSpike(context.Background(), h.srv.Store.Pool, sp.ID)
 		return err == nil && cur.State == store.SpikeEnded && cur.WorktreeRemovedAt != nil
 	})
@@ -163,7 +156,7 @@ func (h *harness) worktreeList() string { return h.gitOut("worktree", "list") }
 
 // spikeDir is a spike's worktree directory.
 func (h *harness) spikeDir(sp *store.Spike) string {
-	return filepath.Join(h.root, ".subutai", "worktrees", "spk-"+sp.ID.String()[len(sp.ID.String())-6:])
+	return filepath.Join(h.root, ".subutai", "worktrees", store.ShortID("spk", sp.ID))
 }
 
 // editRole rewrites one line of a role file in the test project.
@@ -275,6 +268,8 @@ func TestCreatingASpike(t *testing.T) {
 
 	// The database refuses a row that breaks each named check.
 	checks := map[string]string{
+		"spikes_ended_how_values":        `INSERT INTO spikes (id, initiative_id, question, state, ended_how, token_budget, started_at, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'ended', 'gave_up', 100, now(), 'x', 'ui')`,
+		"spikes_closed_as_values":        `INSERT INTO spikes (id, initiative_id, question, state, ended_how, closed_as, token_budget, started_at, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'closed', 'budget', 'maybe', 100, now(), 'x', 'ui')`,
 		"spikes_state":                   `INSERT INTO spikes (id, initiative_id, question, state, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'bogus', 'x', 'ui')`,
 		"spikes_closed_as":               `INSERT INTO spikes (id, initiative_id, question, state, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'closed', 'x', 'ui')`,
 		"spikes_started":                 `INSERT INTO spikes (id, initiative_id, question, state, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'running', 'x', 'ui')`,
@@ -404,6 +399,29 @@ func TestWritingFindings(t *testing.T) {
 		t.Errorf("the rewritten findings don't validate: %v\n%s", err, soft)
 	}
 
+	// The question is the person's: a TODO or {{ in it is written as it is,
+	// with or without the rewrite, and doesn't make the findings fail their
+	// check, which is of the run's own words.
+	odd := "Can we delete the TODO markers in {{name}} files?"
+	for _, defuseText := range []bool{false, true} {
+		text = h.srv.buildFindings(sp.PublicID, odd, "pf", goodFindings, findingsEnd{How: store.SpikeConcluded, Budget: 10}, defuseText)
+		if !strings.Contains(text, "\n## Question\n\n"+odd+"\n") || !strings.Contains(text, `title: "SPK-001: `+odd+`"`) {
+			t.Errorf("defuse=%v: the question was rewritten:\n%s", defuseText, text)
+		}
+	}
+	if err := h.srv.checkFindings(&store.Spike{PublicID: sp.PublicID, Question: odd}, "pf", goodFindings, findingsEnd{How: store.SpikeConcluded, Budget: 10}); err != nil {
+		t.Errorf("a question with TODO and {{ failed the check: %v", err)
+	}
+	if h.srv.checkFindings(sp, "pf", risky, findingsEnd{How: store.SpikeConcluded, Budget: 10}) == nil {
+		t.Error("the run's own TODO should still fail the check")
+	}
+
+	// A shell comment in a fence before the first section isn't a title.
+	text = h.srv.buildFindings(sp.PublicID, sp.Question, "pf", "# Notes\n\n```sh\n# build it\nmake\n```\n\n## Answer\n\nYes.\n", findingsEnd{How: store.SpikeBudget, Budget: 10}, false)
+	if !strings.Contains(text, "```sh\n# build it\nmake\n```") || strings.Contains(text, "# Notes") {
+		t.Errorf("dropTitle took the wrong lines:\n%s", text)
+	}
+
 	// A code fence the draft left open doesn't swallow the ending.
 	open := "## Answer\n\nYes.\n\n## What we found\n\n```go\nfunc main() {\n"
 	text = h.srv.buildFindings(sp.PublicID, sp.Question, "pf", open, findingsEnd{How: store.SpikeBudget, Budget: 10}, false)
@@ -416,6 +434,29 @@ func TestWritingFindings(t *testing.T) {
 	if !strings.HasSuffix(strings.TrimSpace(text), "The agent reached a conclusion. It used 5 of its 10 tokens.\n\n"+
 		"Code from this spike was kept on `keep-this`, outside its working copy. Subutai hasn't deleted it; the Inbox asks what to do.") {
 		t.Errorf("the leak paragraph is missing or misplaced:\n%s", text)
+	}
+}
+
+// FR-2.1, FR-4.4: a question with the word TODO or a {{ in it can still be
+// concluded with finish_spike, and the findings say the question as it was
+// asked.
+func TestSpikeWithATodoQuestionConcludes(t *testing.T) {
+	h := newHarness(t)
+	in := h.spikeInitiative("pf")
+	question := "Can we delete the TODO markers in {{name}} files?"
+	sp := h.newSpike(in, question, nil)
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(sp, 0)
+	sp = h.spikeSettled(sp)
+	if sp.EndedHow != store.SpikeConcluded {
+		t.Fatalf("ended how = %q (%s), want concluded", sp.EndedHow, sp.EndNote)
+	}
+	if runs := h.runsFor("spike", sp.ID); len(runs) != 1 || runs[0].State != "succeeded" {
+		t.Errorf("the run = %+v, want one that succeeded on its first finish_spike", runs)
+	}
+	_, text := h.findingsOf(sp)
+	if !strings.Contains(text, "\n## Question\n\n"+question+"\n") {
+		t.Errorf("the findings' Question isn't the row's:\n%s", text)
 	}
 }
 
@@ -831,7 +872,7 @@ func TestSpikeBudgetCarriesAcrossAttempts(t *testing.T) {
 		h.saveCall(tiny, "Perhaps.", "A note from the retry, number "+string(rune('0'+i))+".")
 	}
 	h.startSpike(sp, 1000)
-	sp = h.sweepUntilSettled(sp)
+	sp = h.settle(sp, true)
 
 	runs := h.runsFor("spike", sp.ID)
 	if len(runs) != 1 || runs[0].Attempt != 2 || runs[0].State != "succeeded" {
@@ -903,7 +944,7 @@ func TestSpikeWorktreeIsDiscardedWhenItEnds(t *testing.T) {
 		h.startSpike(sp, e.start)
 		var done *store.Spike
 		if e.sweep {
-			done = h.sweepUntilSettled(sp)
+			done = h.settle(sp, true)
 		} else {
 			done = h.spikeSettled(sp)
 		}
@@ -947,7 +988,7 @@ func TestExhaustedSpikeEndsWithoutRetryQuestion(t *testing.T) {
 		h.mock.Fail(errors.New("provider says no"))
 	}
 	h.startSpike(sp, 0)
-	sp = h.sweepUntilSettled(sp)
+	sp = h.settle(sp, true)
 	// The run is cancelled just after the spike ends, so wait for that too.
 	h.eventually("the exhausted run to be cancelled", func() bool {
 		runs := h.runsFor("spike", sp.ID)
@@ -969,11 +1010,15 @@ func TestExhaustedSpikeEndsWithoutRetryQuestion(t *testing.T) {
 	if got := len(h.pendingByKind("dispatch-failure")); got != 0 {
 		t.Errorf("%d retry questions are pending", got)
 	}
-	// Nothing is left to republish: more sweeps change nothing.
+	// Nothing is left to republish: more sweeps leave nothing queued or
+	// running, the run cancelled, and the spike ended once.
 	for i := 0; i < 3; i++ {
 		h.srv.Dispatcher.RetrySweep(context.Background())
 	}
-	time.Sleep(100 * time.Millisecond)
+	h.quiet()
+	if runs := h.runsFor("spike", sp.ID); len(runs) != 1 || runs[0].State != "cancelled" {
+		t.Errorf("after more sweeps the runs are %+v, want the one cancelled", runs)
+	}
 	if got := h.auditKinds("spike.ended", sp.ID); got != 1 {
 		t.Errorf("%d spike.ended rows after more sweeps, want 1", got)
 	}
@@ -1100,6 +1145,83 @@ func TestSpikeEndIsReconciled(t *testing.T) {
 	}
 	if out := h.gitOut("log", "--format=%s", "--", doc.Path); strings.Count(out, "findings") != 1 {
 		t.Errorf("the findings were committed more than once:\n%s", out)
+	}
+}
+
+// FR-6.2: an ending that stopped after writing the findings file but before
+// registering it leaves a file with this spike's findings ID; the next call
+// writes the same path again rather than a second copy beside it. And findings
+// that are staged but were never committed are still committed.
+func TestSpikeEndingResumesFromAnOrphanFileAndAStagedOne(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	draft := "## Answer\n\nYes.\n\n## What we found\n\nA crash.\n"
+
+	sp := h.newSpike(in, "Did the crash leave a file?", nil)
+	started, d := h.startSpikeQuiet(sp, 1000)
+	if _, err := h.srv.ensureSpikeWorktree(started); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp.ID, draft); err != nil {
+		t.Fatal(err)
+	}
+	// The process dies after the file is written, before the transaction
+	// commits: nothing undoes it.
+	crash := errors.New("the process died")
+	err := h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		cur, err := store.GetSpike(ctx, tx, sp.ID)
+		if err != nil {
+			return err
+		}
+		if _, _, err := h.srv.writeFindings(ctx, tx, cur, draft, findingsEnd{How: store.SpikeBudget, Budget: 1000}); err != nil {
+			return err
+		}
+		return crash
+	})
+	if !errors.Is(err, crash) {
+		t.Fatalf("the simulated crash: %v", err)
+	}
+	orphan := strings.TrimSpace(h.gitOut("status", "--porcelain", "--untracked-files=all"))
+	if !strings.Contains(orphan, "SPK-001-findings.md") {
+		t.Fatalf("no orphan file after the crash:\n%s", orphan)
+	}
+	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE dispatches SET state = 'succeeded', outcome = '{"ended":"budget"}' WHERE id = $1`, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.ReconcileSpikes(ctx)
+	done := h.getSpike(sp.ID)
+	doc, _ := h.findingsOf(done)
+	if !strings.HasSuffix(doc.Path, "SPK-001-findings.md") {
+		t.Errorf("the findings were written to %s, not the path the crash left", doc.Path)
+	}
+	if out := h.gitOut("ls-files", "--", "*SPK-001-findings*"); strings.Count(strings.TrimSpace(out), "\n") != 0 || strings.TrimSpace(out) != doc.Path {
+		t.Errorf("tracked findings files:\n%s", out)
+	}
+	if out := h.gitOut("status", "--porcelain", "--untracked-files=all"); strings.Contains(out, "SPK-001") {
+		t.Errorf("a stray findings file is left over:\n%s", out)
+	}
+
+	// Staged, never committed.
+	sp2 := h.newSpike(in, "Did the commit fail after the add?", nil)
+	started2, d2 := h.startSpikeQuiet(sp2, 1000)
+	if _, err := h.srv.ensureSpikeWorktree(started2); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp2.ID, draft); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.srv.recordSpikeEnd(ctx, started2, store.SpikeBudget, ""); err != nil {
+		t.Fatal(err)
+	}
+	doc2, _ := h.findingsOf(h.getSpike(sp2.ID))
+	h.gitOut("add", "--", doc2.Path)
+	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE dispatches SET state = 'succeeded', outcome = '{"ended":"budget"}' WHERE id = $1`, d2.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.ReconcileSpikes(ctx)
+	if h.gitOut("ls-tree", "--name-only", "HEAD", "--", doc2.Path) == "" {
+		t.Errorf("staged findings were never committed: %s", doc2.Path)
 	}
 }
 
@@ -1334,9 +1456,9 @@ func TestSpikeHasNoMergePath(t *testing.T) {
 	branches := h.gitOut("branch", "--list")
 	base := h.headSHA()
 
-	// A whitelisted script that does what a run must not: commit in the
-	// worktree and make a branch there. It only runs when the agent asks.
-	h.editConfig(`    argv: ["true"]`, `    argv: ["sh", "-c", "echo leaked > leak.txt && git add -A && git -c user.name=x -c user.email=x@x commit -qm leaked && git branch keep-this"]`)
+	// The whitelisted script (see leakScript) only runs when the agent asks, so
+	// the clean run below keeps nothing.
+	h.setBuild("true")
 
 	// A run that leaves scaffolding but keeps no code.
 	clean := h.newSpike(in, "Does scaffolding stay in the working copy?", nil)
@@ -1411,51 +1533,161 @@ func TestSpikeHasNoMergePath(t *testing.T) {
 		t.Errorf("the feature page for a spike's ID: %v %v", resp, err)
 	}
 
-	// The leak check. The agent runs the script: its commit is on a branch
-	// that outlives the worktree.
-	leak := h.newSpike(in, "Is leaked code caught?", nil)
-	h.mock.RespondToolUse("run_command", `{"name":"build"}`, tiny)
-	h.saveCall(tiny, "Yes.", "The script committed and branched.")
-	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
-	h.startSpike(leak, 0)
-	leak = h.spikeSettled(leak)
+	// The leak check (FR-6.3). Each spike's agent runs a whitelisted script
+	// that keeps code in one way; each is reported, and a broken check is too.
+	// Every script starts from a helper that commits a file in the worktree.
+	const commit = `c() { echo "$1" > "f$1.txt" && git add -A && git -c user.name=x -c user.email=x@x commit -qm "$1"; }; `
+	t.Run("a branch at the newest commit", func(t *testing.T) {
+		leak := h.runLeakScript(in, "Is leaked code caught?", commit+"c a && git branch keep-this")
+		if out := h.gitOut("branch", "--list", "keep-this"); !strings.Contains(out, "keep-this") {
+			t.Fatalf("the branch the script made is gone (Subutai must not delete it): %q", out)
+		}
+		kept := strings.TrimSpace(h.gitOut("rev-parse", "keep-this"))
+		if refs := strings.Fields(h.gitOut("for-each-ref", "--contains", kept, "--format=%(refname:short)")); len(refs) != 1 || refs[0] != "keep-this" {
+			t.Errorf("the worktree's commit is reachable from %v, want only keep-this", refs)
+		}
+		_, text := h.findingsOf(leak)
+		if !strings.Contains(text, "Code from this spike was kept on `keep-this`, outside its working copy. Subutai hasn't deleted it; the Inbox asks what to do.") {
+			t.Errorf("the findings don't name the branch:\n%s", text)
+		}
+		if got := h.auditKinds("spike.code_kept", leak.ID); got != 1 {
+			t.Errorf("%d spike.code_kept audit rows, want 1", got)
+		}
+		cps := h.keptCheckpoints(leak)
+		if len(cps) != 1 || cps[0].RefType != "spike" ||
+			cps[0].Question != "Code from "+leak.PublicID+" was kept on `keep-this`, outside its working copy. A spike's code is never merged. Delete the branch, or keep it knowing it won't be built from." {
+			t.Errorf("the checkpoint = %+v", cps)
+		}
+		if _, err := os.Stat(h.spikeDir(leak)); !os.IsNotExist(err) {
+			t.Errorf("the leaking spike's worktree is still there (%v)", err)
+		}
+		// The leaked commit isn't on the main line: only the findings were added.
+		if h.gitOut("branch", "--contains", kept, "--list", "main", "master") != "" {
+			t.Error("the leaked commit reached the main line")
+		}
+		// Answering the checkpoint changes nothing in Subutai.
+		if code, out := h.call("POST", "/api/respond", map[string]any{"id": cps[0].ID.String(), "response": map[string]any{"answer": "acknowledge"}}); code != 200 {
+			t.Errorf("answering the checkpoint: %d %v", code, out)
+		}
+		if out := h.gitOut("branch", "--list", "keep-this"); !strings.Contains(out, "keep-this") {
+			t.Error("answering the checkpoint deleted the branch")
+		}
+	})
+	for _, tc := range []struct{ name, script, ref string }{
+		{"a branch at an earlier commit, then another commit", commit + "c a && git branch keep-early && c b", "keep-early"},
+		{"a branch, then a checkout of the base commit", commit + "c a && git branch keep-detached && git checkout -q --detach HEAD~1", "keep-detached"},
+		{"a tag", commit + "c a && git tag keep-tag", "refs/tags/keep-tag"},
+		{"a stash", `echo s > stashed.txt && git -c user.name=x -c user.email=x@x stash -u -q`, "refs/stash"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			leak := h.runLeakScript(in, "Is "+tc.name+" caught?", tc.script)
+			_, text := h.findingsOf(leak)
+			if want := "Code from this spike was kept on `" + tc.ref + "`, outside its working copy."; !strings.Contains(text, want) {
+				t.Errorf("the findings don't say %q:\n%s", want, text)
+			}
+			if got := h.auditKinds("spike.code_kept", leak.ID); got != 1 {
+				t.Errorf("%d spike.code_kept audit rows, want 1", got)
+			}
+			if cps := h.keptCheckpoints(leak); len(cps) != 1 || !strings.Contains(cps[0].Question, "was kept on `"+tc.ref+"`") {
+				t.Errorf("the checkpoint = %+v", cps)
+			}
+		})
+	}
+	t.Run("a main that moved without the worktree's commits", func(t *testing.T) {
+		moved := h.headSHA()
+		script := "git -C '" + h.root + "' -c user.name=x -c user.email=x@x commit -q --allow-empty -m unrelated"
+		quiet := h.runLeakScript(in, "Does an unrelated commit count?", script)
+		if h.headSHA() == moved {
+			t.Fatal("the script didn't move the main line")
+		}
+		_, text := h.findingsOf(quiet)
+		if strings.Contains(text, "Code from this spike") || strings.Contains(text, "couldn't check") {
+			t.Errorf("a main that moved was reported:\n%s", text)
+		}
+		if got := h.auditKinds("spike.code_kept", quiet.ID); got != 0 || len(h.keptCheckpoints(quiet)) != 0 {
+			t.Errorf("a main that moved raised a leak (%d audit rows)", got)
+		}
+	})
+	t.Run("a checkout of a main that moved during the spike", func(t *testing.T) {
+		// Someone else's commit lands on main while the spike runs, and the
+		// agent checks it out: main holds no commit made in the worktree.
+		script := "git -C '" + h.root + "' -c user.name=x -c user.email=x@x commit -q --allow-empty -m elsewhere && git checkout -q --detach \"$(git -C '" + h.root + "' rev-parse HEAD)\""
+		quiet := h.runLeakScript(in, "Does checking out a newer main count?", script)
+		_, text := h.findingsOf(quiet)
+		if strings.Contains(text, "Code from this spike") || strings.Contains(text, "couldn't check") {
+			t.Errorf("checking out a newer main was reported:\n%s", text)
+		}
+		if got := h.auditKinds("spike.code_kept", quiet.ID); got != 0 || len(h.keptCheckpoints(quiet)) != 0 {
+			t.Errorf("checking out a newer main raised a leak (%d audit rows)", got)
+		}
+	})
+	for _, tc := range []struct{ name, script, why string }{
+		{"a deleted reflog", `rm -f "$(git rev-parse --git-dir)/logs/HEAD"`, "the working copy's HEAD reflog couldn't be read (no such file or directory)"},
+		{"a truncated reflog", `: > "$(git rev-parse --git-dir)/logs/HEAD"`, "the working copy's HEAD reflog is empty"},
+		{"a reflog with its last line cut", commit + `c a && git branch keep-quiet && sed -i '$d' "$(git rev-parse --git-dir)/logs/HEAD"`, "the working copy's HEAD reflog doesn't end where HEAD is"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			broken := h.runLeakScript(in, "Is "+tc.name+" caught?", tc.script)
+			_, text := h.findingsOf(broken)
+			if want := "Subutai couldn't check whether code from this spike was kept: " + tc.why + "."; !strings.Contains(text, want) {
+				t.Errorf("the findings don't say %q:\n%s", want, text)
+			}
+			if got := h.auditKinds("spike.code_kept", broken.ID); got != 1 {
+				t.Errorf("%d spike.code_kept audit rows, want 1", got)
+			}
+			if cps := h.keptCheckpoints(broken); len(cps) != 1 || !strings.Contains(cps[0].Question, "couldn't check whether code from "+broken.PublicID) {
+				t.Errorf("the checkpoint = %+v", cps)
+			}
+		})
+	}
+}
 
-	if out := h.gitOut("branch", "--list", "keep-this"); !strings.Contains(out, "keep-this") {
-		t.Fatalf("the branch the script made is gone (Subutai must not delete it): %q", out)
+// setBuild makes the whitelisted build command run a shell script in the
+// worktree, or the true command.
+func (h *harness) setBuild(script string) {
+	h.t.Helper()
+	cfgPath := filepath.Join(h.root, ".subutai/config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		h.t.Fatal(err)
 	}
-	commit := strings.TrimSpace(h.gitOut("rev-parse", "keep-this"))
-	if refs := strings.Fields(h.gitOut("for-each-ref", "--contains", commit, "--format=%(refname:short)")); len(refs) != 1 || refs[0] != "keep-this" {
-		t.Errorf("the worktree's commit is reachable from %v, want only keep-this", refs)
+	argv, _ := json.Marshal([]string{"sh", "-c", script})
+	if script == "true" {
+		argv = []byte(`["true"]`)
 	}
-	_, text := h.findingsOf(leak)
-	if !strings.Contains(text, "Code from this spike was kept on `keep-this`, outside its working copy. Subutai hasn't deleted it; the Inbox asks what to do.") {
-		t.Errorf("the findings don't name the branch:\n%s", text)
+	re := regexp.MustCompile(`(?m)^(  build:\n    argv: ).*$`)
+	if !re.Match(data) {
+		h.t.Fatal("the starter config has no build command")
 	}
-	if got := h.auditKinds("spike.code_kept", leak.ID); got != 1 {
-		t.Errorf("%d spike.code_kept audit rows, want 1", got)
+	out := re.ReplaceAll(data, append([]byte("${1}"), bytes.ReplaceAll(argv, []byte("$"), []byte("$$"))...))
+	if err := os.WriteFile(cfgPath, out, 0o644); err != nil {
+		h.t.Fatal(err)
 	}
-	cps := h.pendingByKind("spike-code-kept")
-	if len(cps) != 1 || cps[0].RefType != "spike" || cps[0].RefID != leak.ID ||
-		cps[0].Question != "Code from SPK-002 was kept on `keep-this`, outside its working copy. A spike's code is never merged. Delete the branch, or keep it knowing it won't be built from." {
-		t.Errorf("the checkpoint = %+v", cps)
+}
+
+// runLeakScript runs a spike whose agent runs the whitelisted script and then
+// concludes, and returns it once it has ended.
+func (h *harness) runLeakScript(initiativeID uuid.UUID, question, script string) *store.Spike {
+	h.t.Helper()
+	h.setBuild(script)
+	sp := h.newSpike(initiativeID, question, nil)
+	h.mock.RespondToolUse("run_command", `{"name":"build"}`, tiny)
+	h.saveCall(tiny, "Yes.", "The script ran.")
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(sp, 0)
+	return h.spikeSettled(sp)
+}
+
+// keptCheckpoints are the pending spike-code-kept checkpoints on a spike.
+func (h *harness) keptCheckpoints(sp *store.Spike) []store.Checkpoint {
+	h.t.Helper()
+	var out []store.Checkpoint
+	for _, cp := range h.pendingByKind("spike-code-kept") {
+		if cp.RefID == sp.ID {
+			out = append(out, cp)
+		}
 	}
-	if _, err := os.Stat(h.spikeDir(leak)); !os.IsNotExist(err) {
-		t.Errorf("the leaking spike's worktree is still there (%v)", err)
-	}
-	// The leaked commit isn't on the main line: only the findings were added.
-	if got := strings.Fields(h.gitOut("log", "--format=%s", "keep-this..HEAD")); len(got) == 0 {
-		t.Error("the main line doesn't have its own commits")
-	}
-	if h.gitOut("branch", "--contains", commit, "--list", "main", "master") != "" {
-		t.Error("the leaked commit reached the main line")
-	}
-	// Answering the checkpoint changes nothing in Subutai.
-	if code, out := h.call("POST", "/api/respond", map[string]any{"id": cps[0].ID.String(), "response": map[string]any{"answer": "acknowledge"}}); code != 200 {
-		t.Errorf("answering the checkpoint: %d %v", code, out)
-	}
-	if out := h.gitOut("branch", "--list", "keep-this"); !strings.Contains(out, "keep-this") {
-		t.Error("answering the checkpoint deleted the branch")
-	}
+	return out
 }
 
 // ---- SD-14: open spikes block archiving ----
@@ -1492,6 +1724,37 @@ func TestOpenSpikesBlockArchivingTheirInitiative(t *testing.T) {
 	if code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf"}); code != 200 {
 		t.Errorf("archive with only a closed spike: %d %v", code, out)
 	}
+}
+
+// SD-14: the gate's refusal for an open spike is overridable, like any G5
+// refusal: an answered gate-override checkpoint archives the initiative.
+func TestArchiveOverrideWithAnOpenSpike(t *testing.T) {
+	h := newHarness(t)
+	in := h.spikeInitiative("pf")
+	h.newSpike(in, "Is it safe to archive?", nil)
+
+	code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf", "reason": "descoping"})
+	if code != 409 || !strings.Contains(out["reason"].(string), "1 open spike(s)") {
+		t.Fatalf("archive should be blocked by the open spike: %d %v", code, out)
+	}
+	var checkpointID string
+	h.eventually("gate-override checkpoint", func() bool {
+		for _, cp := range h.pendingByKind("gate-override") {
+			checkpointID = cp.ID.String()
+			return true
+		}
+		return false
+	})
+	if code, out := h.call("POST", "/api/respond", map[string]any{
+		"id": checkpointID, "response": map[string]any{"override": true, "reason": "the question went away"}}); code != 200 {
+		t.Fatalf("answering the override: %d %v", code, out)
+	}
+	h.eventually("archived", func() bool {
+		var archived bool
+		_ = h.srv.Store.Pool.QueryRow(context.Background(),
+			`SELECT archived FROM initiatives WHERE slug = 'pf'`).Scan(&archived)
+		return archived
+	})
 }
 
 // ---- Appendix A: the places that switch on an owner ----

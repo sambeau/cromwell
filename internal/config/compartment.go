@@ -431,11 +431,12 @@ func Load(root string, knownRuleKinds map[string]bool) (*Compartment, error) {
 					errs = append(errs, errf(rel, "tools", "unknown tool %q", tool))
 				}
 			}
-			// The spike tools (SPEC-021 FR-10.3), checked on every role
-			// file, assigned or not.
+			// The spike tools (SPEC-021 FR-10.3). A role file nobody is
+			// assigned is never offered tools, so it loads: a project can
+			// copy the spike runner before it assigns it (FR-10.4).
 			isSpikeRunner := cfg.Assignments["run-spike"] == name
-			if hasTool(r.Tools, "save_findings") && !isSpikeRunner {
-				errs = append(errs, errf(rel, "tools", "save_findings is for the spike runner, so role %s can't be offered it.", name))
+			if other := otherPurpose(cfg.Assignments, name, "run-spike"); hasTool(r.Tools, "save_findings") && other != "" {
+				errs = append(errs, errf(rel, "tools", "save_findings is for the spike runner, so role %s can't be offered it while it is assigned %s.", name, other))
 			}
 			if hasTool(r.Tools, "report_bug") && isSpikeRunner {
 				errs = append(errs, errf(rel, "tools", "A spike's agent puts what it finds in its findings, so role %s can't be offered report_bug.", name))
@@ -524,4 +525,16 @@ func isReadOnlyPurpose(purpose string) bool {
 		}
 	}
 	return false
+}
+
+// otherPurpose is a purpose, other than except, that the role is assigned, or
+// "" when it has none. The first by name, so the message doesn't vary.
+func otherPurpose(assignments map[string]string, role, except string) string {
+	found := ""
+	for purpose, r := range assignments {
+		if r == role && purpose != except && (found == "" || purpose < found) {
+			found = purpose
+		}
+	}
+	return found
 }

@@ -120,16 +120,15 @@ func (r *rig) run(t *testing.T) (json.RawMessage, provider.Usage, error) {
 	return r.dp.runLoop(context.Background(), r.d)
 }
 
-// stopEntry returns the transcript's stop entry, if any. The 'stop' kind
-// needs the spikes migration; without it the recorder's best-effort write
-// fails and the outcome is the assertion that counts.
+// stopEntry returns the transcript's stop entry, which a run that stopped at
+// a limit must have.
 func (r *rig) stopEntry(t *testing.T) string {
 	t.Helper()
 	var content string
 	err := r.st.Pool.QueryRow(context.Background(),
 		`SELECT content FROM transcript_entries WHERE dispatch_id = $1 AND kind = 'stop'`, r.d.ID).Scan(&content)
 	if err != nil {
-		t.Logf("no stop transcript entry (migration may not admit kind 'stop' yet): %v", err)
+		t.Fatalf("the run has no stop transcript entry: %v", err)
 	}
 	return content
 }
@@ -159,7 +158,7 @@ func TestBudgetStopsBeforeACallThatCannotFit(t *testing.T) {
 	if c.n != 900 {
 		t.Errorf("total = %d, want 900", c.n)
 	}
-	if s := r.stopEntry(t); s != "" && !strings.Contains(s, "budget of 1,000 tokens") {
+	if s := r.stopEntry(t); !strings.Contains(s, "budget of 1,000 tokens") {
 		t.Errorf("stop entry = %q", s)
 	}
 }
@@ -207,7 +206,31 @@ func TestBudgetTurnLimitStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantEnded(t, out, StopTurnLimit)
-	if s := r.stopEntry(t); s != "" && !strings.Contains(s, "turn limit of 3 turns") {
+	if s := r.stopEntry(t); !strings.Contains(s, "turn limit of 3 turns") {
+		t.Errorf("stop entry = %q", s)
+	}
+}
+
+// A nudge turn (no tool call) skips the check after the tools. When it is the
+// last turn allowed and its call crossed the budget, the run ended at its
+// budget, not at its turn limit.
+func TestBudgetCrossedByANudgeOnTheLastTurnIsABudgetStop(t *testing.T) {
+	c := &counter{}
+	r := newRig(t, basePlan(2, c.budget(1000)))
+	r.mock.RespondToolUse("read_file", `{}`, use)
+	r.mock.Respond(provider.Response{
+		StopReason: "end_turn", Usage: provider.Usage{Input: 800, Output: 100},
+		Blocks: []provider.Block{provider.TextBlock("I think I am done.")},
+	})
+	out, _, err := r.run(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEnded(t, out, StopBudget)
+	if c.n != 1050 {
+		t.Errorf("total = %d, want 1050", c.n)
+	}
+	if s := r.stopEntry(t); !strings.Contains(s, "budget of 1,000 tokens") {
 		t.Errorf("stop entry = %q", s)
 	}
 }
@@ -236,8 +259,8 @@ func TestNoBudgetTurnCapStillFails(t *testing.T) {
 
 func TestCommasAndBudgetTokens(t *testing.T) {
 	for n, want := range map[int64]string{0: "0", 999: "999", 1000: "1,000", 40000: "40,000", 1234567: "1,234,567"} {
-		if got := commas(n); got != want {
-			t.Errorf("commas(%d) = %q, want %q", n, got, want)
+		if got := Thousands(n); got != want {
+			t.Errorf("Thousands(%d) = %q, want %q", n, got, want)
 		}
 	}
 	if got := BudgetTokens(provider.Usage{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4}); got != 10 {
