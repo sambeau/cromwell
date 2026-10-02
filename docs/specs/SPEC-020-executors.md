@@ -454,9 +454,10 @@ The database checks:
   `returned` claim resumed in the next round is a new row. A round may hold
   any number of rows: a claim released and the task claimed again is two.
 
-When a task is deleted (re-decomposition deletes only `pending` and `ready`
-tasks, which have no executions), its rows are deleted with it, by the
-service, since `ref_id` has no foreign key.
+`ref_id` has no foreign key. A task with executions is never deleted:
+re-decomposition deletes only `pending` and `ready` tasks, and a task gains
+its first execution only as it becomes `active`, so nothing needs deleting
+with it.
 
 **FR-1.2 — Where executions are recorded.** Each in the same transaction as
 the act it describes.
@@ -1128,24 +1129,28 @@ claimed and submitted over MCP.
   transaction with its audit row.
 - **NFR-2 — The boundary holds** (FR-6). The advertised set gains exactly two
   tools.
-- **NFR-3 — The files changed**, for M14's merge:
-  - new: `0014_executors.sql`, `lifecycle/claim.go`, `store/claims.go`,
-    `store/executions.go`, `server/claims.go`, `server/claim_sweep.go`,
-    `server/mcp_claim_tools.go`, `server/ui_claims.go`,
-    `ui/templates/executors.html`, `chat-skills/work-a-task/SKILL.md`, and
-    tests;
-  - shared: `lifecycle/task.go` (one event), `store/tasks.go` (the guard),
-    `store/dispatches.go`, `dispatch/dispatch.go` (the start), `rules/rules.go`
-    (checkpoint answers), `server/actions.go` and `actions_phase2.go`,
-    `server/planner.go` (FR-2.12), `server/server.go` (the heartbeat),
-    `server/documents.go` and `http.go` (post-commit), `server/worktree_ops.go`,
-    `server/mcp.go` (one `append`, `initialize`), `server/mcp_tools.go`
-    (`get_feature`), `server/ui.go` (routes), `server/ui_views.go`
-    (`responseFor`), `server/ui_entity_pages.go`, `ui/templates/entity.html`
-    (three includes: the feature page's task list is new, FR-1.6), `server/observe.go`
-    and `timeline/timeline.go`, `store/corpus.go`, `store/sends.go`,
-    `store/ui_reads.go`, `server/http_phase3.go`, `cmd/subutai/main.go`,
-    `config/config.go` and `starter/starter.go`, and the tool-set test.
+- **NFR-3 — The files changed**, for M14's merge (as built):
+  - new: `store/migrations/0014_executors.sql`, `lifecycle/claim.go`,
+    `store/claims.go`, `store/executions.go`, `store/unmeasured.go`,
+    `rules/rules_claims.go`, `server/claims.go`, `server/claims_task.go`,
+    `server/claim_check.go`, `server/claim_sweep.go`,
+    `server/branch_watch.go`, `server/mcp_claim_tools.go`,
+    `server/ui_claims.go`, `ui/templates/executors.html`,
+    `chat-skills/work-a-task/SKILL.md`, and tests;
+  - shared: `lifecycle/task.go` (one event); `store/tasks.go` (the guard),
+    `store/dispatches.go`, `store/checkpoints.go`, `store/worktrees.go`,
+    `store/entities.go` (claims end with a feature), `store/corpus.go`,
+    `store/sends.go` and `store/ui_reads.go`; `dispatch/dispatch.go` (the
+    start); `rules/rules.go` and `rules/rules_phase2.go` (checkpoint answers,
+    the review key); `server/actions.go`, `actions_phase2.go`,
+    `planner.go` (FR-2.12), `server.go` (the heartbeat), `http.go`
+    (post-commit), `http_phase3.go`, `worktree_ops.go`, `mcp.go` (one
+    `append`, `initialize`), `mcp_tools.go` (`get_feature`), `ui.go`
+    (routes), `ui_views.go` (`responseFor`), `ui_entity.go` and
+    `ui_entity_pages.go`; `ui/templates/entity.html` (three includes, and the
+    task page's banners), `inbox.html`, `icons.html` (`i-chat`) and
+    `ui/static/app.css`; `timeline/timeline.go`; `cmd/subutai/main.go`;
+    `config/config.go` and `starter/starter.go`; and the tool-set test.
 - **NFR-4 — Human prose**, in British English, in every sentence a person or
   the chat agent reads.
 - **NFR-5 — Tested as before:** integration tests with the mock provider

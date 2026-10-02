@@ -104,8 +104,9 @@ twice is refused.
              can't review or approve it yourself." }
 ```
 
-The task's page says who did it. It also says the tokens aren't measured, and
-which model reviews it.
+The task's page says who did it, and that its tokens aren't measured. It
+names the reviewer's model only when the chat rule changed it. Here the
+starter config's priciest model is also the usual reviewer's, so it doesn't.
 
 ![T01, implemented by the chat agent](walkthrough-spec-020/02-chat-task.png)
 
