@@ -1731,10 +1731,10 @@ func TestOpenSpikesBlockArchivingTheirInitiative(t *testing.T) {
 func TestArchiveOverrideWithAnOpenSpike(t *testing.T) {
 	h := newHarness(t)
 	in := h.spikeInitiative("pf")
-	h.newSpike(in, "Is it safe to archive?", nil)
+	sp := h.newSpike(in, "Is it safe to archive?", nil)
 
 	code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf", "reason": "descoping"})
-	if code != 409 || !strings.Contains(out["reason"].(string), "1 open spike(s)") {
+	if code != 409 || !strings.Contains(out["reason"].(string), sp.PublicID+" is still open") {
 		t.Fatalf("archive should be blocked by the open spike: %d %v", code, out)
 	}
 	var checkpointID string
