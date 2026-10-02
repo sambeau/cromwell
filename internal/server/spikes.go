@@ -359,13 +359,19 @@ func (s *Server) CloseSpike(ctx context.Context, id uuid.UUID, as string, budget
 	}
 	var closed, result *store.Spike
 	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		// The person who ran a spike by hand may close it, and the audit row
+		// says so (SD-26, FR-16.4).
+		cur, err := store.GetSpike(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		ranIt, err := spikeRunBy(ctx, tx, cur, actor)
+		if err != nil {
+			return err
+		}
 		if as == SpikeCloseAgain {
 			// Only an ended spike is asked again: an idea has no answer to
 			// improve on, and a running one isn't over.
-			cur, err := store.GetSpike(ctx, tx, id)
-			if err != nil {
-				return err
-			}
 			if cur.State != store.SpikeEnded {
 				return ErrSpikeNotClosable
 			}
@@ -374,8 +380,7 @@ func (s *Server) CloseSpike(ctx context.Context, id uuid.UUID, as string, budget
 		if as == SpikeCloseAgain {
 			how = store.SpikeUnanswered
 		}
-		var err error
-		closed, err = store.CloseSpike(ctx, tx, id, how, actor)
+		closed, err = store.CloseSpikeRanIt(ctx, tx, id, how, actor, ranIt)
 		if errors.Is(err, store.ErrSpikeCannotClose) {
 			return ErrSpikeNotClosable
 		}
@@ -387,8 +392,12 @@ func (s *Server) CloseSpike(ctx context.Context, id uuid.UUID, as string, budget
 			return nil
 		}
 		// The new spike's budget is the one entered; none entered keeps the
-		// budget this spike had.
-		if budget == nil {
+		// budget this spike had. A chat or person spike had no budget, and its
+		// new spike has no override: its executor, and its budget or time box,
+		// are chosen on its own start screen (FR-15.5).
+		if unmeasuredExecutor(closed.Executor) {
+			budget = nil
+		} else if budget == nil {
 			budget = closed.BudgetOverride
 		}
 		ownerType, ownerID := closed.Owner()
@@ -419,6 +428,12 @@ type findingsEnd struct {
 	// the leak check couldn't run, when it couldn't.
 	Refs        []string
 	CheckFailed string
+	// Executor, Actor and TimeBoxHours are a chat or person spike's: who ran
+	// it, the name of the person (or the chat agent's), and the time box it
+	// had, for the sentences of FR-15.3. They are empty for an agent spike.
+	Executor     string
+	Actor        string
+	TimeBoxHours int
 }
 
 const (
@@ -429,8 +444,17 @@ const (
 	headingNext     = "What to do next"
 	headingEnded    = "How this spike ended"
 
-	nothingSaved = "Nothing was saved before the run stopped."
+	nothingSaved        = "Nothing was saved before the run stopped."
+	nothingSavedTimeBox = "Nothing was saved before the time box ended."
 )
+
+// nothingFound is the What we found a run that saved none has (SD-8).
+func nothingFound(how string) string {
+	if how == store.SpikeTimeBox {
+		return nothingSavedTimeBox
+	}
+	return nothingSaved
+}
 
 // notAnswered is the Answer a run that stopped has when it saved none (SD-8).
 func notAnswered(how string) string { return store.SpikeEndingOf(how).NotAnswered }
@@ -440,6 +464,9 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // endedSentence is the server's How this spike ended section (FR-2.3).
 func endedSentence(e findingsEnd) string {
+	if unmeasuredExecutor(e.Executor) {
+		return unmeasuredEndedSentence(e)
+	}
 	used, budget := groupThousands(e.Used), groupThousands(e.Budget)
 	lead := store.SpikeEndingOf(e.How).Lead
 	var b strings.Builder
@@ -470,6 +497,47 @@ func endedSentence(e findingsEnd) string {
 			store.SpikeEndingOf(store.SpikeFailed).Lead, note, used, budget)
 	}
 	return b.String()
+}
+
+// unmeasuredEndedSentence is How this spike ended for a chat or person spike
+// (FR-15.3): how it ended, with no count of tokens, and that they weren't
+// measured (SD-24).
+func unmeasuredEndedSentence(e findingsEnd) string {
+	var how string
+	switch e.How {
+	case store.SpikeConcluded:
+		if e.Executor == store.ExecutorChat {
+			how = "The chat agent concluded the spike."
+		} else {
+			who := strings.TrimSpace(e.Actor)
+			if who == "" {
+				who = "A person"
+			}
+			how = who + " concluded the spike by hand."
+		}
+	case store.SpikeTimeBox:
+		how = store.SpikeEndingOf(e.How).Lead
+		if e.TimeBoxHours > 0 {
+			how += fmt.Sprintf(" of %d %s", e.TimeBoxHours, plural(e.TimeBoxHours, "hour", "hours"))
+		}
+		how += "."
+	default:
+		note := strings.TrimRight(oneLine(e.Note), ". ")
+		if note == "" {
+			note = "no reason was recorded"
+		}
+		how = fmt.Sprintf("%s: %s. The findings above are what it had saved by then.", store.SpikeEndingOf(store.SpikeFailed).Lead, note)
+	}
+	return how + " " + spikeTokensNotMeasured(e.Executor)
+}
+
+// spikeTokensNotMeasured is the sentence the findings add for a spike whose
+// tokens weren't counted.
+func spikeTokensNotMeasured(executor string) string {
+	if executor == store.ExecutorChat {
+		return "It ran in chat, so its tokens weren't measured."
+	}
+	return "It was run by hand, so its tokens weren't measured."
 }
 
 // keptParagraph is what follows the How this spike ended sentence when the
@@ -675,7 +743,7 @@ func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e fi
 	}
 	found := strings.TrimSpace(got[strings.ToLower(headingFound)])
 	if needsFill(found) {
-		found = nothingSaved
+		found = nothingFound(e.How)
 	}
 
 	var b strings.Builder

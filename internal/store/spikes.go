@@ -435,6 +435,13 @@ func MarkSpikeWorktreeRemoved(ctx context.Context, tx pgx.Tx, id uuid.UUID) (cha
 // conditional: answered only from ended, unanswered from ended or from idea.
 // When no row changes it returns ErrSpikeCannotClose.
 func CloseSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, as, actor string) (*Spike, error) {
+	return CloseSpikeRanIt(ctx, tx, id, as, actor, false)
+}
+
+// CloseSpikeRanIt is CloseSpike for a closer who may also have run the spike:
+// when ranIt is set the spike.closed audit row carries closer_ran_it: true
+// (SPEC-021 SD-26, FR-16.4).
+func CloseSpikeRanIt(ctx context.Context, tx pgx.Tx, id uuid.UUID, as, actor string, ranIt bool) (*Spike, error) {
 	if as != SpikeAnswered && as != SpikeUnanswered {
 		return nil, errors.New("a spike closes as answered or unanswered, not " + strconv.Quote(as))
 	}
@@ -450,7 +457,11 @@ func CloseSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, as, actor string) 
 	if err != nil {
 		return nil, err
 	}
-	if err := Audit(ctx, tx, actor, "spike.closed", "spike", &id, map[string]any{"as": as}); err != nil {
+	payload := map[string]any{"as": as}
+	if ranIt {
+		payload["closer_ran_it"] = true
+	}
+	if err := Audit(ctx, tx, actor, "spike.closed", "spike", &id, payload); err != nil {
 		return nil, err
 	}
 	return s, nil

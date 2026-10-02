@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"subutai/internal/config"
+	"subutai/internal/lifecycle"
 	"subutai/internal/rules"
 	"subutai/internal/store"
 )
@@ -53,8 +54,9 @@ func (s *Server) cancelSpikeRun(ctx context.Context, dispatchID uuid.UUID) {
 
 // EndSpike ends a spike's run (FR-6.2): the leak check, then the findings and
 // the move to ended in one transaction, then the commit and the discarded
-// worktree. how is concluded, budget, turn_limit or failed; note is a failure's
-// last error. The findings are built from the spike's draft. Every step is
+// worktree. how is concluded, budget, turn_limit, failed or time_box; budget
+// and turn_limit are an agent spike's, and time_box a chat or person spike's
+// (FR-15.2). note is a failure's last error. The findings are built from the spike's draft. Every step is
 // safe to run again: a spike that is no longer running skips to the last two,
 // and one that already has findings isn't given a second set.
 func (s *Server) EndSpike(ctx context.Context, spikeID uuid.UUID, how, note string) error {
@@ -65,15 +67,40 @@ func (s *Server) EndSpike(ctx context.Context, spikeID uuid.UUID, how, note stri
 	if err != nil {
 		return err
 	}
+	if err := checkSpikeHowFor(sp, how); err != nil {
+		return err
+	}
 	return s.withSpikeEndLocks(sp, func() error { return s.endSpikeLocked(ctx, spikeID, how, note) })
 }
 
 func checkSpikeHow(how string) error {
 	switch how {
-	case store.SpikeConcluded, store.SpikeBudget, store.SpikeTurnLimit, store.SpikeFailed:
+	case store.SpikeConcluded, store.SpikeBudget, store.SpikeTurnLimit, store.SpikeFailed, store.SpikeTimeBox:
 		return nil
 	}
-	return fmt.Errorf("a run ends as concluded, budget, turn_limit or failed, not %q", how)
+	return fmt.Errorf("a run ends as concluded, budget, turn_limit, failed or time_box, not %q", how)
+}
+
+// unmeasuredExecutor says a spike is run by the chat agent or a person: it has
+// a time box and a claim, and no token budget (SPEC-021 SD-18, SD-24).
+func unmeasuredExecutor(executor string) bool {
+	return executor == store.ExecutorChat || executor == store.ExecutorPerson
+}
+
+// checkSpikeHowFor refuses a way of ending the spike's executor can't have
+// (FR-15.2): the time box is a chat or person spike's, the budget and the turn
+// limit an agent spike's. A spike with no executor hasn't started, and has no
+// run to end.
+func checkSpikeHowFor(sp *store.Spike, how string) error {
+	switch {
+	case sp.Executor == "":
+		return nil
+	case how == store.SpikeTimeBox && !unmeasuredExecutor(sp.Executor):
+		return errors.New("A spike run by the spike runner has a token budget, not a time box, so it can't end at one.")
+	case (how == store.SpikeBudget || how == store.SpikeTurnLimit) && unmeasuredExecutor(sp.Executor):
+		return errors.New("A spike run in chat or by hand has a time box, not a token budget, so it can't end at one.")
+	}
+	return nil
 }
 
 // withSpikeEndLocks runs fn holding the spike's worktree's lock, then
@@ -106,6 +133,9 @@ func (s *Server) endSpikeLocked(ctx context.Context, spikeID uuid.UUID, how, not
 	if err != nil {
 		return err
 	}
+	if err := checkSpikeHowFor(sp, how); err != nil {
+		return err
+	}
 	switch sp.State {
 	case store.SpikeIdea:
 		return errors.New("This spike hasn't started, so it has no run to end.")
@@ -130,13 +160,31 @@ func (s *Server) recordSpikeEnd(ctx context.Context, sp *store.Spike, how, note 
 	turnCap := s.spikeTurnCap()
 	undo := func() {}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		changed, err := store.EndSpikeState(ctx, tx, sp.ID, how, note)
+		// The spike's row first, then its claim's (SD-27): what the ending
+		// reads of the claim can't change under it.
+		cur, err := store.LockSpike(ctx, tx, sp.ID)
+		if err != nil {
+			return err
+		}
+		if cur.State != store.SpikeRunning {
+			return nil // another call ended it
+		}
+		end := findingsEnd{How: how, Note: note, Executor: cur.Executor}
+		if unmeasuredExecutor(cur.Executor) {
+			if end.How, end.Actor, err = s.settleSpikeClaim(ctx, tx, cur, how); err != nil {
+				return err
+			}
+			if cur.TimeBoxHours != nil {
+				end.TimeBoxHours = *cur.TimeBoxHours
+			}
+		}
+		changed, err := store.EndSpikeState(ctx, tx, sp.ID, end.How, note)
 		if err != nil || !changed {
 			return err
 		}
 		// Read the spike as it now stands, so the tokens in the findings are
 		// the ones the audit row records.
-		cur, err := store.GetSpike(ctx, tx, sp.ID)
+		cur, err = store.GetSpike(ctx, tx, sp.ID)
 		if err != nil {
 			return err
 		}
@@ -149,9 +197,9 @@ func (s *Server) recordSpikeEnd(ctx context.Context, sp *store.Spike, how, note 
 		if cur.TokenBudget != nil {
 			budget = *cur.TokenBudget
 		}
-		_, u, err := s.writeFindings(ctx, tx, cur, cur.Draft, findingsEnd{
-			How: how, Note: note, Used: cur.TokensUsed, Budget: budget, TurnCap: turnCap, Refs: kept.Refs, CheckFailed: kept.CouldntCheck,
-		})
+		end.Used, end.Budget, end.TurnCap = cur.TokensUsed, budget, turnCap
+		end.Refs, end.CheckFailed = kept.Refs, kept.CouldntCheck
+		_, u, err := s.writeFindings(ctx, tx, cur, cur.Draft, end)
 		undo = u
 		return err
 	})
@@ -160,6 +208,41 @@ func (s *Server) recordSpikeEnd(ctx context.Context, sp *store.Spike, how, note 
 		return err
 	}
 	return nil
+}
+
+// settleSpikeClaim is what FR-15.2 does with a chat or person spike's claim
+// as the spike ends, in the ending's transaction with the spike's row locked.
+// A latest claim that ended done means a submit got there first, so the spike
+// ends concluded whatever was asked. Any claim that hasn't ended is ended with
+// the machine's expire (SD-21), which also withdraws its claim-stale. It
+// returns how the spike ends, and who ran it: the latest claim's actor, for the
+// findings to name.
+func (s *Server) settleSpikeClaim(ctx context.Context, tx pgx.Tx, sp *store.Spike, how string) (end, who string, err error) {
+	end = how
+	latest, err := store.LatestClaimFor(ctx, tx, "spike", sp.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return end, "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if latest.State == lifecycle.ClaimEnded {
+		if latest.EndReason == "done" {
+			end = store.SpikeConcluded
+		}
+		return end, latest.Actor, nil
+	}
+	cur, err := store.LockCurrentClaimFor(ctx, tx, "spike", sp.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return end, latest.Actor, nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if err := store.TransitionClaim(ctx, tx, cur, lifecycle.ClaimEventExpire, "subutai", "", map[string]any{"how": end}); err != nil {
+		return "", "", err
+	}
+	return end, cur.Actor, nil
 }
 
 // spikeTurnCap is the turn limit the spike runner has, for the findings'
@@ -329,6 +412,9 @@ func (s *Server) makeSpikeWorktree(ctx context.Context, sp *store.Spike, check b
 // at boot and on every heartbeat:
 //   - a running spike whose run has succeeded, been cancelled, or failed with
 //     no attempts left is ended, how read from the run's outcome or error;
+//   - a running chat or person spike has no run, so it is never "lost" and its
+//     directory is kept; it is ended concluded when its latest claim ended
+//     done, else time_box when its deadline has passed (FR-12.4);
 //   - an ended spike whose findings were never committed, or any spike with a
 //     worktree that was never discarded, has the last steps run again;
 //   - a spike directory that no running spike names is removed.
@@ -346,9 +432,27 @@ func (s *Server) ReconcileSpikes(ctx context.Context) {
 		s.Log.Error("spike reconciliation", "err", err)
 		return
 	}
+	past := map[uuid.UUID]bool{}
+	if list, err := store.SpikesPastDeadline(ctx, s.Store.Pool); err != nil {
+		s.Log.Error("spike reconciliation: deadlines", "err", err)
+	} else {
+		for _, sp := range list {
+			past[sp.ID] = true
+		}
+	}
 	running := map[string]bool{}
 	for _, r := range runs {
 		running[filepath.Base(r.Spike.WorktreePath)] = true
+		if unmeasuredExecutor(r.Spike.Executor) {
+			// No run to lose: its directory is kept, and it ends only at a
+			// submit that stopped short or at its deadline (FR-12.4).
+			if how, ok := s.timeBoxedEnding(ctx, &r.Spike, past[r.Spike.ID]); ok {
+				if err := s.EndSpike(ctx, r.Spike.ID, how, ""); err != nil {
+					s.Log.Error("spike reconciliation: end", "spike", r.Spike.PublicID, "err", err)
+				}
+			}
+			continue
+		}
 		a, ok := spikeRunEnding(r, cfg.Dispatch.MaxAttempts)
 		if !ok {
 			continue
@@ -390,6 +494,25 @@ func (s *Server) ReconcileSpikes(ctx context.Context) {
 		}
 		s.Log.Info("a leftover spike working copy was removed", "dir", name)
 	}
+}
+
+// timeBoxedEnding says whether a running chat or person spike is over, and how,
+// in FR-15.2's order: its latest claim ended done (a submit that stopped before
+// its ending), which is concluded; then its deadline has passed, which is
+// time_box.
+func (s *Server) timeBoxedEnding(ctx context.Context, sp *store.Spike, pastDeadline bool) (string, bool) {
+	claim, err := store.LatestClaimFor(ctx, s.Store.Pool, "spike", sp.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		s.Log.Error("spike reconciliation: claim", "spike", sp.PublicID, "err", err)
+		return "", false
+	}
+	if err == nil && claim.State == lifecycle.ClaimEnded && claim.EndReason == "done" {
+		return store.SpikeConcluded, true
+	}
+	if pastDeadline {
+		return store.SpikeTimeBox, true
+	}
+	return "", false
 }
 
 // spikeDirs names the spike directories under the worktrees folder.
