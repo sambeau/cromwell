@@ -65,6 +65,7 @@
 {{end}}
 
 {{with .Timeline}}{{template "feature-timeline" .}}{{end}}
+{{template "feature-tasks" .}}
 
 <div class="page-split u-mt-6">
   <div>
@@ -248,10 +249,15 @@
         <p class="t-meta">Nothing here has been sized yet. Work is measured in tokens — the unit of computation an agent spends.</p>
         {{end}}
       </div>
-      {{if .Done}}
+      {{if or .Done .DoneUnmeasured}}
       <div class="rail-divider"></div>
       <div class="rail-field">
         <span class="rail-field-label">Spent so far</span>
+        {{if .DoneUnmeasured}}
+        {{/* The sentence carries the figure, so no bare number above it. */}}
+        {{if .Done}}<span class="t-meta">Not measured: at least {{tokensExact .Done}} tokens, plus work done in chat or by a person.</span>
+        {{else}}<span class="t-meta">Not measured: the work so far was done in chat or by a person.</span>{{end}}
+        {{else}}
         <span class="rail-field-value">
           <span class="tokens">
             <svg class="icon icon-sm" aria-hidden="true"><use href="#i-tokens"/></svg>
@@ -261,6 +267,7 @@
         {{if .Size.Estimated}}
         <div class="bar"><div class="bar-fill bar-fill--running" style="width:{{spentPct .Done .Size.Tokens}}%"></div></div>
         <span class="t-meta">{{spentPct .Done .Size.Tokens}}% of the estimate</span>
+        {{end}}
         {{end}}
       </div>
       {{end}}
@@ -770,6 +777,14 @@
 
 {{define "page-task"}}{{template "pagetop" .}}
 {{with .Data}}
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
 <div class="page-head">
   <div class="page-head-top">
     <span class="page-head-icon">
@@ -788,6 +803,7 @@
     </div>
   </div>
 </div>
+{{template "task-executor" .Executor}}
 
 {{if .Task.Description}}
 <section class="panel u-mt-4">
@@ -797,6 +813,7 @@
   <div class="panel-body"><div class="doc"><p>{{.Task.Description}}</p></div></div>
 </section>
 {{end}}
+{{template "task-claim" .Claim}}
 {{template "task-runs" .Runs}}
 {{end}}
 {{template "pagebottom" .}}{{end}}

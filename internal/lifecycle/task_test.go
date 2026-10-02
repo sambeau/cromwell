@@ -7,7 +7,7 @@ import (
 
 func TestTaskTransitionMatrix(t *testing.T) {
 	states := []TaskState{TaskPending, TaskReady, TaskActive, TaskReview, TaskDone, TaskAbandoned}
-	events := []TaskEvent{TaskReadyEvent, TaskClaim, TaskImplemented, TaskApprove, TaskRequestChanges, TaskAbandon}
+	events := []TaskEvent{TaskReadyEvent, TaskClaim, TaskImplemented, TaskApprove, TaskRequestChanges, TaskAbandon, TaskRelease}
 
 	legal := map[TaskState]map[TaskEvent]TaskState{
 		TaskPending: {
@@ -20,6 +20,7 @@ func TestTaskTransitionMatrix(t *testing.T) {
 		},
 		TaskActive: {
 			TaskImplemented: TaskReview,
+			TaskRelease:     TaskActive, // SPEC-020 FR-2.2
 			TaskAbandon:     TaskAbandoned,
 		},
 		TaskReview: {

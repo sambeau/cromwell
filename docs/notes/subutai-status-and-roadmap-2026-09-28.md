@@ -725,7 +725,7 @@ M0, M3 and M6 handoffs.
 
 *Done when:* an agent-filed bug is triaged, fixed and verified.
 
-**M13 — Executors** · M · needs M2, M10
+**M13 — Executors** · M · needs M2, M10 · ✅ **done 2026-10-02**, see the [M13 handoff](handoff-M13-2026-10-02.md)
 *Goal: chat and humans can do work through the front door.*
 - Claim and submit, with the executor recorded.
 - Stale claims and unclaimed commits are flagged.

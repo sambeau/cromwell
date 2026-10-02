@@ -51,6 +51,15 @@ func SetTaskBaseCommit(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, commit 
 	return err
 }
 
+// ResetTaskBaseCommit sets the branch head at which a task's work begins,
+// whatever it was. A claim does this in round 1 when no one has begun the
+// task, because a batch made ready together shares a base that later tasks'
+// reviews would otherwise diff against (SPEC-020 FR-2.3 step 3).
+func ResetTaskBaseCommit(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, commit string) error {
+	_, err := tx.Exec(ctx, `UPDATE tasks SET base_commit = $2 WHERE id = $1`, taskID, commit)
+	return err
+}
+
 // CreateTask inserts a task (used by decomposition). depends_on is set in a
 // second pass once all sibling ids are known (DESIGN-005 §4).
 func CreateTask(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, position int, localID, title, description string, actor string) (*Task, error) {
@@ -118,15 +127,25 @@ func TasksForFeature(ctx context.Context, q Querier, featureID uuid.UUID) ([]Tas
 	return out, rows.Err()
 }
 
+// ErrStaleState refuses an update whose row has moved on since the caller
+// read it: a lost race refuses rather than overwrites (SPEC-020 FR-2.7).
+var ErrStaleState = errors.New("the state changed while this was being done; look again and retry")
+
 // TransitionTask applies a task lifecycle event, audit row in the same
-// transaction. The lifecycle engine is the sole authority on legality.
+// transaction. The lifecycle engine is the sole authority on legality, and
+// the update is guarded on the state the caller read (SPEC-020 FR-2.7): if the
+// task has moved, nothing changes and ErrStaleState is returned.
 func TransitionTask(ctx context.Context, tx pgx.Tx, t *Task, event lifecycle.TaskEvent, actor string, payload map[string]any) error {
 	next, err := lifecycle.TaskTransition(t.State, event)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = $2 WHERE id = $1`, t.ID, next); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE tasks SET state = $2 WHERE id = $1 AND state = $3`, t.ID, next, t.State)
+	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrStaleState
 	}
 	if payload == nil {
 		payload = map[string]any{}

@@ -222,9 +222,9 @@ func TestGovernorSerialisationQuery(t *testing.T) {
 	}
 
 	// T2 (same feature) is blocked.
-	busy, err := MutatingDispatchActiveForTask(ctx, s.Pool, t2.ID, uuid.New())
-	if err != nil || !busy {
-		t.Errorf("T2 should be blocked by T1's running dispatch: busy=%v err=%v", busy, err)
+	hold, err := ImplementHold(ctx, s.Pool, t2.ID, uuid.New())
+	if err != nil || hold != "feature-serialisation" {
+		t.Errorf("T2 should be blocked by T1's running dispatch: hold=%q err=%v", hold, err)
 	}
 
 	// A task of a different feature is not blocked.
@@ -243,7 +243,7 @@ func TestGovernorSerialisationQuery(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if busy, _ := MutatingDispatchActiveForTask(ctx, s.Pool, t3.ID, uuid.New()); busy {
+	if hold, _ := ImplementHold(ctx, s.Pool, t3.ID, uuid.New()); hold != "" {
 		t.Error("a different feature's task must not be blocked")
 	}
 }

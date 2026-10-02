@@ -44,6 +44,7 @@
         <svg class="icon icon-xs" aria-hidden="true"><use href="#i-clock"/></svg>
         <span>Raised {{ago .CreatedAt}} ago, about {{article .RefType}} {{.RefType}}</span>
       </p>
+      {{if .LastActivity}}<p class="t-meta u-mt-2">{{.LastActivity}}</p>{{end}}
     </div>
     <span class="u-push">
       <span class="badge" data-state="review">
@@ -56,7 +57,7 @@
   <div class="checkpoint-context">
     <details>
       <summary class="u-row"><svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
-        <span class="t-label">What the agent was doing</span></summary>
+        <span class="t-label">{{.ContextLabel}}</span></summary>
       <pre class="u-mt-2"><code>{{printf "%s" .Context}}</code></pre>
     </details>
   </div>

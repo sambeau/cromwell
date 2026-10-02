@@ -52,7 +52,14 @@ type Server struct {
 	// editMu serialises the browser editor's saves, so a second save sees
 	// the first's write as a change on disk (SPEC-016 FR-3.2).
 	editMu sync.Mutex
+
+	// copyLocks holds one lock per feature working copy, by path, serialising
+	// the git work done in it (SPEC-020 FR-2.8, withWorkingCopy).
+	copyLocks sync.Map
 }
+
+// lockedCopy is one working copy's lock.
+type lockedCopy struct{ mu sync.Mutex }
 
 // New validates the compartment, connects the store, and assembles the
 // server. Any config error aborts startup naming file and field
@@ -95,6 +102,7 @@ func New(ctx context.Context, repoRoot string, log *slog.Logger) (*Server, error
 		Providers:    s.providerFor,
 		Log:          log,
 		OnCheckpoint: s.notifyCheckpointRaised,
+		BranchHead:   s.branchHeadForTask,
 	}
 	return s, nil
 }
@@ -140,6 +148,9 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	if err := s.ReconcileWorktrees(ctx); err != nil {
 		s.Log.Error("boot worktree reconciliation", "err", err)
+	}
+	if err := s.BackfillWatchedHeads(ctx); err != nil {
+		s.Log.Error("boot branch-watch backfill", "err", err)
 	}
 	if err := s.ReconcileGates(ctx); err != nil {
 		s.Log.Error("boot gate reconciliation", "err", err)
@@ -256,6 +267,8 @@ func (s *Server) heartbeat(ctx context.Context) {
 			return
 		case <-t.C:
 			s.Dispatcher.StallSweep(ctx)
+			s.ClaimSweep(ctx)       // SPEC-020 FR-5.1
+			s.BranchWatchSweep(ctx) // SPEC-020 FR-5.6
 			s.Dispatcher.RetrySweep(ctx)
 			s.ReconcileAuthoringSweep(ctx)
 			s.findMovedDocuments(ctx)

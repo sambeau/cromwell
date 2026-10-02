@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,10 @@ func (s *Server) executePhase2(ctx context.Context, action rules.Action) (bool, 
 		return true, s.returnTaskCode(ctx, a)
 	case rules.AbandonTask:
 		return true, s.abandonTask(ctx, a)
+	case rules.KeepClaim:
+		return true, s.KeepClaimAnswered(ctx, a)
+	case rules.ReleaseClaim:
+		return true, s.ReleaseClaimAnswered(ctx, a)
 	case rules.FileAuthoredDocument:
 		var run *uuid.UUID
 		if a.DispatchID != uuid.Nil {
@@ -164,16 +169,25 @@ func (s *Server) dispatchReadyTasks(ctx context.Context, featureID uuid.UUID) er
 	}
 	// The branch HEAD now becomes the base for any task starting its work, so
 	// code review later diffs the task's whole contribution (DESIGN-006 §5).
-	var head string
-	if wt, werr := store.LiveWorktreeForFeature(ctx, s.Store.Pool, featureID); werr == nil {
-		head, _ = gitIn(s.worktreeAbs(wt.Path), "rev-parse", "HEAD")
-		head = strings.TrimSpace(head)
-	}
+	head := s.featureHead(ctx, featureID)
 	for i := range tasks {
 		task := tasks[i]
 		err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			// The feature, then the task, in the lock order of SPEC-020 FR-2.7;
+			// a claim may have taken the task since it was read.
+			if err := store.LockFeatureAndTask(ctx, tx, featureID, task.ID); err != nil {
+				return err
+			}
 			fresh, err := store.GetTask(ctx, tx, task.ID)
 			if err != nil {
+				return err
+			}
+			if fresh.State != lifecycle.TaskReady {
+				return nil
+			}
+			if _, err := store.CurrentClaimFor(ctx, tx, "task", task.ID); err == nil {
+				return nil
+			} else if !errors.Is(err, store.ErrNotFound) {
 				return err
 			}
 			if head != "" {
@@ -231,36 +245,82 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 	}
 	root := s.worktreeAbs(wt.Path)
 
-	// Commit the changes (server-authored, message names the task). If there
-	// is nothing to commit, the implementer produced no diff — a failure the
-	// code reviewer should see, so we still proceed with an empty commit
-	// marker rather than silently dropping the task.
-	commitMsg := fmt.Sprintf("subutai: %s — %s\n\n%s", task.LocalID, task.Title, summary)
-	if err := s.commitWorktree(root, commitMsg); err != nil {
-		return fmt.Errorf("committing task work: %w", err)
-	}
-
-	cfg, err := s.freshConfig()
-	if err != nil {
-		return err
-	}
-	reviewerRole, ok := cfg.Assignments["review-code"]
-	if !ok {
-		return s.configErrorCheckpoint(ctx, "task", taskID, fmt.Errorf("config.yaml assignments has no review-code role"))
-	}
-	model, err := s.modelForPurpose(cfg, "review-code", reviewerRole)
-	if err != nil {
-		return s.configErrorCheckpoint(ctx, "task", taskID, err)
-	}
-	head, _ := gitIn(root, "rev-parse", "HEAD")
-	key := rules.CodeReviewIdempotencyKey(taskID, strings.TrimSpace(head))
-
-	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := store.TransitionTask(ctx, tx, task, lifecycle.TaskImplemented, "orchestrator",
-			map[string]any{"summary": summary}); err != nil {
+	// Git, then the transaction, holding the working copy's lock (SPEC-020
+	// FR-2.8, FR-5.7).
+	err = s.withWorkingCopy(root, func() error {
+		// A claim that took the task since its implementer finished owns what is
+		// in the working copy now: nothing is committed on the agent's behalf.
+		if _, err := store.CurrentClaimFor(ctx, s.Store.Pool, "task", taskID); err == nil {
+			return nil
+		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		_, err := store.EnqueueDispatch(ctx, tx, "review-code", reviewerRole, model, "task", taskID, key)
+		// Everything that can fail on configuration is settled before the
+		// commit, so a config error leaves no commit of Subutai's own behind.
+		cfg, err := s.freshConfig()
+		if err != nil {
+			return err
+		}
+		reviewerRole, ok := cfg.Assignments["review-code"]
+		if !ok {
+			return s.configErrorCheckpoint(ctx, "task", taskID, fmt.Errorf("config.yaml assignments has no review-code role"))
+		}
+		// The model is the reviewer's usual one, or the project's reviewer for
+		// the chat agent's work when the task's latest execution is the chat
+		// agent's (SPEC-020 FR-8.3).
+		model, _, err := s.codeReviewModel(ctx, s.Store.Pool, cfg, taskID, reviewerRole)
+		if err != nil {
+			return s.configErrorCheckpoint(ctx, "task", taskID, err)
+		}
+
+		// Commit the changes (server-authored, message names the task). If
+		// there is nothing to commit, the implementer produced no diff — a
+		// failure the code reviewer should see, so we still proceed with an
+		// empty commit marker rather than silently dropping the task.
+		s.watchBranchLogged(ctx, wt)
+		commitMsg := fmt.Sprintf("subutai: %s — %s\n\n%s", task.LocalID, task.Title, summary)
+		if err := s.commitWorktree(root, commitMsg); err != nil {
+			return fmt.Errorf("committing task work: %w", err)
+		}
+		head := headOf(root)
+
+		err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			if err := store.LockFeatureAndTask(ctx, tx, task.FeatureID, taskID); err != nil {
+				return err
+			}
+			fresh, err := store.GetTask(ctx, tx, taskID)
+			if err != nil {
+				return err
+			}
+			if err := store.RecordWorktreeCommit(ctx, tx, wt.ID, head, "implementation"); err != nil {
+				return err
+			}
+			if err := store.TransitionTask(ctx, tx, fresh, lifecycle.TaskImplemented, "orchestrator",
+				map[string]any{"summary": summary}); err != nil {
+				return err
+			}
+			if err := store.MarkDispatchExecutionSubmitted(ctx, tx, dispatchID); err != nil {
+				return err
+			}
+			round, err := store.CurrentTaskRound(ctx, tx, taskID)
+			if err != nil {
+				return err
+			}
+			key := rules.CodeReviewIdempotencyKey(taskID, head, round)
+			_, err = store.EnqueueDispatch(ctx, tx, "review-code", reviewerRole, model, "task", taskID, key)
+			return err
+		})
+		if err != nil {
+			// The commit stands whatever became of the transaction, so it is
+			// recorded on its own: the branch watch must not call Subutai's own
+			// commit work nobody claimed.
+			rerr := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+				return store.RecordWorktreeCommit(ctx, tx, wt.ID, head, "implementation")
+			})
+			if rerr != nil {
+				s.Log.Warn("recording the implementation commit", "task", taskID, "err", rerr)
+			}
+		}
 		return err
 	})
 	if err == nil {
@@ -286,8 +346,15 @@ func (s *Server) abandonTask(ctx context.Context, a rules.AbandonTask) error {
 		reason = "abandoned at the review round cap: reviewer and implementer did not converge"
 	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		return store.TransitionTask(ctx, tx, task, lifecycle.TaskAbandon, a.Actor,
-			map[string]any{"reason": reason})
+		if err := store.LockFeatureAndTask(ctx, tx, featureID, task.ID); err != nil {
+			return err
+		}
+		if err := store.TransitionTask(ctx, tx, task, lifecycle.TaskAbandon, a.Actor,
+			map[string]any{"reason": reason}); err != nil {
+			return err
+		}
+		// The task's claim ends with it, withdrawing its question (SD-16).
+		return endTaskClaim(ctx, tx, task.ID, lifecycle.ClaimEventAbandon, a.Actor, map[string]any{"reason": reason})
 	})
 	if err != nil {
 		return err
@@ -305,7 +372,14 @@ func (s *Server) approveTaskCode(ctx context.Context, taskID uuid.UUID, actor st
 	}
 	featureID := task.FeatureID
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := store.LockFeatureAndTask(ctx, tx, featureID, taskID); err != nil {
+			return err
+		}
 		if err := store.TransitionTask(ctx, tx, task, lifecycle.TaskApprove, actor, nil); err != nil {
+			return err
+		}
+		// An approved task's claim is done (SPEC-020 FR-2.6).
+		if err := endTaskClaim(ctx, tx, taskID, lifecycle.ClaimEventDone, actor, nil); err != nil {
 			return err
 		}
 		// Minor findings did not send the work back, but they are not
@@ -398,8 +472,7 @@ func (s *Server) queueVerification(ctx context.Context, featureID uuid.UUID) err
 	if err != nil {
 		return err
 	}
-	head, _ := gitIn(s.worktreeAbs(wt.Path), "rev-parse", "HEAD")
-	key := rules.VerifyIdempotencyKey(featureID, strings.TrimSpace(head))
+	key := rules.VerifyIdempotencyKey(featureID, headOf(s.worktreeAbs(wt.Path)))
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		_, err := store.EnqueueDispatch(ctx, tx, "verify-feature", role, model, "feature", featureID, key)
 		return err
@@ -422,6 +495,9 @@ func (s *Server) returnTaskCode(ctx context.Context, a rules.ReturnTaskCode) err
 		return s.configErrorCheckpoint(ctx, "task", a.TaskID, err)
 	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := store.LockFeatureAndTask(ctx, tx, task.FeatureID, a.TaskID); err != nil {
+			return err
+		}
 		// review → active, then re-dispatch the implementer against the same
 		// worktree — the diff is amended, not restarted (DESIGN-006 §5).
 		if err := store.TransitionTask(ctx, tx, task, lifecycle.TaskRequestChanges, a.Actor,
@@ -429,9 +505,23 @@ func (s *Server) returnTaskCode(ctx context.Context, a rules.ReturnTaskCode) err
 			return err
 		}
 		// Code-review comments are recorded in the audit payload (task-scoped
-		// comment storage is a phase-3 nicety) so they are not lost.
-		if err := store.Audit(ctx, tx, a.Actor, "task.review_comments", "task", &a.TaskID,
-			map[string]any{"comments": a.Comments}); err != nil {
+		// comment storage is a phase-3 nicety) so they are not lost. The run
+		// that made them rides along (SPEC-020 FR-2.12).
+		payload := map[string]any{"comments": a.Comments}
+		if a.DispatchID != nil {
+			payload["dispatch_id"] = a.DispatchID.String()
+		}
+		if err := store.Audit(ctx, tx, a.Actor, "task.review_comments", "task", &a.TaskID, payload); err != nil {
+			return err
+		}
+		// A submitted claim is sent back to its executor, and no implementer
+		// is dispatched: it resumes by claiming the task again (FR-2.6, SD-6).
+		claim, err := store.LockCurrentClaimFor(ctx, tx, "task", a.TaskID)
+		if err == nil && claim.State == lifecycle.ClaimSubmitted {
+			return store.TransitionClaim(ctx, tx, claim, lifecycle.ClaimEventSendBack, a.Actor, "sent_back",
+				map[string]any{"comments": len(a.Comments)})
+		}
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 		return s.enqueueImplementTx(ctx, tx, cfg, a.TaskID)

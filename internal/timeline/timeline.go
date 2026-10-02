@@ -147,6 +147,10 @@ type Rule struct {
 	// actor ran no run on this feature: a bug an agent filed while working
 	// on another (SPEC-019 FR-5.3).
 	Agentive func(Event) bool
+	// By, if set, says who caused the moment from the event itself: a claim
+	// names its holder in the payload's kind (SPEC-020 FR-1.7). It returns
+	// ByChat or ByPerson; the actor names a person.
+	By func(Event) string
 }
 
 func reportedByAgent(e Event) bool {
@@ -285,6 +289,28 @@ var Rules = []Rule{
 			return fmt.Sprintf("Code review sent back %s (round %d)", quoted(e.Label), c.Round(e.RefID)), "abandoned", "request-changes"
 		}},
 
+	// A claim (SPEC-020 FR-1.7): the chat agent or a person doing a task
+	// themselves. The other claim kinds (renewed, resumed, sent back, ended)
+	// are no moment; a send-back is the code review's moment above.
+	{Kind: "claim.claimed", Fold: "Claimed", By: claimHolder,
+		Make: func(e Event, _ *Context) (string, string, string) {
+			return "Claimed by " + claimWho(e) + ": " + taskTitle(e.Label), "active", claimIcon(e)
+		}},
+	{Kind: "claim.submitted", Fold: "Submitted", By: claimHolder,
+		Make: func(e Event, _ *Context) (string, string, string) {
+			return "Submitted by " + claimWho(e) + ": " + taskTitle(e.Label), "review", "diff"
+		}},
+	// Only a person releases a claim (SPEC-020 SD-7), so the releaser is a
+	// person even when the claim they released was the chat agent's.
+	{Kind: "claim.released", Fold: "Released", By: func(Event) string { return ByPerson },
+		Make: func(e Event, _ *Context) (string, string, string) {
+			who := e.Actor
+			if who == "" {
+				who = "a person"
+			}
+			return "Released by " + who + ": " + taskTitle(e.Label), "idea", "close"
+		}},
+
 	{Kind: "checkpoint.created", Fold: "Waiting for a person", CausedBy: []string{"*"},
 		Make: func(e Event, _ *Context) (string, string, string) {
 			return "Waiting for a person: " + checkpointAbout(e.Str("kind")), "review", "question"
@@ -293,6 +319,40 @@ var Rules = []Rule{
 		Make: func(e Event, _ *Context) (string, string, string) {
 			return "A person decided: " + answerWords(e.Payload["response"]), "done", "check"
 		}},
+}
+
+// claimHolder is who a claim's event is about: the payload's kind, chat or
+// person.
+func claimHolder(e Event) string {
+	if e.Str("kind") == "chat" {
+		return ByChat
+	}
+	return ByPerson
+}
+
+// claimWho names the claim's holder the way a sentence does.
+func claimWho(e Event) string {
+	if claimHolder(e) == ByChat {
+		return "the chat agent"
+	}
+	if e.Actor == "" {
+		return "a person"
+	}
+	return e.Actor
+}
+
+func claimIcon(e Event) string {
+	if claimHolder(e) == ByChat {
+		return "chat"
+	}
+	return "owner"
+}
+
+func taskTitle(label string) string {
+	if label == "" {
+		return "a task"
+	}
+	return label
 }
 
 func plural(n int, one, many string) string {
@@ -336,6 +396,12 @@ func checkpointAbout(kind string) string {
 		return "a rule blocked progress"
 	case "worktree-failure":
 		return "the working copy could not be made"
+	case "claim-stale":
+		return "is someone still working on a task"
+	case "claim-deadline":
+		return "a task's time box has run out"
+	case "unclaimed-commit":
+		return "commits nobody claimed"
 	case "":
 		return "a question"
 	default:
@@ -436,6 +502,10 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 			m.Fold = label
 		}
 		switch {
+		case rule.By != nil:
+			if m.By = rule.By(e); m.By == ByPerson {
+				m.Actor = e.Actor
+			}
 		case rule.Agentive != nil && rule.Agentive(e):
 			m.By = ByAgent
 		case e.Actor == "orchestrator" || roles[e.Actor]:

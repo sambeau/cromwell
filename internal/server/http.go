@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -474,6 +476,14 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostCommit(w http.ResponseWriter, r *http.Request) {
+	// A commit in a feature's working copy fires this hook too (linked
+	// worktrees share the repository's hooks), so the branch watch sees it at
+	// once. It never holds the response up (SPEC-020 FR-5.6).
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		s.BranchWatchSweep(ctx)
+	}()
 	if err := s.OnPostCommit(r.Context()); err != nil {
 		writeErr(w, 500, err)
 		return

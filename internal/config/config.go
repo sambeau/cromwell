@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -75,6 +76,66 @@ type Config struct {
 	// Surfacing bounds what each dispatch is told of the project's decisions
 	// and conventions (SPEC-018 FR-6.5). Optional.
 	Surfacing SurfacingConfig `yaml:"surfacing"`
+
+	// Claims is how long a claim may sit idle, and who reviews the chat
+	// agent's work (SPEC-020 FR-5.5, FR-8.1). Optional.
+	Claims ClaimsConfig `yaml:"claims"`
+}
+
+// ClaimsConfig is the project's settings for work a person or the chat agent
+// claims instead of an agent (SPEC-020). Both are pointers because absent
+// means a default, not zero or empty.
+type ClaimsConfig struct {
+	// ExpiryHours is how long a claim may have no activity before a person
+	// is asked whether anyone is still working on it. Absent means 24.
+	ExpiryHours *int `yaml:"expiry_hours"`
+	// ChatReviewModel is the model reviewing the chat agent's work: a model
+	// name, or "same" for each reviewer's usual model. Absent means the most
+	// expensive model.
+	ChatReviewModel *string `yaml:"chat_review_model"`
+}
+
+// DefaultClaimExpiryHours is the expiry when claims.expiry_hours is absent
+// (SPEC-020 FR-5.5).
+const DefaultClaimExpiryHours = 24
+
+// ChatReviewSame is the chat_review_model value that keeps each reviewer's
+// usual model (SPEC-020 SD-14).
+const ChatReviewSame = "same"
+
+// ClaimExpiry is how long a claim may have no activity before it is asked
+// about (SPEC-020 FR-5.5).
+func (c *Config) ClaimExpiry() time.Duration {
+	h := DefaultClaimExpiryHours
+	if c.Claims.ExpiryHours != nil {
+		h = *c.Claims.ExpiryHours
+	}
+	return time.Duration(h) * time.Hour
+}
+
+// ChatReviewModel is the model for a review of the chat agent's work, given
+// the model the reviewer would usually use (SPEC-020 FR-8.1, FR-8.2): absent,
+// the model with the highest output price, ties broken by name; "same", the
+// usual model; otherwise the name given. With no models to choose from,
+// the usual model.
+func (c *Config) ChatReviewModel(usual string) string {
+	if m := c.Claims.ChatReviewModel; m != nil {
+		if *m == ChatReviewSame {
+			return usual
+		}
+		return *m
+	}
+	best, found := "", false
+	for name, m := range c.Models {
+		if !found || m.PricePerMTok.Output > c.Models[best].PricePerMTok.Output ||
+			(m.PricePerMTok.Output == c.Models[best].PricePerMTok.Output && name < best) {
+			best, found = name, true
+		}
+	}
+	if !found {
+		return usual
+	}
+	return best
 }
 
 // SurfacingConfig is the per-dispatch cap on the surfaced block, in
@@ -281,6 +342,14 @@ func (c *Config) validate() error {
 	}
 	if c.Surfacing.MaxDecisions < 0 {
 		add("surfacing.max_decisions", "can't be negative; leave it out for the default of %d", DefaultSurfacingMaxDecisions)
+	}
+	if h := c.Claims.ExpiryHours; h != nil && *h < 1 {
+		add("claims.expiry_hours", "%d is too short; use at least 1, or leave it out for the default of %d", *h, DefaultClaimExpiryHours)
+	}
+	if m := c.Claims.ChatReviewModel; m != nil && *m != ChatReviewSame {
+		if _, ok := c.Models[*m]; !ok {
+			add("claims.chat_review_model", "unknown model %q: name one of the models, or say %q to use each reviewer's usual model", *m, ChatReviewSame)
+		}
 	}
 	if c.Server.MCPActor == "" {
 		c.Server.MCPActor = "chat-agent"

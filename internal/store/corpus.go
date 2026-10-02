@@ -23,8 +23,23 @@ const tokenSum = `COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(ca
 
 // ActualTokens sums the tokens an entity's completed dispatches consumed. A
 // feature includes its tasks' dispatches; an initiative includes its whole
-// subtree (FR-3.1). Only succeeded dispatches carry usage.
-func ActualTokens(ctx context.Context, q Querier, refType string, refID uuid.UUID) (int64, error) {
+// subtree (FR-3.1). Only succeeded dispatches carry usage. It also says
+// whether the entity is unmeasured (SPEC-020 FR-7.2): then the tokens are only
+// the measured part, "at least" what the work took.
+func ActualTokens(ctx context.Context, q Querier, refType string, refID uuid.UUID) (int64, bool, error) {
+	total, err := dispatchTokens(ctx, q, refType, refID)
+	if err != nil {
+		return 0, false, err
+	}
+	un, err := Unmeasured(ctx, q, refType, refID)
+	if err != nil {
+		return 0, false, err
+	}
+	return total, un, nil
+}
+
+// dispatchTokens is the measured part: tokens summed from the dispatch ledger.
+func dispatchTokens(ctx context.Context, q Querier, refType string, refID uuid.UUID) (int64, error) {
 	var total int64
 	var err error
 	switch refType {
@@ -75,6 +90,8 @@ type CorpusRow struct {
 // Only done entities that carry an estimate qualify — a reference point needs
 // both an estimate and an actual to anchor anything. Actuals are summed per
 // row (the neighbour set is small, so a per-row sum is fine and exact).
+// Unmeasured entities are left out in SQL, before the limit, so the corpus
+// still returns its full count of neighbours (SPEC-020 FR-7.2).
 func RetrieveCorpus(ctx context.Context, q Querier, description string, limit int) ([]CorpusRow, error) {
 	if limit <= 0 {
 		limit = 5
@@ -95,6 +112,7 @@ func RetrieveCorpus(ctx context.Context, q Querier, description string, limit in
 			WHERE f.state='done' AND f.description <> ''
 			  AND to_tsvector('english', f.description) @@ qq.query
 			  AND EXISTS (SELECT 1 FROM estimates e WHERE e.ref_type='feature' AND e.ref_id=f.id)
+			  AND NOT `+unmeasuredFeatureSQL("f.id", "f.kind")+`
 			UNION ALL
 			SELECT 'task' AS ref_type, t.id AS ref_id, t.title AS name, t.description,
 			       ts_rank(to_tsvector('english', t.description), qq.query) AS rank
@@ -102,6 +120,7 @@ func RetrieveCorpus(ctx context.Context, q Querier, description string, limit in
 			WHERE t.state='done' AND t.description <> ''
 			  AND to_tsvector('english', t.description) @@ qq.query
 			  AND EXISTS (SELECT 1 FROM estimates e WHERE e.ref_type='task' AND e.ref_id=t.id)
+			  AND NOT `+unmeasuredTaskSQL("t.id")+`
 		) c
 		ORDER BY rank DESC, ref_id DESC
 		LIMIT $2`, description, limit)
@@ -130,7 +149,7 @@ func RetrieveCorpus(ctx context.Context, q Querier, description string, limit in
 			out[i].EstimateTokens = est.Tokens
 			out[i].EstimateTier = est.Tier
 		}
-		actual, err := ActualTokens(ctx, q, out[i].RefType, out[i].RefID)
+		actual, err := dispatchTokens(ctx, q, out[i].RefType, out[i].RefID)
 		if err != nil {
 			return nil, err
 		}

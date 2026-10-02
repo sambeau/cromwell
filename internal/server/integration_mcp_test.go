@@ -69,9 +69,11 @@ func (h *harness) callTool(name string, args map[string]any) (map[string]any, bo
 // TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet is the DEC-004 line, made
 // testable (SPEC-008 FR-4.1, DoD 3). The facet must advertise exactly the
 // authoring writes and authoring reads — and no tool that starts a feature into
-// development, transitions development lifecycle, overrides a gate, or spawns an
-// agent. The enforcement is the absence of those tools, so this test IS the
-// enforcement's regression guard.
+// development, overrides a gate, or spawns an agent. The only development-side
+// moves are claiming a task and submitting it, which DEC-007 decision 3 allows
+// (SPEC-020 FR-6.1); no tool judges: none reviews, approves or verifies. The
+// enforcement is the absence of those tools, so this test IS the enforcement's
+// regression guard.
 func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 	h := newHarness(t)
 
@@ -170,6 +172,12 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// the relay DESIGN-010 §17a item 6 allowed (SD-11). The chat agent
 		// has no triage decision of its own.
 		"relay_triage",
+		// SPEC-020 FR-6.1: claiming a task and submitting it are doing, not
+		// judging. DEC-007 decision 3 and DESIGN-010 §5c ("It may claim and
+		// submit work") allow exactly these two; the work is still reviewed
+		// and verified by others, and a claim is released only by a person.
+		"claim_task",
+		"submit_task",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -196,6 +204,14 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-019 FR-6.4: triage is a person's decision, carried only with
 		// their words, and a bug is sent only from the web UI.
 		"accept_bug", "reject_bug", "triage_bug", "send_bug",
+		// SPEC-020 FR-6.2: a claim is released only by a person, in the web
+		// UI (SD-5); the chat agent holds no verdict on a task, a review or
+		// a verification; the only claimable is a task (SD-12); and
+		// submit_implementation is the dispatched implementer's outcome tool,
+		// never offered to chat.
+		"release_task", "approve_task", "review_task", "review_code",
+		"verify_feature", "submit_verification", "submit_implementation",
+		"claim_verification", "claim_review", "claim_estimate", "claim_feature",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

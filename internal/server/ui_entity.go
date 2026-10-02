@@ -119,6 +119,9 @@ type entityPage struct {
 	State string        // feature lifecycle state; empty otherwise
 	Size  sizing.Rollup // the token roll-up (FR-2.1), tier and the ? for unestimated work
 	Done  int64         // tokens actually spent on this entity so far (the rail's DONE)
+	// DoneUnmeasured is true when the entity includes work done in chat or by
+	// a person, so Done is "at least" (SPEC-020 FR-7.3).
+	DoneUnmeasured bool
 
 	// Feature actions and their plain-words gate reasons (FR-2.2, FR-5.1).
 	CanStart    bool
@@ -147,6 +150,10 @@ type entityPage struct {
 	// Timeline is a feature's journey (SPEC-012 FR-6). On a feature page it
 	// replaces Activity, whose events it carries as its detail level (SD-7).
 	Timeline *timelineView
+	// Tasks are a feature's tasks with who executes each, and ClaimWaiting
+	// says when a claim holds its working copy (SPEC-020 FR-1.6, FR-4.4).
+	Tasks        []taskRow
+	ClaimWaiting string
 
 	// Bugs (SPEC-019 FR-2.5, FR-5.1, FR-5.2): the triage card on a bug's
 	// page, the open bugs hanging off this initiative or feature, and
@@ -517,7 +524,7 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 	if page.Size, err = s.initiativeRollup(ctx, in.ID); err != nil {
 		return nil, err
 	}
-	page.Done, _ = store.ActualTokens(ctx, s.Store.Pool, "initiative", in.ID)
+	page.Done, page.DoneUnmeasured, _ = store.ActualTokens(ctx, s.Store.Pool, "initiative", in.ID)
 
 	// Children: sub-initiatives, then features.
 	children, err := store.ChildInitiatives(ctx, s.Store.Pool, in.ID)
@@ -621,7 +628,7 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 	if page.Size, err = s.featureRollup(ctx, f.ID); err != nil {
 		return nil, err
 	}
-	page.Done, _ = store.ActualTokens(ctx, s.Store.Pool, "feature", f.ID)
+	page.Done, page.DoneUnmeasured, _ = store.ActualTokens(ctx, s.Store.Pool, "feature", f.ID)
 
 	docs, err := store.DocumentsForOwner(ctx, s.Store.Pool, "feature", &f.ID)
 	if err != nil {
@@ -635,6 +642,9 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 		return nil, err
 	}
 	if page.Timeline, err = s.featureTimeline(ctx, f.ID); err != nil {
+		return nil, err
+	}
+	if page.Tasks, page.ClaimWaiting, err = s.featureTaskRows(ctx, f.ID); err != nil {
 		return nil, err
 	}
 	if err := s.bugPageParts(ctx, page); err != nil {

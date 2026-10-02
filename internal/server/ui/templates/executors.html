@@ -1,0 +1,190 @@
+{{/* Who executes a task, and claiming one (SPEC-020 FR-1.5, FR-1.6, FR-4).
+
+     Three includes live here so entity.html gains only a line for each
+     (NFR-3): the executor line under the task page's heading, the claim panel
+     below its description, and the feature page's task list. Every form posts
+     the task's public ID, as the other entity forms post their ids. All copy
+     is whole sentences. */}}
+
+{{/* ---------- The executor line (FR-1.5) ---------- */}}
+
+{{define "task-executor"}}
+<div class="page-head-meta task-executor" id="task-executor">
+  <span class="t-meta">
+    {{if .Line.Kind}}<svg class="icon icon-xs" aria-hidden="true"><use href="#i-{{executorIconName .Line.Kind}}"/></svg>{{end}}
+    <span>{{.Line.Sentence}}{{if .RunURL}} <a href="{{.RunURL}}">What the agent did</a>{{end}}</span>
+  </span>
+  {{if .Unmeasured}}
+  <span class="t-meta">This work was done in chat or by a person, so its tokens aren&#39;t measured.</span>
+  {{end}}
+  {{with .ReviewedWith}}
+  <span class="t-meta">Reviewed with <code>{{.}}</code>, the project&#39;s reviewer for the chat agent&#39;s work.</span>
+  {{end}}
+</div>
+{{end}}
+
+{{/* ---------- The claim panel (FR-4.1) ----------
+     Six states: claimable, refused, a person's open claim, a returned claim,
+     the chat agent's claim, and a claim in code review. */}}
+
+{{define "task-claim"}}
+{{if .State}}
+<section class="panel u-mt-4" id="claim">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-{{if eq .State "chat"}}chat{{else}}owner{{end}}"/></svg> Claiming this task</h2>
+  </div>
+  <div class="panel-body">
+
+  {{if eq .State "claimable"}}
+    <p class="t-meta u-mb-4">You can implement this task yourself instead of an agent. Claiming it pauses this feature&#39;s agents until you submit it.</p>
+    <form method="post" action="/ui/task/claim">
+      <input type="hidden" name="task" value="{{.TaskID}}">
+      <button class="btn btn--primary btn--sm" type="submit">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Claim this task</button>
+    </form>
+
+  {{else if eq .State "refused"}}
+    <p class="t-meta">{{.Refusal}}</p>
+
+  {{else if eq .State "submitted"}}
+    <p>Submitted by {{.Holder}}. A code reviewer is reviewing it.</p>
+
+  {{else}}
+    {{template "claim-facts" .}}
+
+    {{if eq .State "chat"}}
+    {{if eq .Claim.State "returned"}}
+    {{template "claim-comments" .Comments}}
+    <p class="u-mt-4 t-meta">The code reviewer sent this back to the chat agent, which can resume it by claiming the task again.</p>
+    {{end}}
+    <p class="u-mt-4">The chat agent is working on this. Releasing it gives the task to an agent, and keeps what is in the working copy.</p>
+    <form class="u-mt-4" method="post" action="/ui/task/release">
+      <input type="hidden" name="task" value="{{.TaskID}}">
+      <button class="btn btn--sm" type="submit">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Release</button>
+    </form>
+
+    {{else if eq .State "returned"}}
+    {{template "claim-comments" .Comments}}
+    <p class="u-mt-4 t-meta">The code reviewer sent this back. {{if .Own}}Resume it to carry on in the working copy, or release it to give the task to an agent.{{else}}{{.Holder}} can resume it, or you can release it to give the task to an agent.{{end}}</p>
+    <div class="action-row u-mt-4">
+      {{if .Own}}
+      <form method="post" action="/ui/task/claim">
+        <input type="hidden" name="task" value="{{.TaskID}}">
+        <button class="btn btn--primary btn--sm" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-start"/></svg>Resume</button>
+      </form>
+      {{end}}
+      <form method="post" action="/ui/task/release">
+        <input type="hidden" name="task" value="{{.TaskID}}">
+        <button class="btn btn--sm" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Release</button>
+      </form>
+    </div>
+
+    {{else}}
+    {{template "claim-comments" .Comments}}
+    <form class="form u-mt-4" method="post" action="/ui/task/submit">
+      <input type="hidden" name="task" value="{{.TaskID}}">
+      <div class="field">
+        <label class="field-label" for="claim-summary">What you did</label>
+        <textarea class="textarea" id="claim-summary" name="summary" rows="3" required></textarea>
+        <p class="field-hint">A sentence or two, so the code reviewer knows what to look for.</p>
+      </div>
+      <div class="action-row u-mt-4">
+        <button class="btn btn--primary btn--sm" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>Submit for code review</button>
+      </div>
+    </form>
+    <div class="action-row u-mt-4">
+      {{if .Own}}
+      <form method="post" action="/ui/task/claim">
+        <input type="hidden" name="task" value="{{.TaskID}}">
+        <button class="btn btn--sm" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"/></svg>I&#39;m still working on this</button>
+      </form>
+      {{end}}
+      <form method="post" action="/ui/task/release">
+        <input type="hidden" name="task" value="{{.TaskID}}">
+        <button class="btn btn--sm" type="submit">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Release</button>
+      </form>
+    </div>
+    {{end}}
+  {{end}}
+
+  </div>
+</section>
+{{end}}
+{{end}}
+
+{{/* A time as "3 hours ago", with the date in its title. */}}
+{{define "time-tag"}}<time datetime="{{.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.Format "2 Jan 2006, 15:04:05"}}">{{agoWords .}}</time>{{end}}
+
+{{/* Who holds the claim and where the work is. */}}
+{{define "claim-facts"}}
+<ul class="claim-facts">
+  <li>Claimed by {{.Holder}} {{template "time-tag" .Claim.ClaimedAt}}.</li>
+  <li>Last activity: {{.Activity}}, {{template "time-tag" .Claim.LastActivityAt}}.</li>
+  {{if .Path}}<li>The working copy is <code>{{.Path}}</code>{{if .Branch}}, on the branch <code>{{.Branch}}</code>{{end}}.</li>{{end}}
+  {{if or .SpecURL .PlanURL}}
+  <li>Read {{if .SpecURL}}<a href="{{.SpecURL}}">the spec</a>{{end}}{{if and .SpecURL .PlanURL}}, {{end}}{{if .PlanURL}}<a href="{{.PlanURL}}">the plan</a>{{end}} and this task above.</li>
+  {{end}}
+</ul>
+{{end}}
+
+{{/* The latest code review's comments, in a round after the first. */}}
+{{define "claim-comments"}}
+{{with .}}{{if .Comments}}
+<div class="u-mt-4">
+  <p><b>What the code reviewer asked for</b></p>
+  <ul class="claim-comments">
+    {{range .Comments}}
+    <li><span class="t-meta">{{.Severity}}</span> {{if .File}}<code>{{.File}}{{if .Line}}:{{.Line}}{{end}}</code>: {{end}}{{.Text}}</li>
+    {{end}}
+  </ul>
+</div>
+{{end}}{{end}}
+{{end}}
+
+{{/* ---------- The feature page's tasks (FR-1.6, FR-4.4) ----------
+     Each task shows an executor icon, with the executor line as its name and
+     title, and a short label for a claim that hasn't ended. Under the
+     timeline, an open claim says the feature's agents are waiting. */}}
+
+{{define "feature-tasks"}}
+{{if eq .Kind "feature"}}
+{{with .ClaimWaiting}}<p class="t-meta u-mt-2" id="claim-waiting">{{.}}</p>{{end}}
+{{if .Tasks}}
+<details class="section u-mt-4" id="tasks" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-task"/></svg>
+    <span class="section-title">Tasks in this feature</span>
+    <span class="section-summary"><span class="count-pill">{{len .Tasks}}</span></span>
+  </summary>
+  <div class="section-body section-body--flush">
+    <div class="rows">
+      {{range .Tasks}}
+      <a class="row row--edge" data-state="{{.State}}" href="{{.URL}}">
+        <svg class="icon icon-sm icon-entity" data-entity="task" aria-hidden="true"><use href="#i-task"/></svg>
+        <span class="row-main">
+          <span class="row-title">{{template "ident" .PublicID}}{{.Title}}</span>
+        </span>
+        <span class="row-end">
+          {{if .Icon}}
+          <span class="u-row task-executor-mark" title="{{.Line}}">
+            <svg class="icon icon-sm" role="img" aria-label="{{.Line}}"><use href="#i-{{.Icon}}"/></svg>
+            {{with .ClaimLabel}}<span class="t-meta">{{.}}</span>{{end}}
+          </span>
+          {{else}}{{with .ClaimLabel}}<span class="t-meta">{{.}}</span>{{end}}{{end}}
+          {{template "state-badge" .State}}
+        </span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</details>
+{{end}}
+{{end}}
+{{end}}

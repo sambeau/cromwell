@@ -255,6 +255,17 @@ func (s *Server) planImplement(ctx context.Context, d *store.Dispatch) (*dispatc
 	b.WriteString("You are working in an isolated git worktree. Use read_file (with hash_tag for editing), edit_file, write_file, list_files, and run_command (only the project's allowed commands). Implement exactly the task below — not the whole feature. When the code is complete and builds, call submit_implementation.\n")
 	b.WriteString("\n# Task to implement\n\n")
 	fmt.Fprintf(&b, "%s: %s\n\n%s\n", task.LocalID, task.Title, task.Description)
+	// In a round after the first, what the code reviewer asked for, whoever
+	// implemented the round it was asked of (SPEC-020 FR-2.12, SD-17).
+	rc, err := s.reviewComments(ctx, s.Store.Pool, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	if rc != nil {
+		b.WriteString("\n# What the code reviewer asked for\n\n")
+		b.WriteString("The code reviewer sent this task back. Deal with each finding below; the diff already in the worktree is the earlier work, so amend it rather than starting again.\n\n")
+		b.WriteString(reviewCommentsText(rc))
+	}
 
 	turnCap := cfg.Dispatch.TurnCap
 	if role.Limits != nil && role.Limits.TurnCap > 0 {
@@ -475,6 +486,28 @@ func gitIn(dir string, args ...string) (string, error) {
 		return string(out), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return string(out), nil
+}
+
+// headOf is the commit the working copy at path is on, trimmed, or "" when git
+// can't say (no repository, no commits). It is the one way the server reads a
+// head; worktreeFingerprint reads it again with --no-optional-locks because it
+// runs while a claimant works and must never take git's index lock.
+func headOf(path string) string {
+	out, err := gitIn(path, "rev-parse", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// featureHead is the head of the feature's live worktree, or "" when it has
+// none or git can't say.
+func (s *Server) featureHead(ctx context.Context, featureID uuid.UUID) string {
+	wt, err := store.LiveWorktreeForFeature(ctx, s.Store.Pool, featureID)
+	if err != nil {
+		return ""
+	}
+	return headOf(s.worktreeAbs(wt.Path))
 }
 
 // planAuthor builds a write-spec or write-dev-plan plan (SPEC-009 FR-5.3,

@@ -57,11 +57,13 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 	branch := "subutai/" + path
 	relPath := filepath.Join(filepath.Base(s.CompartmentRoot), "worktrees", store.ShortID("feat", f.ID))
 
+	var wt *store.Worktree
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.TransitionFeature(ctx, tx, f, lifecycle.FeatStart, actor, nil); err != nil {
 			return err
 		}
-		if _, err := store.CreateWorktreeRow(ctx, tx, f.ID, relPath, branch, actor); err != nil {
+		var err error
+		if wt, err = store.CreateWorktreeRow(ctx, tx, f.ID, relPath, branch, actor); err != nil {
 			return err
 		}
 		return store.SetFeatureBranch(ctx, tx, f.ID, branch)
@@ -86,6 +88,8 @@ func (s *Server) StartFeature(ctx context.Context, path, actor string) (*store.F
 		return f, nil
 	}
 
+	// The branch watch starts at the branch head (SPEC-020 FR-5.9).
+	s.startWatching(ctx, wt)
 	s.publishFeatureStarted(f.ID)
 	return f, nil
 }
@@ -194,6 +198,11 @@ func (s *Server) ReconcileWorktrees(ctx context.Context) error {
 		if gerr := s.addWorktree(wt.Path, wt.Branch); gerr != nil {
 			s.Log.Error("worktree reconcile", "feature", wt.FeatureID, "err", gerr)
 		} else {
+			// A branch that already has a watched head keeps it, so commits made
+			// elsewhere while the directory was gone are still judged.
+			if wt.WatchedHead == "" {
+				s.startWatching(ctx, &wt) // SPEC-020 FR-5.9
+			}
 			s.Log.Info("worktree re-created on boot", "feature", wt.FeatureID, "branch", wt.Branch)
 		}
 	}

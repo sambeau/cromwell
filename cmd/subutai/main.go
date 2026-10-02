@@ -559,11 +559,15 @@ func costCmd(c *client.Client, args []string) error {
 			Ref     string  `json:"ref"`
 			Kind    string  `json:"kind"`
 			CostUSD float64 `json:"cost_usd"`
+			Note    string  `json:"note"`
 		}
 		if err := c.Call("GET", "/api/cost/rollup?ref="+url.QueryEscape(*ref), nil, &out); err != nil {
 			return err
 		}
 		fmt.Printf("%-10s %s  $%.4f\n", out.Kind, out.Ref, out.CostUSD)
+		if out.Note != "" {
+			fmt.Println(out.Note)
+		}
 		return nil
 	}
 	var out struct {
@@ -615,8 +619,10 @@ type estimateView struct {
 	Estimated    bool   `json:"estimated"`
 	Decomposed   bool   `json:"decomposed"`
 	Complete     bool   `json:"complete"`
-	ActualTokens int64  `json:"actual_tokens"`
-	Delta        int64  `json:"delta"`
+	ActualTokens *int64 `json:"actual_tokens"`
+	Delta        *int64 `json:"delta"`
+	Unmeasured   bool   `json:"unmeasured"`
+	MeasuredPart int64  `json:"measured_part"`
 	Unestimated  []struct {
 		Type string `json:"type"`
 		Name string `json:"name"`
@@ -642,8 +648,12 @@ func printEstimate(ref string, e estimateView) {
 			how += ", decomposed"
 		}
 		fmt.Printf("%s (%s): %s tokens [%s]\n", ref, e.RefType, tokens, how)
-		if e.ActualTokens > 0 {
-			fmt.Printf("  actual: %d tokens (delta %+d)\n", e.ActualTokens, e.Delta)
+		// An unmeasured entity has no actual to compare (SPEC-020 FR-7.2).
+		switch {
+		case e.Unmeasured:
+			fmt.Printf("  actual: unmeasured (at least %d tokens)\n", e.MeasuredPart)
+		case e.ActualTokens != nil && *e.ActualTokens > 0 && e.Delta != nil:
+			fmt.Printf("  actual: %d tokens (delta %+d)\n", *e.ActualTokens, *e.Delta)
 		}
 	}
 	if len(e.Unestimated) > 0 {

@@ -820,6 +820,12 @@ func decideCheckpointResponded(e bus.CheckpointResponded, snap Snapshot) []Actio
 		return []Action{CancelDispatch{DispatchID: dispatchID, Actor: e.RespondedBy}}
 	case "budget":
 		return []Action{KickQueue{}}
+	case "claim-stale", "claim-deadline":
+		// Keep the claim, or release it to an agent (SPEC-020 FR-5.3).
+		return decideClaimAnswered(e)
+	case "unclaimed-commit":
+		// One answer, "I've seen this", and nothing follows (SD-11).
+		return nil
 	}
 	return nil
 }

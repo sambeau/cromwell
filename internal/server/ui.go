@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -46,10 +47,12 @@ type uiTemplates struct {
 var uiFuncs = template.FuncMap{
 	// idFor is the ID label for a name, or "" when the name already starts
 	// with it, as a decision's heading does ("DEC-005: …", SPEC-015 SD-17).
-	"idFor":   idFor,
-	"tokens":  humanTokens,
-	"shortID": func(id uuid.UUID) string { return id.String()[:8] },
-	"ago":     ago,
+	"idFor":       idFor,
+	"tokens":      humanTokens,
+	"tokensExact": groupThousands, // SPEC-020 FR-7.3 quotes the exact figure
+	"shortID":     func(id uuid.UUID) string { return id.String()[:8] },
+	"ago":         ago,
+	"agoWords":    func(t time.Time) string { return agoWords(t, time.Now()) },
 	"signed": func(v int64) string {
 		if v >= 0 {
 			return fmt.Sprintf("+%d", v)
@@ -85,7 +88,8 @@ var uiFuncs = template.FuncMap{
 	"tierTitle":    tierTitle,
 	"docIcon":      docIcon,
 	// Audit kinds are machine identifiers; an activity feed is for people.
-	"eventLabel": eventLabel,
+	"eventLabel":       eventLabel,
+	"executorIconName": executorIcon,
 	// The inbox spells out what each answer will do, because these decisions are
 	// expensive to reverse and a sentence of prose is cheap.
 	"verbLabel":       verbLabel,
@@ -438,6 +442,12 @@ func verbLabel(v any) string {
 		return "Carry on"
 	case "pause":
 		return "Pause"
+	case "keep":
+		return "Keep the claim"
+	case "release":
+		return "Release it to an agent"
+	case "seen":
+		return "I've seen this"
 	default:
 		return stateLabel(v)
 	}
@@ -457,6 +467,8 @@ func verbIcon(v any) string {
 		return "refresh"
 	case "pause":
 		return "clock"
+	case "seen":
+		return "check"
 	default:
 		return "arrow-right"
 	}
@@ -482,6 +494,12 @@ func verbConsequence(v any) string {
 		return "The run picks up where it left off."
 	case "pause":
 		return "The work is held where it is until you come back to it."
+	case "keep":
+		return "The claim stays with whoever holds it, and the clock starts again."
+	case "release":
+		return "The claim ends, the work in the working copy is kept, and an agent takes the task."
+	case "seen":
+		return "Nothing changes: the commits stay on the branch and the merge isn't held."
 	default:
 		return "The agent resumes with your answer."
 	}
@@ -693,6 +711,10 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/document/request-review", s.handleDocRequestReview)
 	mux.HandleFunc("POST /ui/document/release", s.handleDocRelease)
 	mux.HandleFunc("POST /ui/feature/abandon", s.handleEntityFeatureAbandon)
+	// A person claims a task, submits it and releases a claim (SPEC-020 FR-4.2).
+	mux.HandleFunc("POST /ui/task/claim", s.handleUITaskClaim)
+	mux.HandleFunc("POST /ui/task/submit", s.handleUITaskSubmit)
+	mux.HandleFunc("POST /ui/task/release", s.handleUITaskRelease)
 	// Bugs (SPEC-019): report one from an initiative's or feature's page, and
 	// triage it from the queue or its own page.
 	mux.HandleFunc("POST /ui/bugs", s.handleUIReportBug)
@@ -797,6 +819,21 @@ type inboxItem struct {
 	// FR-9.2a): the affected specs, each answered keep-or-invalidate on its
 	// own line. Every other kind answers with one verb from Options.
 	RevisionSpecs []revisionSpecView
+	// LastActivity says what a claim's last activity was and when, for the
+	// claim questions, so a person can see if the claimant came back
+	// (SPEC-020 FR-5.3).
+	LastActivity string
+}
+
+// ContextLabel names the disclosure that holds the checkpoint's context. The
+// claim questions and the unclaimed-commit notice come from no agent run, so
+// "what the agent was doing" would mislead (SPEC-020).
+func (i inboxItem) ContextLabel() string {
+	switch i.Kind {
+	case "claim-stale", "claim-deadline", "unclaimed-commit":
+		return "Details"
+	}
+	return "What the agent was doing"
 }
 
 // revisionSpecView is one line of the design-revision form.
@@ -814,6 +851,9 @@ func (s *Server) inboxItems(r *http.Request) ([]inboxItem, error) {
 	items := make([]inboxItem, 0, len(pending))
 	for _, cp := range pending {
 		item := inboxItem{Checkpoint: cp, Options: answerOptions(cp.Kind)}
+		if isClaimQuestion(cp.Kind) {
+			item.LastActivity = claimLastActivity(cp.Context)
+		}
 		if cp.Kind == "design-revision" {
 			var cctx struct {
 				Affected []revisionSpecView `json:"affected"`
@@ -825,6 +865,24 @@ func (s *Server) inboxItems(r *http.Request) ([]inboxItem, error) {
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+// claimLastActivity says what the claim's last activity was, from the
+// question's context: "Last activity: a change in the working copy, 26 hours
+// ago."
+func claimLastActivity(raw json.RawMessage) string {
+	var c struct {
+		LastActivity   string `json:"last_activity"`
+		LastActivityAt string `json:"last_activity_at"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil || c.LastActivity == "" {
+		return ""
+	}
+	what := claimActivityWords(c.LastActivity)
+	if at, err := time.Parse(time.RFC3339, c.LastActivityAt); err == nil {
+		return "Last activity: " + what + ", " + agoWords(at, time.Now()) + "."
+	}
+	return "Last activity: " + what + "."
 }
 
 func (s *Server) handleUIInbox(w http.ResponseWriter, r *http.Request) {
@@ -860,6 +918,12 @@ func (s *Server) handleFragInboxBadge(w http.ResponseWriter, r *http.Request) {
 // configured operator (SD-4). On success it returns the refreshed inbox list so
 // the answered item clears without a reload.
 func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
+	// An answer approves, merges and spends, so it refuses a post from another
+	// site, as the claim routes and the editor do.
+	if !sameOrigin(r) {
+		http.Error(w, "Answers are only accepted from Subutai's own pages.", http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		s.uiError(w, err)
 		return
@@ -896,11 +960,24 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actor := s.uiActor()
+	// An answer to a claim question that was withdrawn, or already answered,
+	// is a no-op with a notice, not an error (SPEC-020 FR-5.4).
+	if cpBefore.State != "pending" && isClaimQuestion(cpBefore.Kind) {
+		s.renderInboxWithNotice(w, r, claimMovedOnNotice)
+		return
+	}
 	var cp *store.Checkpoint
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		cp, err = store.RespondCheckpoint(ctx, tx, id, response, actor)
 		return err
 	})
+	if err != nil && isClaimQuestion(cpBefore.Kind) {
+		// Withdrawn between the read and the answer.
+		if again, gerr := store.GetCheckpoint(ctx, s.Store.Pool, id); gerr == nil && again.State != "pending" {
+			s.renderInboxWithNotice(w, r, claimMovedOnNotice)
+			return
+		}
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -913,6 +990,22 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
+	s.render(w, "frag-inbox", items)
+}
+
+func isClaimQuestion(kind string) bool {
+	return kind == "claim-stale" || kind == "claim-deadline"
+}
+
+// renderInboxWithNotice renders the inbox list with a sentence above it, for
+// an answer that changed nothing.
+func (s *Server) renderInboxWithNotice(w http.ResponseWriter, r *http.Request, notice string) {
+	items, err := s.inboxItems(r)
+	if err != nil {
+		s.uiError(w, err)
+		return
+	}
+	fmt.Fprintf(w, `<div class="banner" role="status"><span>%s</span></div>`, html.EscapeString(notice))
 	s.render(w, "frag-inbox", items)
 }
 
@@ -1076,7 +1169,8 @@ func groupThousands(n int64) string {
 	return b.String()
 }
 
-// ago renders a compact relative age.
+// ago renders a compact relative age: "3h". Pages that follow it with " ago"
+// use it; agoWords is the full phrase for new text.
 func ago(t time.Time) string {
 	d := time.Since(t)
 	switch {
@@ -1089,4 +1183,26 @@ func ago(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// agoWords says how long ago a time was as a whole phrase: "3 hours ago", or
+// "just now" under a minute. It is the one formatter for claim text; ago is the
+// compact form older pages append " ago" to.
+func agoWords(t, now time.Time) string {
+	d := now.Sub(t)
+	plural := func(n int, unit string) string {
+		if n == 1 {
+			return fmt.Sprintf("1 %s ago", unit)
+		}
+		return fmt.Sprintf("%d %ss ago", n, unit)
+	}
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return plural(int(d.Minutes()), "minute")
+	case d < 24*time.Hour:
+		return plural(int(d.Hours()), "hour")
+	}
+	return plural(int(d.Hours()/24), "day")
 }
