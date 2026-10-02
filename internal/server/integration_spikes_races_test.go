@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,27 +57,51 @@ func (h *harness) endClaimDone(sp *store.Spike, who string) {
 // and waits for it.
 func (h *harness) holdEndLocks(sp *store.Spike, ending func() error) (release func()) {
 	h.t.Helper()
-	held, go_, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	held, proceed, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 	go func() {
 		done <- h.srv.withSpikeEndLocks(sp, func() error {
 			close(held)
-			<-go_
+			<-proceed
 			return ending()
 		})
 	}()
 	<-held
 	return func() {
 		h.t.Helper()
-		close(go_)
+		close(proceed)
 		if err := <-done; err != nil {
 			h.t.Fatalf("the ending: %v", err)
 		}
 	}
 }
 
-// S2B1: a claim that waits on an ending's lock finds the spike ended when it
-// gets the lock, and makes nothing: no worktree, and no question about code
-// kept outside a working copy that was discarded.
+// hookReached makes the server's test hook tell the returned channel, once,
+// when a claim or a submit reaches point.
+func (h *harness) hookReached(point string) <-chan struct{} {
+	h.t.Helper()
+	reached := make(chan struct{})
+	var once sync.Once
+	h.srv.spikeHook = func(p string) {
+		if p == point {
+			once.Do(func() { close(reached) })
+		}
+	}
+	return reached
+}
+
+// await waits for a hook's channel, failing the test if it takes too long.
+func (h *harness) await(reached <-chan struct{}, what string) {
+	h.t.Helper()
+	select {
+	case <-reached:
+	case <-time.After(30 * time.Second):
+		h.t.Fatalf("timed out waiting for %s", what)
+	}
+}
+
+// A claim that waits on an ending's lock finds the spike ended when it gets
+// the lock, and makes nothing: no worktree, and no question about code kept
+// outside a working copy that was discarded.
 func TestAClaimThatWaitedOnAnEndingMakesNothing(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -88,14 +113,15 @@ func TestAClaimThatWaitedOnAnEndingMakesNothing(t *testing.T) {
 	release := h.holdEndLocks(sp, func() error {
 		return h.srv.endSpikeLocked(ctx, sp.ID, store.SpikeTimeBox, "")
 	})
+	read := h.hookReached(spikeHookClaimRead)
 	claim := make(chan error, 1)
 	go func() {
 		_, err := h.srv.ClaimSpike(ctx, sp.PublicID, h.srv.ChatClaimant())
 		claim <- err
 	}()
-	// The claim is now waiting on the worktree's lock, or about to be: either
-	// way the ending comes first.
-	time.Sleep(300 * time.Millisecond)
+	// The claim has read the spike running. The ending still holds the locks,
+	// so the claim reads the spike again only once the ending is over.
+	h.await(read, "the claim's first read")
 	release()
 
 	wantRefusalSentence(t, <-claim, sp.PublicID+" has ended. A person reads its findings on its page.")
@@ -110,7 +136,7 @@ func TestAClaimThatWaitedOnAnEndingMakesNothing(t *testing.T) {
 	}
 }
 
-// S2B1: a claim that is going to be refused for its deadline doesn't remake a
+// A claim that is going to be refused for its deadline doesn't remake a
 // worktree the ending will discard.
 func TestAClaimPastTheDeadlineMakesNothing(t *testing.T) {
 	h := newHarness(t)
@@ -128,7 +154,7 @@ func TestAClaimPastTheDeadlineMakesNothing(t *testing.T) {
 	}
 }
 
-// S2B2: a submit whose ending was cut short (its claim ended done, the spike
+// A submit whose ending was cut short (its claim ended done, the spike
 // still running) can't be undone by a new claim. The claim is refused, and
 // reconciliation ends the spike concluded even when a claim was made after the
 // submit and the deadline has passed.
@@ -169,9 +195,9 @@ func TestADoneClaimIsFinal(t *testing.T) {
 	}
 }
 
-// S2B4, FR-15's acceptance: a submit and a deadline ending, run at once. The
-// ending takes the locks first, so the submit, which has passed its first
-// look, is refused with the sentence that says the findings were lost; the
+// FR-15's acceptance: a submit and a deadline ending, run at once. The ending
+// takes the locks first, so the submit, which has passed its first look, is
+// refused with the sentence that says the findings were lost; the
 // spike is time_box, the claim expired, and the draft is what was kept.
 func TestASubmitThatLosesToTheTimeBoxIsRefused(t *testing.T) {
 	h := newHarness(t)
@@ -181,13 +207,15 @@ func TestASubmitThatLosesToTheTimeBoxIsRefused(t *testing.T) {
 	release := h.holdEndLocks(sp, func() error {
 		return h.srv.endSpikeLocked(ctx, sp.ID, store.SpikeTimeBox, "")
 	})
+	checked := h.hookReached(spikeHookSubmitChecked)
 	submit := make(chan error, 1)
 	go func() {
 		_, err := h.srv.SubmitSpike(ctx, sp.PublicID, h.srv.PersonClaimant(), goodFindings)
 		submit <- err
 	}()
-	// The submit passed its first look, and waits on the locks.
-	time.Sleep(500 * time.Millisecond)
+	// The submit has passed its first looks, and the ending still holds the
+	// locks it needs.
+	h.await(checked, "the submit's first looks")
 	release()
 
 	wantRefusalSentence(t, <-submit, spikeTimeBoxEndedBeforeSubmit)
@@ -228,7 +256,7 @@ func TestATimeBoxEndingAfterASubmitChangesNothing(t *testing.T) {
 	}
 }
 
-// S2B3: a start whose worktree couldn't be made leaves a spike that never had
+// A start whose worktree couldn't be made leaves a spike that never had
 // a working copy, so its first claim makes one without asking where code went.
 func TestAFailedStartMakeThenAClaimRaisesNoQuestion(t *testing.T) {
 	h := newHarness(t)
@@ -269,5 +297,91 @@ func TestAFailedStartMakeThenAClaimRaisesNoQuestion(t *testing.T) {
 	}
 	if _, text := h.findingsOf(started); strings.Contains(text, "couldn't check") {
 		t.Errorf("the findings say the check couldn't run:\n%s", text)
+	}
+}
+
+// A claim whose first read sees an idea, and that is then overtaken by the
+// spike's start, takes the worktree's lock all the same, so it waits for the
+// start's make: it neither makes the worktree beside the start's nor raises a
+// question about code kept outside a working copy.
+func TestAClaimOvertakenByAStartWaitsForTheStartsWorktree(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("ov")
+	idea := h.newSpike(in, "Does a claim wait for a start?", nil)
+	lockPath := h.srv.worktreeAbs(h.srv.spikeWorktreeRel(idea.ID))
+
+	// Hold the worktree's lock, as a start's make does.
+	locked, free, held := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		held <- h.srv.withWorkingCopy(lockPath, func() error {
+			close(locked)
+			<-free
+			return nil
+		})
+	}()
+	h.await(locked, "the test's lock")
+
+	// The claim reads the idea, and stops at the hook until the start has
+	// committed.
+	var once sync.Once
+	read, resume, claimLocked := make(chan struct{}), make(chan struct{}), make(chan struct{}, 1)
+	h.srv.spikeHook = func(point string) {
+		switch point {
+		case spikeHookClaimRead:
+			once.Do(func() { close(read); <-resume })
+		case spikeHookClaimLocked:
+			claimLocked <- struct{}{}
+		}
+	}
+	claim := make(chan error, 1)
+	go func() {
+		_, err := h.srv.ClaimSpike(ctx, idea.PublicID, h.srv.ChatClaimant())
+		claim <- err
+	}()
+	h.await(read, "the claim's first read")
+
+	// The start commits, then waits for the lock to make the worktree.
+	start := make(chan error, 1)
+	go func() {
+		_, err := h.srv.StartSpike(ctx, idea.ID, SpikeStartRequest{Executor: store.ExecutorChat, TimeBoxHours: 2}, "sam")
+		start <- err
+	}()
+	deadline := time.Now().Add(30 * time.Second)
+	for h.getSpike(idea.ID).State != store.SpikeRunning {
+		if time.Now().After(deadline) {
+			t.Fatal("the start never committed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	close(resume)
+	select {
+	case <-claimLocked:
+		t.Fatal("the claim took no lock on the worktree, and went on beside the start's make")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(free)
+	if err := <-held; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-start; err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := <-claim; err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	if _, err := os.Stat(h.spikeDir(idea)); err != nil {
+		t.Errorf("no worktree after the start and the claim: %v", err)
+	}
+	if n := strings.Count(h.worktreeList(), "spk-"); n != 1 {
+		t.Errorf("git lists %d spike worktrees, want 1:\n%s", n, h.worktreeList())
+	}
+	if n := h.spikeCodeKeptCheckpoints(); n != 0 {
+		t.Errorf("%d spike-code-kept checkpoints", n)
+	}
+	if c := h.latestSpikeClaim(idea); c.State != lifecycle.ClaimOpen {
+		t.Errorf("claim = %+v", c)
 	}
 }

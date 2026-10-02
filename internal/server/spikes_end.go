@@ -207,11 +207,11 @@ func (s *Server) recordSpikeEnd(ctx context.Context, sp *store.Spike, how, note 
 // for the findings to name.
 func (s *Server) settleSpikeClaim(ctx context.Context, tx pgx.Tx, sp *store.Spike, how string) (end, who string, err error) {
 	end = how
-	submitted, err := spikeSubmitted(ctx, tx, sp)
+	done, err := store.ClaimEndedDoneFor(ctx, tx, "spike", sp.ID)
 	if err != nil {
 		return "", "", err
 	}
-	if submitted {
+	if done {
 		end = store.SpikeConcluded
 	}
 	cur, err := store.LockCurrentClaimFor(ctx, tx, "spike", sp.ID)
@@ -418,8 +418,9 @@ func (s *Server) makeSpikeWorktree(ctx context.Context, sp *store.Spike, check b
 //   - a running spike whose run has succeeded, been cancelled, or failed with
 //     no attempts left is ended, how read from the run's outcome or error;
 //   - a running chat or person spike has no run, so it is never "lost" and its
-//     directory is kept; it is ended concluded when its latest claim ended
-//     done, else time_box when its deadline has passed (FR-12.4);
+//     directory is kept; it is ended concluded when a claim of it ended
+//     done (any claim, not only the latest), else time_box when its deadline
+//     has passed (FR-12.4);
 //   - an ended spike whose findings were never committed, or any spike with a
 //     worktree that was never discarded, has the last steps run again;
 //   - a spike directory that no running spike names is removed.
@@ -506,12 +507,12 @@ func (s *Server) ReconcileSpikes(ctx context.Context) {
 // its ending), which is concluded; then its deadline has passed, which is
 // time_box.
 func (s *Server) timeBoxedEnding(ctx context.Context, sp *store.Spike, pastDeadline bool) (string, bool) {
-	submitted, err := spikeSubmitted(ctx, s.Store.Pool, sp)
+	done, err := store.ClaimEndedDoneFor(ctx, s.Store.Pool, "spike", sp.ID)
 	if err != nil {
 		s.Log.Error("spike reconciliation: claim", "spike", sp.PublicID, "err", err)
 		return "", false
 	}
-	if submitted {
+	if done {
 		return store.SpikeConcluded, true
 	}
 	if pastDeadline {

@@ -238,7 +238,7 @@ func TestEndSpikeRefusesAWayItsExecutorCantHave(t *testing.T) {
 	ctx := context.Background()
 	in := h.spikeInitiative("pf")
 	agent := h.newSpike(in, "An agent's question", nil)
-	if _, _, err := h.startAgentSpikeQuiet(agent); err != nil {
+	if _, err := h.startAgentSpikeQuiet(agent); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.srv.EndSpike(ctx, agent.ID, store.SpikeTimeBox, ""); err == nil || !strings.Contains(err.Error(), "token budget, not a time box") {
@@ -261,9 +261,10 @@ func TestEndSpikeRefusesAWayItsExecutorCantHave(t *testing.T) {
 	}
 }
 
-func (h *harness) startAgentSpikeQuiet(sp *store.Spike) (*store.Spike, *store.Dispatch, error) {
+// startAgentSpikeQuiet starts an agent spike without kicking the dispatcher.
+func (h *harness) startAgentSpikeQuiet(sp *store.Spike) (*store.Spike, error) {
 	started, err := h.srv.startSpike(context.Background(), sp.ID, SpikeStartRequest{Executor: store.ExecutorAgent}, "sam", false)
-	return started, nil, err
+	return started, err
 }
 
 // closedBySentence is the page's "Closed by ..." sentence for sp.

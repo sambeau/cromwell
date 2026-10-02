@@ -103,7 +103,7 @@ func TestSpikeTimeBoxAndUnmeasuredLines(t *testing.T) {
 	}
 }
 
-// S2Q2: a deadline is said in UTC, with the zone named, whatever the machine's
+// A deadline is said in UTC, with the zone named, whatever the machine's
 // zone, and the page's line and the chat agent's sentence say the same hour.
 func TestSpikeDeadlinesAreSaidInUTC(t *testing.T) {
 	saved := time.Local
@@ -131,7 +131,7 @@ func TestSpikeDeadlinesAreSaidInUTC(t *testing.T) {
 	}
 }
 
-// S2Q3: who ran a spike is worked out once, so the page's sentence, the
+// Who ran a spike is worked out once, so the page's sentence, the
 // findings and the closer's test agree after a release and a second claim by
 // someone else.
 func TestSpikeRanByIsOneAnswer(t *testing.T) {
@@ -142,7 +142,7 @@ func TestSpikeRanByIsOneAnswer(t *testing.T) {
 	if kind, who := spikeRanBy(sp, execs, later); kind != "person" || who != "pat" {
 		t.Errorf("ran by %q %q", kind, who)
 	}
-	if spikeRunBy(sp, facts, "sam") || !spikeRunBy(sp, facts, "pat") {
+	if closerRanIt(sp, facts, "sam") || !closerRanIt(sp, facts, "pat") {
 		t.Error("the closer test names someone other than who the sentence names")
 	}
 	if got := spikeClosedBySentence(sp, facts); got != "" {
@@ -157,7 +157,7 @@ func TestSpikeRanByIsOneAnswer(t *testing.T) {
 	}
 }
 
-// S2Q3: the sentence about tokens is written once.
+// The sentence about tokens is written once.
 func TestTokensNotMeasuredIsOneSentence(t *testing.T) {
 	for _, c := range []struct{ executor, subject, want string }{
 		{"chat", "This spike", "This spike ran in chat, so its tokens weren't measured."},

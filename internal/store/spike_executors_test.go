@@ -117,7 +117,7 @@ func TestSpikesPastDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e := SpikeEndingOf(SpikeTimeBox); e.Phrase != "Reached its time box" || e.Run != "The spike reached the end of its time box." ||
+	if e := SpikeEndingOf(SpikeTimeBox); e.Phrase != "it reached its time box" || e.Run != "The spike reached the end of its time box." ||
 		e.Commit != "time box ended" || e.Lead == "" ||
 		e.NotAnswered != "Not answered: the spike reached the end of its time box before it reached an answer." {
 		t.Errorf("time_box ending = %+v", e)

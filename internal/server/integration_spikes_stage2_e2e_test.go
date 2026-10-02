@@ -19,15 +19,15 @@ import (
 	"subutai/internal/store"
 )
 
-// s2StartInChat starts a new chat spike through the UI's POST, with a time
+// startedViaScreen starts a new chat spike through the UI's POST, with a time
 // box of 4 hours, as the start screen does.
-func (h *harness) s2StartInChat(question string) *store.Spike {
+func (h *harness) startedViaScreen(question string) *store.Spike {
 	h.t.Helper()
 	in := h.spikeInitiative("s2" + strings.ToLower(uuid.NewString()[:6]))
-	return h.s2StartInUI(h.newSpike(in, question, nil), "chat")
+	return h.startViaScreen(h.newSpike(in, question, nil), "chat")
 }
 
-func (h *harness) s2StartInUI(sp *store.Spike, executor string) *store.Spike {
+func (h *harness) startViaScreen(sp *store.Spike, executor string) *store.Spike {
 	h.t.Helper()
 	if code, body := h.postText("/ui/spikes/start", spikeForm(sp, "executor", executor, "time_box", "4")); code != 200 {
 		h.t.Fatalf("start %s as %s = %d: %s", sp.PublicID, executor, code, truncate(body, 600))
@@ -60,8 +60,8 @@ func (h *harness) worktreePaths() string {
 	return strings.Join(paths, "\n")
 }
 
-// s2CloserRanIt is the spike.closed audit row's closer_ran_it, or "" if absent.
-func (h *harness) s2CloserRanIt(id uuid.UUID) string {
+// closerRanItAudit is the spike.closed audit row's closer_ran_it, or "" if absent.
+func (h *harness) closerRanItAudit(id uuid.UUID) string {
 	h.t.Helper()
 	var s *string
 	if err := h.srv.Store.Pool.QueryRow(context.Background(), `SELECT payload->>'closer_ran_it' FROM audit_events
@@ -79,7 +79,7 @@ func (h *harness) s2CloserRanIt(id uuid.UUID) string {
 func TestChatSpikeIsHeldByItsClaimAndDeadline(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	sp := h.s2StartInChat("Does the queue keep its order?")
+	sp := h.startedViaScreen("Does the queue keep its order?")
 	if sp.TimeBoxHours == nil || *sp.TimeBoxHours != 4 {
 		t.Fatalf("time box = %v", sp.TimeBoxHours)
 	}
@@ -162,7 +162,7 @@ func TestSpikeExecutorIsRecorded(t *testing.T) {
 	}
 
 	// The chat spike, claimed over MCP.
-	chat := h.s2StartInUI(h.newSpike(in, "Who ran the chat's?", nil), "chat")
+	chat := h.startViaScreen(h.newSpike(in, "Who ran the chat's?", nil), "chat")
 	h.toolOK("claim_spike", map[string]any{"spike": chat.PublicID})
 	c := h.latestSpikeClaim(chat)
 	execs = h.spikeExecs(chat)
@@ -172,7 +172,7 @@ func TestSpikeExecutorIsRecorded(t *testing.T) {
 	}
 
 	// The person spike, claimed in the UI.
-	person := h.s2StartInUI(h.newSpike(in, "Who ran the person's?", nil), "person")
+	person := h.startViaScreen(h.newSpike(in, "Who ran the person's?", nil), "person")
 	if code, body := h.postText("/ui/spikes/claim", spikeForm(person)); code != 200 || !strings.Contains(body, "You are running "+person.PublicID+".") {
 		t.Fatalf("claim in the UI = %d: %s", code, truncate(body, 600))
 	}
@@ -208,7 +208,7 @@ func TestChatSpikeTokensAreUnmeasured(t *testing.T) {
 	samplesBefore, _ := store.PurposeTokenSamples(ctx, h.srv.Store.Pool, "run-spike", 20)
 	forecastBefore, okBefore := h.srv.stepForecast(ctx, "run-spike")
 
-	sp := h.s2StartInUI(h.newSpike(in, "Is the chat spike measured?", nil), "chat")
+	sp := h.startViaScreen(h.newSpike(in, "Is the chat spike measured?", nil), "chat")
 	h.toolOK("claim_spike", map[string]any{"spike": sp.PublicID})
 	h.toolOK("save_spike_findings", map[string]any{"spike": sp.PublicID, "findings": goodFindings})
 	h.toolOK("submit_spike", map[string]any{"spike": sp.PublicID})
@@ -281,7 +281,7 @@ func TestChatSpikeEndToEnd(t *testing.T) {
 	}
 	headBefore, branchesBefore, treesBefore := h.headSHA(), h.gitOut("branch", "--list"), h.worktreePaths()
 
-	h.s2StartInUI(sp, "chat")
+	h.startViaScreen(sp, "chat")
 	h.toolOK("claim_spike", map[string]any{"spike": id})
 	if !strings.Contains(h.worktreeList(), "spk-") {
 		t.Errorf("no spike worktree while it runs:\n%s", h.worktreeList())
@@ -325,7 +325,7 @@ func TestChatSpikeEndToEnd(t *testing.T) {
 	if closed.State != store.SpikeClosed || closed.ClosedAs != store.SpikeAnswered || closed.EndedHow != store.SpikeConcluded {
 		t.Errorf("closed = %s as %q, ended %q", closed.State, closed.ClosedAs, closed.EndedHow)
 	}
-	if got := h.s2CloserRanIt(sp.ID); got == "true" {
+	if got := h.closerRanItAudit(sp.ID); got == "true" {
 		t.Errorf("closer_ran_it = %s for a chat spike", got)
 	}
 }
@@ -337,7 +337,7 @@ func TestPersonSpikeEndToEnd(t *testing.T) {
 	sp := h.newSpike(in, "Can the export be run by hand?", nil)
 	headBefore, branchesBefore, treesBefore := h.headSHA(), h.gitOut("branch", "--list"), h.worktreePaths()
 
-	h.s2StartInUI(sp, "person")
+	h.startViaScreen(sp, "person")
 	if code, _ := h.postText("/ui/spikes/claim", spikeForm(sp)); code != 200 {
 		t.Fatalf("claim = %d", code)
 	}
@@ -363,7 +363,7 @@ func TestPersonSpikeEndToEnd(t *testing.T) {
 
 	_, body = h.postText("/ui/spikes/close", spikeForm(sp, "as", "answered"))
 	wants(t, "the closed page", body, sp.PublicID+" is closed: the question is answered.", "Closed by "+h.srv.uiActor()+", who also ran it.")
-	if got := h.s2CloserRanIt(sp.ID); got != "true" {
+	if got := h.closerRanItAudit(sp.ID); got != "true" {
 		t.Errorf("closer_ran_it = %q, want true", got)
 	}
 	execs := h.spikeExecs(sp)

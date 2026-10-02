@@ -9,6 +9,8 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,6 +23,19 @@ func spikeForm(sp *store.Spike, kv ...string) url.Values {
 		v.Set(kv[i], kv[i+1])
 	}
 	return v
+}
+
+// radioTag is the start screen's executor radio for value, as its tag's text,
+// so a test reads its attributes and not the page around them.
+func radioTag(t *testing.T, page, value string) string {
+	t.Helper()
+	i := strings.Index(page, `name="executor" value="`+value+`"`)
+	if i < 0 {
+		t.Fatalf("no %q executor radio on the page", value)
+	}
+	start := strings.LastIndex(page[:i], "<input")
+	end := i + strings.Index(page[i:], ">")
+	return page[start : end+1]
 }
 
 func TestSpikeStartScreenOffersWhoRunsIt(t *testing.T) {
@@ -38,8 +53,8 @@ func TestSpikeStartScreenOffersWhoRunsIt(t *testing.T) {
 		"Time box, in hours", `name="time_box" inputmode="numeric" value="4"`,
 		"Work done in chat or by hand can't be measured in tokens, so this spike is held to a time box instead. When the time box runs out, the spike ends with whatever findings have been saved.",
 		"Budget in tokens", "describe the spike runner")
-	if !strings.Contains(screen, `value="agent" aria-describedby="start-ex-agent-hint" checked`) {
-		t.Errorf("the spike runner isn't chosen by default:\n%s", truncate(screen, 1500))
+	if r := radioTag(t, screen, "agent"); !strings.Contains(r, " checked") || strings.Contains(r, "disabled") {
+		t.Errorf("the spike runner isn't chosen by default: %s", r)
 	}
 	lacks(t, "the start screen", screen, "disabled")
 
@@ -47,10 +62,49 @@ func TestSpikeStartScreenOffersWhoRunsIt(t *testing.T) {
 	// and the chat agent is chosen.
 	h.editConfig("  run-spike: spike-runner\n", "  # run-spike: spike-runner\n")
 	screen = h.uiText(startURL(sp))
-	wants(t, "the start screen with no runner", screen, "disabled",
-		"Nobody is assigned to run spikes, so this spike can't start.")
-	if !strings.Contains(screen, `value="chat" aria-describedby="start-ex-chat-hint" checked`) {
-		t.Errorf("the chat agent isn't chosen when nobody can run spikes:\n%s", truncate(screen, 1500))
+	wants(t, "the start screen with no runner", screen, "Nobody is assigned to run spikes, so this spike can't start.")
+	if r := radioTag(t, screen, "agent"); !strings.Contains(r, " disabled") || strings.Contains(r, " checked") {
+		t.Errorf("the spike runner's radio with nobody assigned: %s", r)
+	}
+	if r := radioTag(t, screen, "chat"); !strings.Contains(r, " checked") {
+		t.Errorf("the chat agent isn't chosen when nobody can run spikes: %s", r)
+	}
+	// Start stays available: the chat agent and a person need no runner.
+	if b := startButton(t, screen); strings.Contains(b, "disabled") {
+		t.Errorf("the Start button is disabled although the chat agent can run it: %s", b)
+	}
+}
+
+// startButton is the start screen's submit button tag.
+func startButton(t *testing.T, page string) string {
+	t.Helper()
+	i := strings.Index(page, "Start this spike</button>")
+	if i < 0 {
+		t.Fatalf("no Start button on the page")
+	}
+	start := strings.LastIndex(page[:i], "<button")
+	return page[start:i]
+}
+
+// The Start button is disabled only when nothing can start: with no findings
+// template, every start would be refused.
+func TestSpikeStartIsDisabledWithoutAFindingsTemplate(t *testing.T) {
+	h := newHarness(t)
+	sp := h.newSpike(h.spikeInitiative("pf"), "Can it start without a template?", nil)
+	tmpl := filepath.Join(h.root, ".subutai", "templates", "findings", "template.md")
+	if err := os.Rename(tmpl, tmpl+".away"); err != nil {
+		t.Fatal(err)
+	}
+	screen := h.uiText(startURL(sp))
+	wants(t, "the start screen with no template", screen, "This project has no findings template yet")
+	if b := startButton(t, screen); !strings.Contains(b, "disabled") || !strings.Contains(b, `aria-describedby="start-template"`) {
+		t.Errorf("the Start button with no template: %s", b)
+	}
+	if err := os.Rename(tmpl+".away", tmpl); err != nil {
+		t.Fatal(err)
+	}
+	if b := startButton(t, h.uiText(startURL(sp))); strings.Contains(b, "disabled") {
+		t.Errorf("the Start button with the template back: %s", b)
 	}
 }
 
@@ -148,6 +202,9 @@ func TestPersonRunsASpikeThroughTheRoutes(t *testing.T) {
 	wants(t, "the finished page", body, "You finished "+sp.PublicID+".", "Findings", "Run by hand by ",
 		"This spike was run by hand, so its tokens weren't measured.", "Ask again")
 	lacks(t, "the finished page", body, "A new budget, in tokens", "Ask again with a new budget")
+	// No run, so no "run" sentences; and Ask again, with no field, has its own layout.
+	wants(t, "the finished page", body, "This spike has ended: it reached a conclusion.", "triage-no-field")
+	lacks(t, "the finished page", body, "run has ended", "triage-with-field")
 	ended := h.getSpike(sp.ID)
 	if ended.State != store.SpikeEnded || ended.EndedHow != store.SpikeConcluded {
 		t.Fatalf("after finishing: %s %s", ended.State, ended.EndedHow)
@@ -347,4 +404,27 @@ func TestSpikeClaimedByAnotherCannotBeRunByThePerson(t *testing.T) {
 	}
 	_, body := h.postText("/ui/spikes/submit", spikeForm(sp, "findings", goodFindings))
 	wants(t, "a submit with no claim", body, "You haven't claimed "+sp.PublicID+", so there is nothing to submit.")
+}
+
+// A chat or person spike has a time box and no run, so its page doesn't say
+// that a run has ended or stops.
+func TestChatSpikePageSaysNothingOfARun(t *testing.T) {
+	h := newHarness(t)
+	sp := h.chatSpike()
+	h.claimSpike(sp)
+	if _, err := h.srv.SaveSpikeFindings(context.Background(), sp.PublicID, h.srv.ChatClaimant(), "## Answer\n\nA draft note.\n"); err != nil {
+		t.Fatal(err)
+	}
+	h.postText("/ui/spikes/release", spikeForm(sp))
+	page := h.uiText("/ui/s/" + sp.PublicID)
+	wants(t, "the running chat spike's draft", page, "If the time box ends now, this is what is kept.")
+	lacks(t, "the running chat spike's draft", page, "If the run stops now")
+
+	if err := h.srv.EndSpike(context.Background(), sp.ID, store.SpikeTimeBox, ""); err != nil {
+		t.Fatal(err)
+	}
+	page = h.uiText("/ui/s/" + sp.PublicID)
+	wants(t, "the time-boxed chat spike", page, "This spike has ended: it reached its time box. It's waiting for you to read the findings.",
+		"Ended: it reached its time box.")
+	lacks(t, "the time-boxed chat spike", page, "run has ended", "Reached its")
 }

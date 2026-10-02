@@ -89,6 +89,8 @@ func (f spikeRunFacts) held() bool {
 // actor: the latest execution of that kind, else the latest claim's actor. The
 // actor is "" when nobody did. The sentence, the findings and the closer's
 // test all use it, so they can't disagree after a release and a second claim.
+// Each claim records one execution, so the actor is the latest claimant of
+// that kind.
 func spikeRanBy(sp *store.Spike, execs []store.Execution, claim *store.Claim) (kind, actor string) {
 	kind = sp.Executor
 	if kind == "" {
@@ -171,9 +173,9 @@ func spikeExecutorSentence(sp *store.Spike, f spikeRunFacts, now time.Time) Spik
 	return out
 }
 
-// spikeRunBy says whether who is the person who ran the spike by hand
-// (SD-26): the spike is a person's, and spikeRanBy names them.
-func spikeRunBy(sp *store.Spike, f spikeRunFacts, who string) bool {
+// closerRanIt says whether who, closing the spike, is the person who ran it by
+// hand (SD-26): the spike is a person's, and spikeRanBy names them.
+func closerRanIt(sp *store.Spike, f spikeRunFacts, who string) bool {
 	if sp.Executor != store.ExecutorPerson || who == "" {
 		return false
 	}
@@ -211,7 +213,8 @@ func spikeSpanWords(d time.Duration) string {
 }
 
 // spikeLeftWords says the time that is left: "3 hours 12 minutes left", "less
-// than a minute left", and "no time left" once the deadline has passed.
+// than a minute left", and "no time left" once the deadline has passed. A
+// sentence about a deadline is built by spikeBoxSentence.
 func spikeLeftWords(d time.Duration) string {
 	if d <= 0 {
 		return "no time left"
@@ -231,7 +234,10 @@ func spikeTimeBoxLine(sp *store.Spike, now time.Time) string {
 	if sp.State != store.SpikeRunning || sp.DeadlineAt == nil {
 		return line + "."
 	}
-	return fmt.Sprintf("%s, ending at %s (%s).", line, spikeDeadlineWords(*sp.DeadlineAt), spikeLeftWords(sp.DeadlineAt.Sub(now)))
+	if left := sp.DeadlineAt.Sub(now); left > 0 {
+		return fmt.Sprintf("%s, ending at %s (%s).", line, spikeDeadlineWords(*sp.DeadlineAt), spikeLeftWords(left))
+	}
+	return fmt.Sprintf("%s, ended at %s.", line, spikeDeadlineWords(*sp.DeadlineAt))
 }
 
 // spikeUnmeasuredLine is what stands in place of the token bar for a chat or
@@ -246,7 +252,7 @@ func spikeUnmeasuredLine(sp *store.Spike) string {
 // it." (FR-16.4). It is "" for a spike not closed, or closed by someone who
 // didn't run it: the page says who closed it in its own way.
 func spikeClosedBySentence(sp *store.Spike, f spikeRunFacts) string {
-	if sp.State != store.SpikeClosed || sp.ClosedBy == "" || !spikeRunBy(sp, f, sp.ClosedBy) {
+	if sp.State != store.SpikeClosed || sp.ClosedBy == "" || !closerRanIt(sp, f, sp.ClosedBy) {
 		return ""
 	}
 	return "Closed by " + sp.ClosedBy + ", who also ran it."

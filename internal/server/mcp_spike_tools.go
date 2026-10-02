@@ -332,6 +332,7 @@ func (s *Server) spikeResult(ctx context.Context, sp *store.Spike) map[string]an
 	// from it. A read that fails leaves a spike with no run to describe.
 	facts, err := readSpikeRunFacts(ctx, s.Store.Pool, sp)
 	if err != nil {
+		s.Log.Warn("a spike's run facts couldn't be read", "spike", sp.PublicID, "err", err)
 		facts = spikeRunFacts{}
 	}
 	exec := spikeExecutorSentence(sp, facts, time.Now())

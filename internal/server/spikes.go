@@ -254,11 +254,8 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, req SpikeSta
 			return nil, errors.New(refusal)
 		}
 	}
-	if _, err := os.ReadFile(filepath.Join(s.CompartmentRoot, "templates", "findings", "template.md")); err != nil {
-		return nil, errors.New("This project has no findings template yet (templates/findings in its .subutai folder), so a spike can't start. Copy it from a fresh subutai init.")
-	}
-	if _, err := config.LoadManifest(s.CompartmentRoot, lifecycle.DocTypeFindings); err != nil {
-		return nil, errors.New("This project's findings template has no manifest, so a spike can't start. Copy templates/findings from a fresh subutai init.")
+	if msg := s.findingsTemplateRefusal(); msg != "" {
+		return nil, errors.New(msg)
 	}
 	st := store.SpikeStart{Executor: req.Executor, Actor: actor}
 	if req.Executor == store.ExecutorAgent {
@@ -333,6 +330,19 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, req SpikeSta
 	return started, nil
 }
 
+// findingsTemplateRefusal says why no spike can start, whoever runs it, when
+// the project's findings template or its manifest is missing; it is "" when
+// both are there.
+func (s *Server) findingsTemplateRefusal() string {
+	if _, err := os.ReadFile(filepath.Join(s.CompartmentRoot, "templates", "findings", "template.md")); err != nil {
+		return "This project has no findings template yet (templates/findings in its .subutai folder), so a spike can't start. Copy it from a fresh subutai init."
+	}
+	if _, err := config.LoadManifest(s.CompartmentRoot, lifecycle.DocTypeFindings); err != nil {
+		return "This project's findings template has no manifest, so a spike can't start. Copy templates/findings from a fresh subutai init."
+	}
+	return ""
+}
+
 // makeStartedSpikeWorktree makes a chat or person spike's worktree at its
 // base commit, holding the worktree's lock, and records that it was made.
 // Nothing was ever there, so the leak check that a remake runs first has
@@ -375,11 +385,14 @@ func (s *Server) CloseSpike(ctx context.Context, id uuid.UUID, as string, budget
 		if err != nil {
 			return err
 		}
-		facts, err := readSpikeRunFacts(ctx, tx, cur)
-		if err != nil {
-			return err
+		ranIt := false
+		if cur.Executor == store.ExecutorPerson {
+			facts, err := readSpikeRunFacts(ctx, tx, cur)
+			if err != nil {
+				return err
+			}
+			ranIt = closerRanIt(cur, facts, actor)
 		}
-		ranIt := spikeRunBy(cur, facts, actor)
 		if as == SpikeCloseAgain {
 			// Only an ended spike is asked again: an idea has no answer to
 			// improve on, and a running one isn't over.
