@@ -213,6 +213,19 @@ func TransitionClaim(ctx context.Context, tx pgx.Tx, c *Claim, e lifecycle.Claim
 	if next == lifecycle.ClaimEnded {
 		c.EndReason, c.EndedBy = reason, endedBy
 	}
+	// Every event is activity or an ending, so the claimant has come back or
+	// the claim is over: the question whether anyone is still working on it
+	// is withdrawn with it (SPEC-020 FR-5.4, SD-16).
+	if _, err := WithdrawCheckpoints(ctx, tx, "claim-stale", c.RefType, c.RefID, actor,
+		"the claim moved on: "+string(e)); err != nil {
+		return err
+	}
+	if next == lifecycle.ClaimEnded {
+		if _, err := WithdrawCheckpoints(ctx, tx, "claim-deadline", c.RefType, c.RefID, actor,
+			"the claim moved on: "+string(e)); err != nil {
+			return err
+		}
+	}
 	return auditClaim(ctx, tx, actor, e, c, payload)
 }
 

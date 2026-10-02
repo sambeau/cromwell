@@ -51,6 +51,15 @@ func SetTaskBaseCommit(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, commit 
 	return err
 }
 
+// ResetTaskBaseCommit sets the branch head at which a task's work begins,
+// whatever it was. A claim does this in round 1 when no one has begun the
+// task, because a batch made ready together shares a base that later tasks'
+// reviews would otherwise diff against (SPEC-020 FR-2.3 step 3).
+func ResetTaskBaseCommit(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, commit string) error {
+	_, err := tx.Exec(ctx, `UPDATE tasks SET base_commit = $2 WHERE id = $1`, taskID, commit)
+	return err
+}
+
 // CreateTask inserts a task (used by decomposition). depends_on is set in a
 // second pass once all sibling ids are known (DESIGN-005 §4).
 func CreateTask(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, position int, localID, title, description string, actor string) (*Task, error) {

@@ -255,6 +255,17 @@ func (s *Server) planImplement(ctx context.Context, d *store.Dispatch) (*dispatc
 	b.WriteString("You are working in an isolated git worktree. Use read_file (with hash_tag for editing), edit_file, write_file, list_files, and run_command (only the project's allowed commands). Implement exactly the task below — not the whole feature. When the code is complete and builds, call submit_implementation.\n")
 	b.WriteString("\n# Task to implement\n\n")
 	fmt.Fprintf(&b, "%s: %s\n\n%s\n", task.LocalID, task.Title, task.Description)
+	// In a round after the first, what the code reviewer asked for, whoever
+	// implemented the round it was asked of (SPEC-020 FR-2.12, SD-17).
+	rc, err := s.reviewComments(ctx, s.Store.Pool, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	if rc != nil {
+		b.WriteString("\n# What the code reviewer asked for\n\n")
+		b.WriteString("The code reviewer sent this task back. Deal with each finding below; the diff already in the worktree is the earlier work, so amend it rather than starting again.\n\n")
+		b.WriteString(reviewCommentsText(rc))
+	}
 
 	turnCap := cfg.Dispatch.TurnCap
 	if role.Limits != nil && role.Limits.TurnCap > 0 {

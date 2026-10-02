@@ -123,6 +123,11 @@ type Dispatcher struct {
 	BackoffBase time.Duration
 	// MaxOutputTokens per model call.
 	MaxOutputTokens int
+	// BranchHead, if set, reads the head of the branch of the feature that
+	// owns an implement dispatch's task, to record as the agent's start head
+	// (SPEC-020 FR-1.1). The dispatcher has no git of its own; an empty
+	// answer, or no hook, records no head.
+	BranchHead func(ctx context.Context, taskID uuid.UUID) string
 
 	initOnce sync.Once
 	kick     chan struct{}
@@ -278,13 +283,16 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 	// 2. Feature serialisation (check 3): at most one mutating dispatch per
 	// feature at a time, so two implementers never share a worktree
 	// (DESIGN-006 §5). Read-only dispatches are exempt.
+	// A running implementer, or a claim holding the working copy, holds it
+	// (SPEC-020 SD-4). This is the cheap first filter; the start re-checks
+	// under the feature's lock.
 	if isMutating(d.Purpose) {
-		busy, err := store.MutatingDispatchActiveForTask(ctx, dp.Store.Pool, d.RefID, d.ID)
+		reason, err := store.ImplementHold(ctx, dp.Store.Pool, d.RefID, d.ID)
 		if err != nil {
 			return false, "", err
 		}
-		if busy {
-			return false, "feature-serialisation", nil
+		if reason != "" {
+			return false, reason, nil
 		}
 	}
 
@@ -300,13 +308,42 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 		return false, "worker-cap", nil
 	}
 
-	// Claim, freezing the price snapshot (O-4).
+	// Claim, freezing the price snapshot (O-4). An implementer starts through
+	// StartImplementDispatch, which re-checks every refusal under the
+	// feature's lock and records the agent's execution (SPEC-020 FR-2.7).
 	var claimed bool
-	err = dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		var err error
-		claimed, err = store.MarkDispatchRunning(ctx, tx, d.ID, model.PricePerMTok)
-		return err
-	})
+	if isMutating(d.Purpose) {
+		var head string
+		if dp.BranchHead != nil {
+			head = dp.BranchHead(ctx, d.RefID)
+		}
+		var res store.StartResult
+		err = dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			var err error
+			res, err = store.StartImplementDispatch(ctx, tx, d.ID, model.PricePerMTok, head)
+			return err
+		})
+		if err != nil {
+			<-dp.workers
+			return false, "claim-lost", err
+		}
+		switch res.Outcome {
+		case store.StartQueued:
+			<-dp.workers
+			return false, res.Reason, nil
+		case store.StartCancelled:
+			<-dp.workers
+			return false, "cancelled", nil
+		case store.StartStarted:
+			claimed = true
+		}
+	} else {
+		err = dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			var err error
+			claimed, err = store.MarkDispatchRunning(ctx, tx, d.ID, model.PricePerMTok)
+			return err
+		})
+	}
 	if err != nil || !claimed {
 		<-dp.workers
 		return false, "claim-lost", err
@@ -563,20 +600,41 @@ func (dp *Dispatcher) RetrySweep(ctx context.Context) {
 		dp.Log.Error("retry sweep", "err", err)
 		return
 	}
+	requeued := 0
 	for i := range retry {
 		d := retry[i]
+		// An implement dispatch whose task has been claimed isn't revived: it
+		// is cancelled (SPEC-020 FR-2.7).
+		var ok bool
 		err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
-			return store.RequeueDispatch(ctx, tx, d.ID)
+			var err error
+			ok, err = store.RequeueUnlessClaimed(ctx, tx, d.ID, "orchestrator")
+			return err
 		})
 		if err != nil {
 			dp.Log.Error("retry sweep: requeue", "dispatch", d.ID, "err", err)
+		} else if ok {
+			requeued++
 		}
 	}
-	if len(retry) > 0 {
+	if requeued > 0 {
 		dp.Kick()
 	}
 	for i := range exhausted {
 		d := exhausted[i]
+		// An exhausted implement dispatch of a claimed task raises nothing: the
+		// claim took the task, and the dispatch is cancelled.
+		if d.Purpose == "implement-task" {
+			var ok bool
+			err := dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
+				var err error
+				ok, err = store.CancelIfTaskClaimed(ctx, tx, d.ID, "orchestrator")
+				return err
+			})
+			if err == nil && ok {
+				continue
+			}
+		}
 		msg := ""
 		if d.Error != nil {
 			msg = *d.Error

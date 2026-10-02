@@ -210,15 +210,23 @@ func (s *Server) execute(ctx context.Context, action rules.Action) error {
 			return store.ArchiveInitiative(ctx, tx, a.InitiativeID, a.Actor, a.Reason)
 		})
 	case rules.RetryDispatch:
+		// A claim may have taken the task since the question was asked: the
+		// retry then revives nothing (SPEC-020 FR-2.7).
+		var requeued bool
 		err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-			return store.RequeueDispatch(ctx, tx, a.DispatchID)
+			var err error
+			requeued, err = store.RequeueUnlessClaimed(ctx, tx, a.DispatchID, "orchestrator")
+			return err
 		})
-		if err == nil {
+		if err == nil && requeued {
 			s.Dispatcher.Kick()
 		}
 		return err
 	case rules.CancelDispatch:
 		return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			if d, err := store.GetDispatch(ctx, tx, a.DispatchID); err == nil && d.State == "cancelled" {
+				return nil // a claim already cancelled it
+			}
 			return store.MarkDispatchCancelled(ctx, tx, a.DispatchID, a.Actor)
 		})
 	case rules.KickQueue:
@@ -277,6 +285,16 @@ func (s *Server) queueReview(ctx context.Context, a rules.QueueReview) error {
 	model := role.Model
 	if override, ok := cfg.Routing[purpose]; ok {
 		model = override
+	}
+	// A spec, plan or bug report the chat agent wrote is reviewed with the
+	// project's reviewer for the chat agent's work, which wins over routing
+	// unless the project says "same" (SPEC-020 FR-8.3).
+	if lifecycle.IsContractType(a.DocType) {
+		if chat, err := s.latestWriterIsChat(ctx, a.DocID); err != nil {
+			return err
+		} else if chat {
+			model = cfg.ChatReviewModel(model)
+		}
 	}
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		_, err := store.EnqueueDispatch(ctx, tx, purpose, role.Name, model, "document", a.DocID, key)

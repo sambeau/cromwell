@@ -392,11 +392,19 @@ func (s *Store) RecordToolCall(ctx context.Context, dispatchID uuid.UUID, seq in
 	return err
 }
 
-// MutatingDispatchActiveForTask reports whether another implement-task
-// dispatch is queued/running for a task of the same feature as taskID —
-// governor check 3 (DESIGN-006 §5). excludeID is the candidate dispatch.
-func MutatingDispatchActiveForTask(ctx context.Context, q Querier, taskID, excludeID uuid.UUID) (bool, error) {
-	var exists bool
+// QueueReasonClaimOpen is why the governor holds a feature's implement
+// dispatches while a person or the chat agent has a claim open on one of its
+// tasks (SPEC-020 SD-4).
+const QueueReasonClaimOpen = "A person or the chat agent is working in this feature's working copy."
+
+// ImplementHold says why an implement-task dispatch for the task can't start
+// now, or "" when nothing in its feature stands in the way: another implement
+// dispatch is running on a task of the feature (governor check 3,
+// DESIGN-006 §5), or a claim on the feature is open and holds its working copy
+// (SPEC-020 SD-4). excludeID is the candidate dispatch. It reads without
+// locking, so it is the pool pre-filter; StartImplementDispatch re-checks.
+func ImplementHold(ctx context.Context, q Querier, taskID, excludeID uuid.UUID) (string, error) {
+	var running, claimed bool
 	err := q.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM dispatches d
@@ -405,8 +413,276 @@ func MutatingDispatchActiveForTask(ctx context.Context, q Querier, taskID, exclu
 			  AND d.state = 'running'
 			  AND d.id <> $2
 			  AND t.feature_id = (SELECT feature_id FROM tasks WHERE id = $1)
-		)`, taskID, excludeID).Scan(&exists)
-	return exists, err
+		), EXISTS (
+			SELECT 1 FROM work_claims c
+			WHERE c.state = 'open'
+			  AND c.feature_id = (SELECT feature_id FROM tasks WHERE id = $1)
+		)`, taskID, excludeID).Scan(&running, &claimed)
+	switch {
+	case err != nil:
+		return "", err
+	case running:
+		return "feature-serialisation", nil
+	case claimed:
+		return QueueReasonClaimOpen, nil
+	}
+	return "", nil
+}
+
+// MutatingDispatchActiveForTask reports whether the task's feature is held
+// against another implement-task dispatch: one is running, or a claim is open
+// (governor check 3, DESIGN-006 §5; SPEC-020 SD-4).
+func MutatingDispatchActiveForTask(ctx context.Context, q Querier, taskID, excludeID uuid.UUID) (bool, error) {
+	reason, err := ImplementHold(ctx, q, taskID, excludeID)
+	return reason != "", err
+}
+
+// Outcomes of StartImplementDispatch.
+const (
+	StartStarted   = "started"   // the dispatch is running and its execution recorded
+	StartQueued    = "queued"    // it stays queued, for StartResult.Reason
+	StartCancelled = "cancelled" // its task is claimed or over, so it was cancelled
+	StartLost      = "lost"      // it was no longer queued
+)
+
+// StartResult tells the dispatcher what StartImplementDispatch did.
+type StartResult struct {
+	Outcome string
+	Reason  string // for StartQueued
+}
+
+// StartImplementDispatch starts a queued implement-task dispatch under the
+// governor's approval: the dispatcher's start for this purpose, in place of
+// MarkDispatchRunning (SPEC-020 FR-2.7). It takes the locks in the order every
+// path that changes a claim, a task or an implement dispatch takes them, the
+// feature, then the task, then the dispatch, and re-checks what a pool read
+// could have missed. It refuses to start when an implement dispatch is
+// running on the feature, the feature has an open claim, or the task isn't
+// active. A task with a claim that hasn't ended has its dispatch cancelled
+// instead. Otherwise it marks the dispatch running and records the agent's
+// execution, with startHead as the branch head it began at (empty when the
+// caller couldn't read it).
+func StartImplementDispatch(ctx context.Context, tx pgx.Tx, id uuid.UUID, priceSnapshot any, startHead string) (StartResult, error) {
+	d, err := GetDispatch(ctx, tx, id)
+	if err != nil {
+		return StartResult{}, err
+	}
+	if d.Purpose != "implement-task" || d.RefType != "task" {
+		return StartResult{}, errors.New("not an implement-task dispatch")
+	}
+	var featureID uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT feature_id FROM tasks WHERE id = $1`, d.RefID).Scan(&featureID); err != nil {
+		return StartResult{}, err
+	}
+	if err := LockFeatureAndTask(ctx, tx, featureID, d.RefID); err != nil {
+		return StartResult{}, err
+	}
+	if d, err = lockDispatch(ctx, tx, id); err != nil {
+		return StartResult{}, err
+	}
+	if d.State != "queued" {
+		return StartResult{Outcome: StartLost}, nil
+	}
+
+	var taskState string
+	if err := tx.QueryRow(ctx, `SELECT state FROM tasks WHERE id = $1`, d.RefID).Scan(&taskState); err != nil {
+		return StartResult{}, err
+	}
+	if _, err := CurrentClaimFor(ctx, tx, "task", d.RefID); err == nil {
+		// A claim holds the task; no agent runs on it. The dispatch is
+		// cancelled, with the reason on the audit trail.
+		if err := cancelDispatchTx(ctx, tx, d, "orchestrator", "the task is claimed"); err != nil {
+			return StartResult{}, err
+		}
+		return StartResult{Outcome: StartCancelled}, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return StartResult{}, err
+	}
+	if taskState == "done" || taskState == "abandoned" {
+		if err := cancelDispatchTx(ctx, tx, d, "orchestrator", "the task is "+taskState); err != nil {
+			return StartResult{}, err
+		}
+		return StartResult{Outcome: StartCancelled}, nil
+	}
+	if reason, err := ImplementHold(ctx, tx, d.RefID, id); err != nil {
+		return StartResult{}, err
+	} else if reason != "" {
+		return StartResult{Outcome: StartQueued, Reason: reason}, nil
+	}
+	if taskState != "active" {
+		return StartResult{Outcome: StartQueued, Reason: "task-not-active"}, nil
+	}
+
+	started, err := MarkDispatchRunning(ctx, tx, id, priceSnapshot)
+	if err != nil {
+		return StartResult{}, err
+	}
+	if !started {
+		return StartResult{Outcome: StartLost}, nil
+	}
+	if err := RecordAgentExecution(ctx, tx, d.RefID, id, d.Role, d.Model, startHead); err != nil {
+		return StartResult{}, err
+	}
+	return StartResult{Outcome: StartStarted}, nil
+}
+
+// LockFeatureAndTask takes the feature's row lock and then the task's, the
+// first two steps of SPEC-020 FR-2.7's lock order. The dispatch rows come
+// last.
+func LockFeatureAndTask(ctx context.Context, tx pgx.Tx, featureID, taskID uuid.UUID) error {
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM features WHERE id = $1 FOR UPDATE`, featureID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `SELECT 1 FROM tasks WHERE id = $1 FOR UPDATE`, taskID)
+	return err
+}
+
+func lockDispatch(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*Dispatch, error) {
+	return scanDispatch(tx.QueryRow(ctx, `SELECT `+dispatchCols+` FROM dispatches WHERE id = $1 FOR UPDATE`, id))
+}
+
+// cancelDispatchTx cancels a queued or failed dispatch the caller holds a
+// lock on, with an audit row that says why (SPEC-020 FR-2.3, FR-2.7).
+func cancelDispatchTx(ctx context.Context, tx pgx.Tx, d *Dispatch, actor, cause string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE dispatches SET state = 'cancelled', finished_at = now(), queue_reason = NULL
+		WHERE id = $1 AND state IN ('queued', 'failed')`, d.ID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	return Audit(ctx, tx, actor, "dispatch.cancelled", d.RefType, &d.RefID,
+		map[string]any{"dispatch_id": d.ID.String(), "cause": cause})
+}
+
+// CancelTaskImplementDispatches cancels every queued or failed implement
+// dispatch of a task, for a claim taking the task (SPEC-020 FR-2.3, SD-3). The
+// caller holds the feature and task locks. It returns the dispatches it
+// cancelled.
+func CancelTaskImplementDispatches(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, actor, cause string) ([]uuid.UUID, error) {
+	rows, err := tx.Query(ctx, `SELECT `+dispatchCols+` FROM dispatches
+		WHERE ref_type = 'task' AND ref_id = $1 AND purpose = 'implement-task'
+		  AND state IN ('queued', 'failed') ORDER BY queued_at, id FOR UPDATE`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	var ds []Dispatch
+	for rows.Next() {
+		d, err := scanDispatch(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ds = append(ds, *d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var ids []uuid.UUID
+	for i := range ds {
+		if err := cancelDispatchTx(ctx, tx, &ds[i], actor, cause); err != nil {
+			return nil, err
+		}
+		ids = append(ids, ds[i].ID)
+	}
+	return ids, nil
+}
+
+// RecentImplementActivity reports whether any implement dispatch of the
+// task has heartbeated within the window: an attempt the stall sweep gave up
+// on may still be running tools (SPEC-020 SD-3).
+func RecentImplementActivity(ctx context.Context, q Querier, taskID uuid.UUID, window time.Duration) (bool, error) {
+	var b bool
+	err := q.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM dispatches
+		WHERE ref_type = 'task' AND ref_id = $1 AND purpose = 'implement-task'
+		  AND heartbeat_at IS NOT NULL AND heartbeat_at > now() - $2::interval)`,
+		taskID, window.String()).Scan(&b)
+	return b, err
+}
+
+// RunningImplementInFeature reports whether an implement dispatch is running
+// on any task of the feature.
+func RunningImplementInFeature(ctx context.Context, q Querier, featureID uuid.UUID) (bool, error) {
+	var b bool
+	err := q.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM dispatches d JOIN tasks t ON t.id = d.ref_id AND d.ref_type = 'task'
+		WHERE d.purpose = 'implement-task' AND d.state = 'running' AND t.feature_id = $1)`,
+		featureID).Scan(&b)
+	return b, err
+}
+
+// RequeueUnlessClaimed is RequeueDispatch for the retry sweep and a Retry
+// answer (SPEC-020 FR-2.7): an implement dispatch whose task has a claim that
+// hasn't ended isn't revived but cancelled, with an audit row; a dispatch
+// already cancelled is left alone, with an audit row that says the retry
+// changed nothing. It reports whether the dispatch was requeued.
+func RequeueUnlessClaimed(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor string) (bool, error) {
+	d, err := GetDispatch(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	if d.Purpose == "implement-task" && d.RefType == "task" {
+		var featureID uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT feature_id FROM tasks WHERE id = $1`, d.RefID).Scan(&featureID); err != nil {
+			return false, err
+		}
+		if err := LockFeatureAndTask(ctx, tx, featureID, d.RefID); err != nil {
+			return false, err
+		}
+		if d, err = lockDispatch(ctx, tx, id); err != nil {
+			return false, err
+		}
+		if _, err := CurrentClaimFor(ctx, tx, "task", d.RefID); err == nil {
+			if d.State == "cancelled" {
+				return false, ignoredRetry(ctx, tx, d, actor)
+			}
+			return false, cancelDispatchTx(ctx, tx, d, actor, "the task is claimed, so no agent works on it")
+		} else if !errors.Is(err, ErrNotFound) {
+			return false, err
+		}
+	}
+	if d.State == "cancelled" {
+		return false, ignoredRetry(ctx, tx, d, actor)
+	}
+	return true, RequeueDispatch(ctx, tx, id)
+}
+
+// CancelIfTaskClaimed cancels a failed implement dispatch whose task has a
+// claim that hasn't ended, in the lock order of FR-2.7, and reports whether it
+// did. The retry sweep uses it for a dispatch that has run out of attempts,
+// which would otherwise raise a dispatch-failure checkpoint about a task a
+// person or the chat agent is working on.
+func CancelIfTaskClaimed(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor string) (bool, error) {
+	d, err := GetDispatch(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	var featureID uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT feature_id FROM tasks WHERE id = $1`, d.RefID).Scan(&featureID); err != nil {
+		return false, err
+	}
+	if err := LockFeatureAndTask(ctx, tx, featureID, d.RefID); err != nil {
+		return false, err
+	}
+	if d, err = lockDispatch(ctx, tx, id); err != nil {
+		return false, err
+	}
+	if _, err := CurrentClaimFor(ctx, tx, "task", d.RefID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return d.State == "failed", cancelDispatchTx(ctx, tx, d, actor, "the task is claimed, so no agent works on it")
+}
+
+func ignoredRetry(ctx context.Context, tx pgx.Tx, d *Dispatch, actor string) error {
+	return Audit(ctx, tx, actor, "dispatch.retry_ignored", d.RefType, &d.RefID,
+		map[string]any{"dispatch_id": d.ID.String(), "cause": "the dispatch was already cancelled, so there was nothing to retry"})
 }
 
 // CountDispatchesForRef counts all dispatches (any state) for an entity and

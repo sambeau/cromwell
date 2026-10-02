@@ -249,6 +249,14 @@ func TransitionFeature(ctx context.Context, tx pgx.Tx, f *Feature, event lifecyc
 	if err := Audit(ctx, tx, actor, "feature.transition", "feature", &f.ID, payload); err != nil {
 		return err
 	}
+	// A feature's abandonment, at any of its three sites, ends every claim on
+	// it, each in this transaction (SPEC-020 SD-16). Ending a claim withdraws
+	// its pending claim-stale question.
+	if event == lifecycle.FeatAbandon {
+		if _, err := EndClaimsForFeature(ctx, tx, f.ID, actor, "the feature was abandoned"); err != nil {
+			return err
+		}
+	}
 	f.State = next
 	return nil
 }

@@ -115,3 +115,57 @@ func RespondCheckpoint(ctx context.Context, tx pgx.Tx, id uuid.UUID, response ma
 	}
 	return cp, nil
 }
+
+// WithdrawCheckpoints withdraws the pending checkpoints of a kind on an item,
+// because what they asked about has moved on, each with an audit row that says
+// why (SPEC-020 FR-5.4). It returns how many it withdrew.
+func WithdrawCheckpoints(ctx context.Context, tx pgx.Tx, kind, refType string, refID uuid.UUID, actor, reason string) (int, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE checkpoints SET state = 'withdrawn'
+		WHERE kind = $1 AND ref_type = $2 AND ref_id = $3 AND state = 'pending'
+		RETURNING id`, kind, refType, refID)
+	if err != nil {
+		return 0, err
+	}
+	return auditWithdrawn(ctx, tx, rows, kind, refType, refID, actor, reason)
+}
+
+// WithdrawImplementFailure withdraws the task's pending dispatch-failure
+// checkpoint about an implement dispatch, for a claim that took the task
+// (SPEC-020 SD-3). A dispatch-failure about the task's code review is left.
+func WithdrawImplementFailure(ctx context.Context, tx pgx.Tx, taskID uuid.UUID, actor, reason string) (int, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE checkpoints c SET state = 'withdrawn'
+		WHERE c.kind = 'dispatch-failure' AND c.ref_type = 'task' AND c.ref_id = $1 AND c.state = 'pending'
+		  AND EXISTS (SELECT 1 FROM dispatches d
+		              WHERE d.id::text = c.context->>'dispatch_id' AND d.purpose = 'implement-task')
+		RETURNING c.id`, taskID)
+	if err != nil {
+		return 0, err
+	}
+	return auditWithdrawn(ctx, tx, rows, "dispatch-failure", "task", taskID, actor, reason)
+}
+
+// auditWithdrawn closes the rows of a withdrawing UPDATE and audits each.
+func auditWithdrawn(ctx context.Context, tx pgx.Tx, rows pgx.Rows, kind, refType string, refID uuid.UUID, actor, reason string) (int, error) {
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if err := Audit(ctx, tx, actor, "checkpoint.withdrawn", refType, &refID,
+			map[string]any{"checkpoint_id": id.String(), "kind": kind, "reason": reason}); err != nil {
+			return 0, err
+		}
+	}
+	return len(ids), nil
+}
