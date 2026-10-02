@@ -79,6 +79,9 @@ assignments:
   # that document by hand instead.
   write-spec: spec-author
   write-dev-plan: dev-plan-author
+  # A spike answers one question in a throwaway copy of the project and
+  # keeps only its findings (SPEC-021). A person starts one in the web UI.
+  run-spike: spike-runner
 
 # How specifications are reviewed (SPEC-011, DEC-006 Amendment 1). The agent
 # spec reviewer is the normal approver. Set hold to true to have every spec
@@ -88,6 +91,13 @@ assignments:
 spec_review:
   agent: true
   hold: false
+
+# Spikes (SPEC-021). default_token_budget is the most a spike may use unless
+# it is started with its own budget. It is a hard stop: every token counts,
+# including the context re-sent on each turn, and the run ends when the total
+# reaches it. 1,000,000 is roughly 30 turns of a modest spike.
+# spikes:
+#   default_token_budget: 1000000
 
 # Tool-host command whitelist (DESIGN-006 §4.6). Edit these to your project's
 # build and test commands; implementers and the verifier may run only these.

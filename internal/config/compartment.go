@@ -29,6 +29,9 @@ func KnownTools() map[string]bool {
 		// FR-3.3). It writes nothing to the worktree, so read-only roles —
 		// the code reviewer, the verifier — may declare it.
 		"report_bug": true,
+		// save_findings keeps a spike's draft findings (SPEC-021 FR-4.3). It
+		// writes nothing to the worktree, and only the spike runner may have it.
+		"save_findings": true,
 	}
 }
 
@@ -40,9 +43,10 @@ func MutatingTools() map[string]bool {
 }
 
 // isWorktreePurpose reports whether a purpose runs in a worktree, with the
-// role's profile tools offered: implementation, code review, verification.
+// role's profile tools offered: implementation, code review, verification,
+// and running a spike.
 func isWorktreePurpose(p string) bool {
-	return p == "implement-task" || p == "review-code" || p == "verify-feature"
+	return p == "implement-task" || p == "review-code" || p == "verify-feature" || p == "run-spike"
 }
 
 func hasTool(tools []string, name string) bool {
@@ -426,6 +430,15 @@ func Load(root string, knownRuleKinds map[string]bool) (*Compartment, error) {
 				if !knownTools[tool] {
 					errs = append(errs, errf(rel, "tools", "unknown tool %q", tool))
 				}
+			}
+			// The spike tools (SPEC-021 FR-10.3), checked on every role
+			// file, assigned or not.
+			isSpikeRunner := cfg.Assignments["run-spike"] == name
+			if hasTool(r.Tools, "save_findings") && !isSpikeRunner {
+				errs = append(errs, errf(rel, "tools", "save_findings is for the spike runner, so role %s can't be offered it.", name))
+			}
+			if hasTool(r.Tools, "report_bug") && isSpikeRunner {
+				errs = append(errs, errf(rel, "tools", "A spike's agent puts what it finds in its findings, so role %s can't be offered report_bug.", name))
 			}
 		}
 		for purpose, role := range cfg.Assignments {

@@ -514,3 +514,65 @@ func TestReportBugOnlyWhereWorktreeToolsAreOffered(t *testing.T) {
 		t.Error("report_bug is a known tool, and not a mutating one")
 	}
 }
+
+// SPEC-021 FR-10.1: the spike budget defaults when absent, and a value that
+// isn't positive is refused, including an explicit 0.
+func TestSpikeConfig(t *testing.T) {
+	root := validCompartment(t)
+	c, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if c.SpikeDefaultTokenBudget() != DefaultSpikeTokenBudget || DefaultSpikeTokenBudget != 1_000_000 {
+		t.Errorf("default: %d", c.SpikeDefaultTokenBudget())
+	}
+	cfg, _ := os.ReadFile(filepath.Join(root, "config.yaml"))
+	for _, v := range []string{"0", "-5"} {
+		write(t, root, "config.yaml", string(cfg)+"spikes:\n  default_token_budget: "+v+"\n")
+		_, err = LoadConfig(root)
+		if err == nil || !strings.Contains(err.Error(), "spikes.default_token_budget") {
+			t.Errorf("%s should be refused, naming the field: %v", v, err)
+		}
+	}
+	write(t, root, "config.yaml", string(cfg)+"spikes:\n  default_token_budget: 250000\n")
+	if c, err = LoadConfig(root); err != nil || c.SpikeDefaultTokenBudget() != 250000 {
+		t.Errorf("explicit budget not kept: %v %+v", err, c)
+	}
+}
+
+const spikeRole = "model: claude-sonnet-5\nskill: review-spec\nidentity: x\ntools: [read_file, list_files, edit_file, write_file, run_command, save_findings]\n"
+
+// SPEC-021 FR-10.3: save_findings only on the role assigned run-spike
+// (checked on every role file), report_bug never on it, and the spike runner
+// with the worktree tools passes.
+func TestSpikeToolsLoaderChecks(t *testing.T) {
+	cfgBase, assigned := "", "assignments:\n  run-spike: spike-runner\n"
+	root := validCompartment(t)
+	b, _ := os.ReadFile(filepath.Join(root, "config.yaml"))
+	cfgBase = string(b)
+
+	// Passing: assigned, with the worktree tools.
+	write(t, root, "config.yaml", cfgBase+assigned)
+	write(t, root, "roles/spike-runner.yaml", spikeRole)
+	if _, err := Load(root, testRuleKinds); err != nil {
+		t.Fatalf("spike runner should load: %v", err)
+	}
+
+	// save_findings on an unassigned role (even one assigned to nothing).
+	write(t, root, "config.yaml", cfgBase)
+	_, err := Load(root, testRuleKinds)
+	if err == nil || !strings.Contains(err.Error(), "save_findings is for the spike runner, so role spike-runner can't be offered it.") {
+		t.Errorf("unassigned save_findings: %v", err)
+	}
+
+	// report_bug on the spike runner.
+	write(t, root, "config.yaml", cfgBase+assigned)
+	write(t, root, "roles/spike-runner.yaml", strings.Replace(spikeRole, "save_findings]", "save_findings, report_bug]", 1))
+	_, err = Load(root, testRuleKinds)
+	if err == nil || !strings.Contains(err.Error(), "A spike's agent puts what it finds in its findings, so role spike-runner can't be offered report_bug.") {
+		t.Errorf("report_bug on spike runner: %v", err)
+	}
+	if !KnownTools()["save_findings"] || MutatingTools()["save_findings"] {
+		t.Error("save_findings is a known tool, and not a mutating one")
+	}
+}
