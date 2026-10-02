@@ -60,6 +60,12 @@ func newHarness(t *testing.T) *harness {
 	git(t, root, "init", "-q")
 	git(t, root, "config", "user.email", "test@test")
 	git(t, root, "config", "user.name", "tester")
+	// No background maintenance: newer git detaches `maintenance run --auto`
+	// after a commit, and the detached process can write into .git while
+	// TempDir cleanup is removing it (CI run 18), which the drain below
+	// can't wait for.
+	git(t, root, "config", "maintenance.auto", "false")
+	git(t, root, "config", "gc.auto", "0")
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# test\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
