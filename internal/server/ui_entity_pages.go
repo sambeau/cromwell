@@ -248,7 +248,7 @@ func (s *Server) handleUITaskPage(w http.ResponseWriter, r *http.Request) {
 	notice := ""
 	if r.URL.Query().Get("done") != "" {
 		if t, err := store.GetTask(r.Context(), s.Store.Pool, id); err == nil {
-			notice = taskDoneNotice(t, r.URL.Query())
+			notice = s.taskDoneNotice(r.Context(), t, r.URL.Query())
 		}
 	}
 	s.renderTaskPage(w, r, id, notice, "")
