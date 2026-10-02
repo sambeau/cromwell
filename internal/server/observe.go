@@ -747,13 +747,8 @@ func (p *runPage) conclude(d *store.Dispatch, entries []store.TranscriptEntry) c
 	if d.Purpose == "run-spike" {
 		// A spike's run is judged by how the spike ended, in a sentence
 		// (SPEC-021 FR-8.4), not by its outcome's JSON.
-		switch p.SpikeHow {
-		case store.SpikeConcluded:
-			return conclusion{Kind: "spike", Plain: "It concluded."}
-		case store.SpikeBudget:
-			return conclusion{Kind: "spike", Plain: "It stopped at its budget."}
-		case store.SpikeTurnLimit:
-			return conclusion{Kind: "spike", Plain: "It stopped at its turn limit."}
+		if p.SpikeHow != "" {
+			return conclusion{Kind: "spike", Plain: store.SpikeEndingOf(p.SpikeHow).Run}
 		}
 	}
 	if len(d.Outcome) == 0 {

@@ -83,14 +83,21 @@ func (s *Server) spikeKept(ctx context.Context, sp *store.Spike) (store.SpikeKep
 			"A spike's code is never merged. Look for a branch, tag or stash that holds it, and delete it, "+
 			"or keep it knowing it won't be built from.", sp.PublicID, kept.CouldntCheck)
 	}
+	if kept.Refs == nil {
+		kept.Refs = []string{}
+	}
+	payload := map[string]any{"spike_id": sp.ID.String(), "refs": kept.Refs}
+	if kept.CouldntCheck != "" {
+		payload["couldnt_check"] = kept.CouldntCheck
+	}
 	var cp *store.Checkpoint
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := store.RecordSpikeCodeKept(ctx, tx, sp.ID, kept); err != nil {
 			return err
 		}
 		var err error
-		cp, err = store.CreateCheckpoint(ctx, tx, "spike-code-kept", "spike", sp.ID, text,
-			map[string]any{"spike_id": sp.ID.String(), "refs": kept.Refs})
+		// Idempotent: one already pending for the spike returns nil.
+		cp, err = store.CreateCheckpoint(ctx, tx, "spike-code-kept", "spike", sp.ID, text, payload)
 		return err
 	})
 	if err != nil {
@@ -122,8 +129,14 @@ func (s *Server) leakedRefs(sp *store.Spike) ([]string, error) {
 		return nil, err
 	}
 	if admin == "" {
+		// The planner makes the working copy before the run's first call, so a
+		// spike that has used tokens had one. Only one that never did, and has
+		// no directory, was never made.
 		if _, err := os.Stat(abs); errors.Is(err, fs.ErrNotExist) {
-			return nil, nil // the working copy was never made, or is already gone
+			if sp.TokensUsed > 0 {
+				return nil, errors.New("the working copy was removed, so git's record of it is gone")
+			}
+			return nil, nil
 		}
 		return nil, errors.New("git has no record of the working copy")
 	}
@@ -144,11 +157,12 @@ func (s *Server) leakedRefs(sp *store.Spike) ([]string, error) {
 	var commits map[string]bool
 	if len(made) > 0 {
 		// Less anything that was already on a ref when the spike started.
-		args := append(append([]string{"rev-list"}, made...), "--not", sp.BaseCommit)
+		// On stdin: a repository with many refs would overflow the command line.
+		lines := append(slices.Clone(made), "^"+sp.BaseCommit)
 		for _, sha := range sp.RefsAtStart {
-			args = append(args, sha)
+			lines = append(lines, "^"+sha)
 		}
-		out, err := gitIn(s.RepoRoot, args...)
+		out, err := gitInWithStdin(s.RepoRoot, strings.Join(lines, "\n")+"\n", "rev-list", "--stdin")
 		if err != nil {
 			return nil, fmt.Errorf("git couldn't list the commits made there (%v)", err)
 		}
@@ -165,6 +179,8 @@ func (s *Server) leakedRefs(sp *store.Spike) ([]string, error) {
 		}
 		switch {
 		case name == "refs/stash" || strings.HasPrefix(name, "refs/tags/"):
+			// Always a leak when changed: nothing to look up, so it falls
+			// through to be reported.
 		case len(commits) == 0:
 			continue
 		default:

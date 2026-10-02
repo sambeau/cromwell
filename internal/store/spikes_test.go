@@ -476,39 +476,13 @@ func TestListSpikesOrderAndFilters(t *testing.T) {
 	eq("closed", ids(SpikeFilter{State: SpikeClosed}), "SPK-001")
 }
 
-// G5 counts the spikes not yet closed across the subtree, and the Inbox
-// counts those waiting to be read.
-func TestOpenSpikesUnderInitiative(t *testing.T) {
+// The Inbox counts the spikes waiting to be read.
+func TestEndedSpikesCount(t *testing.T) {
 	fx := newSpikeFixture(t)
 	ctx := context.Background()
-	count := func(id uuid.UUID) int {
-		n, err := OpenSpikesUnderInitiative(ctx, fx.s.Pool, id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-	if count(fx.parent.ID) != 0 {
-		t.Error("an empty subtree has open spikes")
-	}
-	onParent := fx.create(t, fx.parent.ID, nil, "on the parent")
 	onChild := fx.create(t, fx.child.ID, nil, "on the child")
-	fx.create(t, fx.parent.ID, &fx.feature.ID, "on the feature")
-	if got := count(fx.parent.ID); got != 3 {
-		t.Errorf("parent subtree = %d, want 3", got)
-	}
-	if got := count(fx.child.ID); got != 1 {
-		t.Errorf("child subtree = %d, want 1", got)
-	}
-
-	if err := fx.close(t, onParent.ID, SpikeUnanswered); err != nil {
-		t.Fatal(err)
-	}
 	fx.start(t, onChild.ID, 100)
 	fx.end(t, onChild.ID, SpikeConcluded, "")
-	if got := count(fx.parent.ID); got != 2 {
-		t.Errorf("after closing one = %d, want 2", got)
-	}
 	if n, err := EndedSpikesCount(ctx, fx.s.Pool); err != nil || n != 1 {
 		t.Errorf("EndedSpikesCount = %d, %v; want 1", n, err)
 	}

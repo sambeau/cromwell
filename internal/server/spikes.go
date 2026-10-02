@@ -619,7 +619,7 @@ func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e fi
 	section := func(heading, body string) {
 		fmt.Fprintf(&b, "\n## %s\n\n%s\n", heading, body)
 	}
-	section(headingQuestion, closeFences(strings.TrimSpace(oneLineKeep(question))))
+	section(headingQuestion, escapeLeadingHash(closeFences(strings.TrimSpace(oneLineKeep(question)))))
 	section(headingAnswer, clean(answer))
 	section(headingFound, clean(found))
 	for _, h := range []string{headingHow, headingNext} {
@@ -634,6 +634,15 @@ func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e fi
 	}
 	section(headingEnded, clean(endedSentence(e)+keptParagraph(e)))
 	return b.String()
+}
+
+// escapeLeadingHash keeps a question that begins with "#" from becoming a
+// heading inside its section.
+func escapeLeadingHash(q string) string {
+	if strings.HasPrefix(q, "#") {
+		return `\` + q
+	}
+	return q
 }
 
 // oneLineKeep collapses a question's line breaks, so a question can't open a
