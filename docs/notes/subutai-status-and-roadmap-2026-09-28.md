@@ -734,7 +734,7 @@ M0, M3 and M6 handoffs.
 *Done when:* a task done in chat gets the same review and verification as an
 agent's.
 
-**M14 — Spikes** · S · needs M8
+**M14 — Spikes** · S · needs M8 · stage 1 ✅ **done 2026-10-02**, see the [M14 handoff](handoff-M14-2026-10-02.md); stage 2 (chat and person spikes) waits for M13
 *Goal: a budgeted question that can't ship code.*
 - A token budget.
 - A findings document.
