@@ -44,6 +44,7 @@
         <svg class="icon icon-xs" aria-hidden="true"><use href="#i-clock"/></svg>
         <span>Raised {{ago .CreatedAt}} ago, about {{article .RefType}} {{.RefType}}</span>
       </p>
+      {{if .LastActivity}}<p class="t-meta u-mt-2">{{.LastActivity}}</p>{{end}}
     </div>
     <span class="u-push">
       <span class="badge" data-state="review">

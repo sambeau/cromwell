@@ -169,3 +169,36 @@ func auditWithdrawn(ctx context.Context, tx pgx.Tx, rows pgx.Rows, kind, refType
 	}
 	return len(ids), nil
 }
+
+// PendingCheckpointFor returns the pending checkpoint of a kind on an item, or
+// ErrNotFound. There is at most one: checkpoints are one per kind and item
+// while pending.
+func PendingCheckpointFor(ctx context.Context, q Querier, kind, refType string, refID uuid.UUID) (*Checkpoint, error) {
+	return scanCheckpoint(q.QueryRow(ctx, `SELECT `+checkpointCols+` FROM checkpoints
+		WHERE kind = $1 AND ref_type = $2 AND ref_id = $3 AND state = 'pending'`, kind, refType, refID))
+}
+
+// UpdatePendingCheckpoint replaces the question and context of a checkpoint
+// that is still pending, for a notice that grows while it waits: more
+// unclaimed commits are added to the one question rather than raising a second
+// (SPEC-020 FR-5.8). It says whether the checkpoint was still pending.
+func UpdatePendingCheckpoint(ctx context.Context, tx pgx.Tx, id uuid.UUID, question string, contextData map[string]any) (bool, error) {
+	ctxJSON, err := json.Marshal(contextData)
+	if err != nil {
+		return false, err
+	}
+	var kind, refType string
+	var refID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		UPDATE checkpoints SET question = $2, context = $3
+		WHERE id = $1 AND state = 'pending'
+		RETURNING kind, ref_type, ref_id`, id, question, ctxJSON).Scan(&kind, &refType, &refID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, Audit(ctx, tx, "orchestrator", "checkpoint.updated", refType, &refID,
+		map[string]any{"checkpoint_id": id.String(), "kind": kind, "question": question})
+}

@@ -396,6 +396,12 @@ func checkpointAbout(kind string) string {
 		return "a rule blocked progress"
 	case "worktree-failure":
 		return "the working copy could not be made"
+	case "claim-stale":
+		return "is someone still working on a task"
+	case "claim-deadline":
+		return "a task's time box has run out"
+	case "unclaimed-commit":
+		return "commits nobody claimed"
 	case "":
 		return "a question"
 	default:

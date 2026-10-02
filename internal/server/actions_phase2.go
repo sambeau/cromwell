@@ -35,6 +35,10 @@ func (s *Server) executePhase2(ctx context.Context, action rules.Action) (bool, 
 		return true, s.returnTaskCode(ctx, a)
 	case rules.AbandonTask:
 		return true, s.abandonTask(ctx, a)
+	case rules.KeepClaim:
+		return true, s.KeepClaimAnswered(ctx, a)
+	case rules.ReleaseClaim:
+		return true, s.ReleaseClaimAnswered(ctx, a)
 	case rules.FileAuthoredDocument:
 		var run *uuid.UUID
 		if a.DispatchID != uuid.Nil {
@@ -261,7 +265,7 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 		// there is nothing to commit, the implementer produced no diff — a
 		// failure the code reviewer should see, so we still proceed with an
 		// empty commit marker rather than silently dropping the task.
-		s.watchBranch(ctx, wt)
+		s.watchBranchLogged(ctx, wt)
 		commitMsg := fmt.Sprintf("subutai: %s — %s\n\n%s", task.LocalID, task.Title, summary)
 		if err := s.commitWorktree(root, commitMsg); err != nil {
 			return fmt.Errorf("committing task work: %w", err)

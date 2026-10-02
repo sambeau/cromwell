@@ -266,3 +266,41 @@ func EndClaimsForFeature(ctx context.Context, tx pgx.Tx, featureID uuid.UUID, ac
 	}
 	return claims, nil
 }
+
+// LockClaim reads a claim with FOR UPDATE, by id. The sweep takes it alone,
+// so that raising a stale question and an activity that withdraws it can't
+// pass each other (SPEC-020 FR-5.4); it takes no other row lock, so it can't
+// close a cycle with the lock order of FR-2.7.
+func LockClaim(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*Claim, error) {
+	return scanClaim(tx.QueryRow(ctx, `SELECT `+claimCols+` FROM work_claims WHERE id = $1 FOR UPDATE`, id))
+}
+
+// KeepClaim records that a person kept a claim that was asked about: activity
+// `kept`, so the clock restarts (SPEC-020 FR-5.3, SD-8). It works on an open
+// or a returned claim, which the machine's renew event can't (a returned claim
+// has no renewal), and says whether it changed anything. clearDeadline also
+// removes a time box that has passed, so the question isn't asked again at
+// once. The audit row says "kept", and any pending claim-stale is withdrawn
+// (FR-5.4).
+func KeepClaim(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor string, clearDeadline bool) (bool, error) {
+	var c Claim
+	err := tx.QueryRow(ctx, `
+		UPDATE work_claims SET last_activity = 'kept', last_activity_at = now(),
+		  deadline_at = CASE WHEN $2 THEN NULL ELSE deadline_at END
+		WHERE id = $1 AND state IN ('open', 'returned')
+		RETURNING `+claimCols, id, clearDeadline).
+		Scan(&c.ID, &c.RefType, &c.RefID, &c.FeatureID, &c.Kind, &c.Actor, &c.Via, &c.State,
+			&c.EndReason, &c.EndedBy, &c.ClaimedAt, &c.LastActivityAt, &c.LastActivity, &c.WorktreeSeen,
+			&c.DeadlineAt, &c.SubmittedAt, &c.EndedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, err := WithdrawCheckpoints(ctx, tx, "claim-stale", c.RefType, c.RefID, actor, "the claim was kept"); err != nil {
+		return false, err
+	}
+	return true, Audit(ctx, tx, actor, "claim.activity", c.RefType, &c.RefID,
+		map[string]any{"claim_id": c.ID.String(), "kind": c.Kind, "via": c.Via, "activity": "kept", "by": actor})
+}

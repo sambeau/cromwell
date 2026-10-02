@@ -149,6 +149,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.ReconcileWorktrees(ctx); err != nil {
 		s.Log.Error("boot worktree reconciliation", "err", err)
 	}
+	if err := s.BackfillWatchedHeads(ctx); err != nil {
+		s.Log.Error("boot branch-watch backfill", "err", err)
+	}
 	if err := s.ReconcileGates(ctx); err != nil {
 		s.Log.Error("boot gate reconciliation", "err", err)
 	}
@@ -264,6 +267,8 @@ func (s *Server) heartbeat(ctx context.Context) {
 			return
 		case <-t.C:
 			s.Dispatcher.StallSweep(ctx)
+			s.ClaimSweep(ctx)       // SPEC-020 FR-5.1
+			s.BranchWatchSweep(ctx) // SPEC-020 FR-5.6
 			s.Dispatcher.RetrySweep(ctx)
 			s.ReconcileAuthoringSweep(ctx)
 			s.findMovedDocuments(ctx)
