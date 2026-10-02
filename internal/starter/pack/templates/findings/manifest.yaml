@@ -1,0 +1,16 @@
+type: findings
+# A spike's findings are a person's to approve (SPEC-021 FR-2.1): no agent
+# reviews them, so there is no reviewer role.
+approved_by: human
+front_matter:
+  required: [title, type, owner]
+sections:
+  order: strict
+  required:
+    - heading: Question
+    - heading: Answer
+    - heading: What we found
+  optional:
+    - heading: How we found out
+    - heading: What to do next
+    - heading: How this spike ended

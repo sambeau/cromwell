@@ -75,6 +75,49 @@ type Config struct {
 	// Surfacing bounds what each dispatch is told of the project's decisions
 	// and conventions (SPEC-018 FR-6.5). Optional.
 	Surfacing SurfacingConfig `yaml:"surfacing"`
+
+	// Spikes holds the project-wide defaults for spikes (SPEC-021 FR-10.1).
+	// Optional.
+	Spikes SpikeConfig `yaml:"spikes"`
+}
+
+// SpikeConfig is the project-wide default token budget for a spike
+// (SPEC-021 SD-6). A spike may override it when it is started.
+type SpikeConfig struct {
+	DefaultTokenBudget int64 `yaml:"default_token_budget"`
+
+	// budgetSet is true when the file names default_token_budget, so an
+	// explicit 0 can be refused while an absent value takes the default.
+	budgetSet bool
+}
+
+// UnmarshalYAML reads the section and notes whether the budget was written.
+func (s *SpikeConfig) UnmarshalYAML(n *yaml.Node) error {
+	type plain SpikeConfig
+	var p plain
+	if err := n.Decode(&p); err != nil {
+		return err
+	}
+	*s = SpikeConfig(p)
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == "default_token_budget" {
+			s.budgetSet = true
+		}
+	}
+	return nil
+}
+
+// DefaultSpikeTokenBudget is the budget a spike gets when the project says
+// nothing (SPEC-021 SD-6, FR-10.1).
+const DefaultSpikeTokenBudget int64 = 1_000_000
+
+// SpikeDefaultTokenBudget is the configured default budget for a spike, or
+// the built-in default. It is read fresh at each use (SPEC-021 O-6).
+func (c *Config) SpikeDefaultTokenBudget() int64 {
+	if c.Spikes.DefaultTokenBudget <= 0 {
+		return DefaultSpikeTokenBudget
+	}
+	return c.Spikes.DefaultTokenBudget
 }
 
 // SurfacingConfig is the per-dispatch cap on the surfaced block, in
@@ -281,6 +324,12 @@ func (c *Config) validate() error {
 	}
 	if c.Surfacing.MaxDecisions < 0 {
 		add("surfacing.max_decisions", "can't be negative; leave it out for the default of %d", DefaultSurfacingMaxDecisions)
+	}
+	if c.Spikes.budgetSet && c.Spikes.DefaultTokenBudget <= 0 {
+		add("spikes.default_token_budget", "%d isn't a budget; use a number of tokens above 0, or leave it out for the default of %d", c.Spikes.DefaultTokenBudget, DefaultSpikeTokenBudget)
+	}
+	if c.Spikes.DefaultTokenBudget == 0 {
+		c.Spikes.DefaultTokenBudget = DefaultSpikeTokenBudget
 	}
 	if c.Server.MCPActor == "" {
 		c.Server.MCPActor = "chat-agent"
