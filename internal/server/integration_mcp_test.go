@@ -170,6 +170,11 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// the relay DESIGN-010 §17a item 6 allowed (SD-11). The chat agent
 		// has no triage decision of its own.
 		"relay_triage",
+		// SPEC-021 FR-9: writing down a spike's question is planning
+		// authoring; starting and closing one are a person's acts.
+		"create_spike",
+		"get_spike",
+		"list_spikes",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -196,6 +201,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-019 FR-6.4: triage is a person's decision, carried only with
 		// their words, and a bug is sent only from the web UI.
 		"accept_bug", "reject_bug", "triage_bug", "send_bug",
+		// SPEC-021 NFR-3: only the web UI starts or closes a spike.
+		"start_spike", "run_spike", "close_spike", "answer_spike",
+		"merge_spike", "promote_spike", "save_findings", "finish_spike",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {
