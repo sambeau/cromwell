@@ -1,0 +1,10 @@
+» create_initiative {"slug":"imports","name":"Imports","description":"Bring a customer's existing records into the product."}
+  {"description":"Bring a customer's existing records into the product.","design_document":{"id":"INIT-001-design","is_primary":false,"path":"docs/work/INIT-001-imports/INIT-001-design.md","revision":1,"row_id":"01a0fc4d-d8df-724e-bece-e1461011b237","state":"draft","title":"Imports","type":"design","url":"/ui/id/INIT-001-design","written_by":{"act":"started","kind":"chat","recorded":true,"sentence":"Started from the template by the chat agent.","who":"the chat agent"}},"id":"INIT-001","name":"Imports","path":"imports","url":"/ui/i/imports"}
+» create_feature {"initiative_path":"imports","slug":"bulk-import","name":"Bulk import","description":"Import a whole customer list in one go.","design_document":false}
+  {"description":"Import a whole customer list in one go.","id":"FEAT-001","name":"Bulk import","path":"imports/bulk-import","state":"idea","url":"/ui/f/imports/bulk-import"}
+» create_spike {"on":"imports/bulk-import","question":"Can the import screen show a progress bar that updates every second?"}
+  {"budget":1000000,"budget_source":"project default","created_via":"mcp","id":"SPK-001","next":"A person can start it from its page in the web UI.","owner":{"id":"FEAT-001","name":"Bulk import","path":"imports/bulk-import","type":"feature"},"question":"Can the import screen show a progress bar that updates every second?","state":"idea","tokens_used":0}
+» start_spike {"id":"SPK-001"}
+  JSON-RPC error -32601: there is no tool called "start_spike" on this server
+» get_spike {"id":"SPK-003"}
+  refused: there is no spike ""; spikes have IDs like "SPK-003", and list_spikes shows them
