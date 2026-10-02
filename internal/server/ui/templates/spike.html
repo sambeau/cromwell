@@ -145,8 +145,8 @@
   <div class="panel-body">
     <p id="spike-state-sentence">{{.StateSentence}}</p>
     {{if .Follows}}<p class="t-meta u-mt-2">It asks again after <a href="{{.Follows.URL}}">{{.Follows.PublicID}}</a>.</p>{{end}}
-    {{if .FollowBy}}<p class="t-meta u-mt-2">It was asked again as <a href="{{.FollowBy.URL}}">{{.FollowBy.PublicID}}</a>.</p>{{end}}
-    {{if .SD12}}<p class="u-mt-2">{{.SD12}}</p>{{end}}
+    {{if .FollowedBy}}<p class="t-meta u-mt-2">It was asked again as <a href="{{.FollowedBy.URL}}">{{.FollowedBy.PublicID}}</a>.</p>{{end}}
+    {{if .BuildOnSentence}}<p class="u-mt-2">{{.BuildOnSentence}}</p>{{end}}
   </div>
 </section>
 

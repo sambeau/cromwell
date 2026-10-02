@@ -197,7 +197,7 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 		"Created by sam in the web UI.")
 	lacks(t, "an idea's page", page, "The question is answered", "Ask again with a new budget")
 	// /ui/id/ lands on the page.
-	if code, loc := h.postValuesGetLocation("/ui/id/" + idea.PublicID); code != 302 || loc != "/ui/s/"+idea.PublicID {
+	if code, loc := h.redirectOf("/ui/id/" + idea.PublicID); code != 302 || loc != "/ui/s/"+idea.PublicID {
 		t.Errorf("/ui/id/%s = %d %q", idea.PublicID, code, loc)
 	}
 
@@ -364,17 +364,6 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 	cands := h.uiText("/ui/m/" + m.ID.String() + "/candidates?q=log")
 	lacks(t, "the milestone candidates", cands, "SPK-", "Which queue", "Does the login form leak timing?")
 	wants(t, "the milestone candidates", cands, "Login")
-}
-
-// postValuesGetLocation does a GET without following a redirect.
-func (h *harness) postValuesGetLocation(path string) (int, string) {
-	h.t.Helper()
-	resp, err := noRedirect.Get(h.api.URL + path)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	return resp.StatusCode, resp.Header.Get("Location")
 }
 
 // ---- FR-1.3, FR-1.4, FR-7: creating and closing from the browser ----

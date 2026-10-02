@@ -197,29 +197,18 @@ func (s *Server) spikeResult(ctx context.Context, sp *store.Spike) map[string]an
 		"tokens_used": sp.TokensUsed, "created_via": sp.CreatedVia,
 	}
 	owner := map[string]any{}
-	if sp.FeatureID != nil {
-		if f, err := store.GetFeature(ctx, s.Store.Pool, *sp.FeatureID); err == nil {
-			owner = map[string]any{"id": f.PublicID, "name": f.Name, "type": "feature"}
-			if path, err := s.featurePath(ctx, f); err == nil {
-				owner["path"] = path
-			}
-		}
-	} else if in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID); err == nil {
-		owner = map[string]any{"id": in.PublicID, "name": in.Name, "type": "initiative"}
-		if path, err := s.initiativePath(ctx, in.ID); err == nil {
-			owner["path"] = path
+	if o := s.spikeOwnerRef(ctx, sp); o.ID != "" {
+		owner = map[string]any{"id": o.ID, "name": o.Name, "type": o.Type}
+		if o.Path != "" {
+			owner["path"] = o.Path
 		}
 	}
 	out["owner"] = owner
-	switch {
-	case sp.TokenBudget != nil:
+	if sp.TokenBudget != nil {
 		out["budget"], out["budget_source"] = *sp.TokenBudget, "given at the start"
-	case sp.BudgetOverride != nil:
-		out["budget"], out["budget_source"] = *sp.BudgetOverride, "set on the spike"
-	default:
-		if cfg, err := s.freshConfig(); err == nil {
-			out["budget"], out["budget_source"] = cfg.SpikeDefaultTokenBudget(), "project default"
-		}
+	} else if cfg, err := s.freshConfig(); err == nil {
+		budget, source := spikeBudgetFor(cfg, sp)
+		out["budget"], out["budget_source"] = budget, map[string]string{"override": "set on the spike", "default": "project default"}[source]
 	}
 	return out
 }

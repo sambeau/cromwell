@@ -69,22 +69,36 @@ func tokensOfBudget(sp *store.Spike) string {
 // spikeWhen is a moment in words: "2 October at 14:05".
 func spikeWhen(t time.Time) string { return t.Local().Format("2 January at 15:04") }
 
+// spikeOwnerInfo is the entity a spike hangs on. Path is empty when it can't be
+// found, and every field is empty when the owner itself can't be read.
+type spikeOwnerInfo struct {
+	ID, Name, Type, Path string
+}
+
+func (s *Server) spikeOwnerRef(ctx context.Context, sp *store.Spike) spikeOwnerInfo {
+	if sp.FeatureID != nil {
+		f, err := store.GetFeature(ctx, s.Store.Pool, *sp.FeatureID)
+		if err != nil {
+			return spikeOwnerInfo{}
+		}
+		path, _ := s.featurePath(ctx, f)
+		return spikeOwnerInfo{ID: f.PublicID, Name: f.Name, Type: "feature", Path: path}
+	}
+	in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID)
+	if err != nil {
+		return spikeOwnerInfo{}
+	}
+	path, _ := s.initiativePath(ctx, in.ID)
+	return spikeOwnerInfo{ID: in.PublicID, Name: in.Name, Type: "initiative", Path: path}
+}
+
 // spikeOwnerOf names the entity a spike hangs on and links to it.
 func (s *Server) spikeOwnerOf(ctx context.Context, sp *store.Spike) (name, url string) {
-	if sp.FeatureID != nil {
-		if f, err := store.GetFeature(ctx, s.Store.Pool, *sp.FeatureID); err == nil {
-			if p, err := s.featurePath(ctx, f); err == nil {
-				return f.PublicID + " " + f.Name, "/ui/f/" + p
-			}
-		}
+	o := s.spikeOwnerRef(ctx, sp)
+	if o.Path == "" {
 		return "", ""
 	}
-	if in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID); err == nil {
-		if p, err := s.initiativePath(ctx, in.ID); err == nil {
-			return in.PublicID + " " + in.Name, "/ui/i/" + p
-		}
-	}
-	return "", ""
+	return o.ID + " " + o.Name, "/ui/" + o.Type[:1] + "/" + o.Path
 }
 
 func (s *Server) spikeRows(ctx context.Context, spikes []store.Spike, withOwner bool) []spikeRow {
@@ -149,25 +163,22 @@ type spikePage struct {
 	ID       uuid.UUID
 	PublicID string
 	Question string
-	State    string
 	Badge    spikeBadge
 	Crumbs   []crumb
 
 	OwnerName, OwnerURL string
 	StateSentence       string
 
-	HasBudget    bool
-	Used, Budget int64
-	Pct          int
-	TokensLine   string // "31,004 of 40,000 tokens"
-	BudgetLine   string // before the start: what the budget will be
-	OverLine     string // when the run went past its budget
-	TokensNote   string
+	HasBudget  bool
+	Pct        int
+	TokensLine string // "31,004 of 40,000 tokens"
+	BudgetLine string // before the start: what the budget will be
+	OverLine   string // when the run went past its budget
+	TokensNote string
 
-	Running      bool
-	Draft        string
-	DraftSavedAt *time.Time
-	DraftWhen    string
+	Running   bool
+	Draft     string
+	DraftWhen string
 
 	FindingsTitle string
 	FindingsURL   string
@@ -175,19 +186,17 @@ type spikePage struct {
 
 	WorktreeLine string
 
-	CanStart     bool
-	CanCloseIdea bool
-	CanCloseRun  bool
-	AgainBudget  int64
-	Answered     bool
-	SD12         string
-	FindingsID   string
+	CanStart    bool
+	CanCloseRun bool
+	AgainBudget int64
+	// BuildOnSentence says how to build on an answered spike's findings.
+	BuildOnSentence string
 
 	Timeline []spikeMoment
 	RunURL   string
 	RunNote  string
-	Follows  *spikeLink
-	FollowBy *spikeLink
+	Follows    *spikeLink
+	FollowedBy *spikeLink
 
 	Notice string
 	Error  string
@@ -226,8 +235,8 @@ func strField(m map[string]any, key string) string {
 }
 
 func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, errMsg string) (*spikePage, error) {
-	p := &spikePage{ID: sp.ID, PublicID: sp.PublicID, Question: sp.Question, State: sp.State,
-		Badge: spikeBadgeFor(sp), Notice: notice, Error: errMsg, Used: sp.TokensUsed,
+	p := &spikePage{ID: sp.ID, PublicID: sp.PublicID, Question: sp.Question,
+		Badge: spikeBadgeFor(sp), Notice: notice, Error: errMsg,
 		StateSentence: spikeStateSentence(sp), Running: sp.State == store.SpikeRunning}
 	p.OwnerName, p.OwnerURL = s.spikeOwnerOf(ctx, sp)
 
@@ -246,17 +255,18 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 
 	// Tokens against the budget.
 	if sp.TokenBudget != nil {
-		p.HasBudget, p.Budget = true, *sp.TokenBudget
+		budget := *sp.TokenBudget
+		p.HasBudget = true
 		p.TokensLine = tokensOfBudget(sp)
-		if p.Budget > 0 {
-			p.Pct = int(sp.TokensUsed * 100 / p.Budget)
+		if budget > 0 {
+			p.Pct = int(sp.TokensUsed * 100 / budget)
 			if p.Pct > 100 {
 				p.Pct = 100
 			}
 		}
-		if sp.TokensUsed > p.Budget {
+		if sp.TokensUsed > budget {
 			p.OverLine = fmt.Sprintf("It used %s tokens, which is more than its budget of %s.",
-				groupThousands(sp.TokensUsed), groupThousands(p.Budget))
+				groupThousands(sp.TokensUsed), groupThousands(budget))
 		}
 		p.TokensNote = "These tokens count every model call the run made, including attempts that failed and were tried again."
 	} else if cfg, err := s.freshConfig(); err == nil {
@@ -270,14 +280,15 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 
 	// The draft while it runs, the findings once it has ended.
 	if p.Running {
-		p.Draft, p.DraftSavedAt = strings.TrimSpace(sp.Draft), sp.DraftSavedAt
-		if p.DraftSavedAt != nil {
-			p.DraftWhen = spikeWhen(*p.DraftSavedAt)
+		p.Draft = strings.TrimSpace(sp.Draft)
+		if sp.DraftSavedAt != nil {
+			p.DraftWhen = spikeWhen(*sp.DraftSavedAt)
 		}
 	}
+	findingsID := sp.PublicID + "-findings"
 	if sp.State == store.SpikeEnded || sp.State == store.SpikeClosed {
 		if d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "findings", "spike", sp.ID); err == nil {
-			p.FindingsTitle, p.FindingsURL, p.FindingsState, p.FindingsID = d.Title, "/ui/d/"+d.Path, string(d.State), d.PublicID
+			p.FindingsTitle, p.FindingsURL, p.FindingsState, findingsID = d.Title, "/ui/d/"+d.Path, string(d.State), d.PublicID
 		}
 	}
 
@@ -294,7 +305,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 	// What a person can do.
 	switch sp.State {
 	case store.SpikeIdea:
-		p.CanStart, p.CanCloseIdea = true, true
+		p.CanStart = true
 	case store.SpikeEnded:
 		p.CanCloseRun = true
 		if sp.TokenBudget != nil {
@@ -302,12 +313,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 		}
 	case store.SpikeClosed:
 		if sp.ClosedAs == store.SpikeAnswered {
-			p.Answered = true
-			id := sp.PublicID + "-findings"
-			if p.FindingsID != "" {
-				id = p.FindingsID
-			}
-			p.SD12 = "To build on this, cite " + id + " in a design, then create a feature in the normal way."
+			p.BuildOnSentence = "To build on this, cite " + findingsID + " in a design, then create a feature in the normal way."
 		}
 	}
 
@@ -386,7 +392,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 		}
 	}
 	if o, err := store.SpikeFollowedBy(ctx, s.Store.Pool, sp.ID); err == nil {
-		p.FollowBy = link(o)
+		p.FollowedBy = link(o)
 	}
 	return p, nil
 }
