@@ -378,9 +378,12 @@ func endedSentence(e findingsEnd) string {
 	case store.SpikeConcluded:
 		fmt.Fprintf(&b, "The agent reached a conclusion. It used %s of its %s tokens.", used, budget)
 	case store.SpikeBudget:
-		if e.Used > e.Budget {
+		switch {
+		case e.Used > e.Budget:
 			fmt.Fprintf(&b, "The spike stopped at its budget. It used %s tokens, which is more than its budget of %s.", used, budget)
-		} else {
+		case e.Used == e.Budget:
+			fmt.Fprintf(&b, "The spike stopped at its budget. It used all %s tokens of it.", budget)
+		default:
 			// The run never begins a call it can see would cross the budget
 			// (SD-7), so it can stop with some of the budget left.
 			fmt.Fprintf(&b, "The spike stopped at its budget, because its next step would have gone over. It used %s of its %s tokens.", used, budget)
