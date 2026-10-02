@@ -919,10 +919,13 @@ of 40. `skills/run-spike/SKILL.md` says:
   the code.
 
 **FR-10.3 — Known tools, and the loader.** `config.KnownTools` gains
-`save_findings`. `run-spike` joins `isWorktreePurpose`. The loader checks
-**every role file**, assigned or not:
-- `save_findings` is refused on a role that isn't assigned `run-spike` only:
-  "save_findings is for the spike runner, so role X can't be offered it.";
+`save_findings`. `run-spike` joins `isWorktreePurpose`. The loader checks **every role file**, assigned or not
+*(amended after the first code review, which found the first wording broke
+FR-10.4's upgrade path)*:
+- `save_findings` is refused on a role assigned any purpose other than
+  `run-spike`: "save_findings is for the spike runner, so role X can't be
+  offered it." A role file that isn't assigned yet loads, so a project can
+  copy `spike-runner.yaml` before it adds the assignment;
 - `report_bug` is refused on a role assigned `run-spike`: "A spike's agent
   puts what it finds in its findings, so role X can't be offered
   report_bug."
