@@ -6,7 +6,7 @@
     "is_primary": false,
     "path": "docs/work/INIT-001-imports/INIT-001-design.md",
     "revision": 1,
-    "row_id": "01a0fd0f-4bdb-7e6e-801b-734d3ebbb2ba",
+    "row_id": "01a0fd36-4bb5-7551-a591-592a6415eadc",
     "state": "draft",
     "title": "Imports",
     "type": "design",
@@ -148,7 +148,7 @@
     "question": "Can the import screen show a progress bar that updates every second?",
     "where_it_came_from": "This spike was written down on the feature FEAT-001, Bulk import.\n\nImport a whole customer list in one go."
   },
-  "deadline": "2026-10-02T18:40:36Z",
+  "deadline": "2026-10-02T19:23:12Z",
   "next": "Work on the question in the working copy, save findings as you go with save_spike_findings, and call submit_spike when you are done.",
   "rules": [
     "Work only inside the working copy named in this result. It is a throwaway copy: it is discarded when the spike ends, and nothing in it is kept or merged.",
@@ -165,13 +165,13 @@
     "claim": {
       "kind": "chat",
       "last_activity": "claimed",
-      "last_activity_at": "2026-10-02T14:40:36Z",
-      "since": "2026-10-02T14:40:36Z",
+      "last_activity_at": "2026-10-02T15:23:13Z",
+      "since": "2026-10-02T15:23:13Z",
       "state": "open",
       "who": "the chat agent"
     },
     "created_via": "mcp",
-    "deadline": "2026-10-02T18:40:36Z",
+    "deadline": "2026-10-02T19:23:12Z",
     "executor": {
       "kind": "chat",
       "model": "",
@@ -192,21 +192,21 @@
     "time_box_hours": 4,
     "tokens_used": null
   },
-  "time_left": "The time box ends at 18:40 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
   "working_copy": {
-    "base_commit": "66d07edc4580a01970fef24c381c0dadba64f4b0",
+    "base_commit": "5fa12398c5a13874df6685aea5833a60eca5f350",
     "detached": true,
-    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-dab5b8"
+    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-c64c87"
   }
 }
 
-# claim_spike returned: working_copy {"base_commit":"66d07edc4580a01970fef24c381c0dadba64f4b0","detached":true,"path":"/var/tmp/m14s2demo/.subutai/worktrees/spk-dab5b8"}; contract keys findings_template, question, where_it_came_from; deadline 2026-10-02T18:40:36Z; time_left "The time box ends at 18:40 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."; 7 rules
+# claim_spike returned: working_copy {"base_commit":"5fa12398c5a13874df6685aea5833a60eca5f350","detached":true,"path":"/var/tmp/m14s2demo/.subutai/worktrees/spk-c64c87"}; contract keys findings_template, question, where_it_came_from; deadline 2026-10-02T19:23:12Z; time_left "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."; 7 rules
 
 » save_spike_findings {"spike":"SPK-001","findings":"## Answer\n\nNot yet: the server reports progress, but how often has not been measured.\n\n## What we found\n\n- The import reports its progress after every 100 rows.\n"}
   {
-  "deadline": "2026-10-02T18:40:36Z",
+  "deadline": "2026-10-02T19:23:12Z",
   "saved": "Saved. If the time box ends now, this is what is kept.",
-  "time_left": "The time box ends at 18:40 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."
 }
 
 » submit_spike {"spike":"SPK-001","findings":"## Answer\n\nYes.\n"}
@@ -225,13 +225,13 @@
     "claim": {
       "kind": "chat",
       "last_activity": "submitted",
-      "last_activity_at": "2026-10-02T14:40:37Z",
-      "since": "2026-10-02T14:40:36Z",
+      "last_activity_at": "2026-10-02T15:23:13Z",
+      "since": "2026-10-02T15:23:13Z",
       "state": "ended",
       "who": "the chat agent"
     },
     "created_via": "mcp",
-    "deadline": "2026-10-02T18:40:36Z",
+    "deadline": "2026-10-02T19:23:12Z",
     "executor": {
       "kind": "chat",
       "model": "",
@@ -292,7 +292,7 @@
     "question": "Can the importer resume after a dropped connection?",
     "where_it_came_from": "This spike was written down on the feature FEAT-001, Bulk import.\n\nImport a whole customer list in one go."
   },
-  "deadline": "2026-10-02T18:40:43Z",
+  "deadline": "2026-10-02T19:23:20Z",
   "next": "Work on the question in the working copy, save findings as you go with save_spike_findings, and call submit_spike when you are done.",
   "rules": [
     "Work only inside the working copy named in this result. It is a throwaway copy: it is discarded when the spike ends, and nothing in it is kept or merged.",
@@ -309,13 +309,13 @@
     "claim": {
       "kind": "chat",
       "last_activity": "claimed",
-      "last_activity_at": "2026-10-02T14:40:43Z",
-      "since": "2026-10-02T14:40:43Z",
+      "last_activity_at": "2026-10-02T15:23:20Z",
+      "since": "2026-10-02T15:23:20Z",
       "state": "open",
       "who": "the chat agent"
     },
     "created_via": "mcp",
-    "deadline": "2026-10-02T18:40:43Z",
+    "deadline": "2026-10-02T19:23:20Z",
     "executor": {
       "kind": "chat",
       "model": "",
@@ -336,19 +336,19 @@
     "time_box_hours": 4,
     "tokens_used": null
   },
-  "time_left": "The time box ends at 18:40 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
   "working_copy": {
-    "base_commit": "d3ec0adc77f8f559c864ee51216025a95110c294",
+    "base_commit": "aa84aa3f9e9b2db1957be0015aaa2aeef5472edf",
     "detached": true,
-    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-68a889"
+    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-e6de30"
   }
 }
 
 » save_spike_findings {"spike":"SPK-003","findings":"## Answer\n\nNot yet: only the first half of the question has been looked at.\n\n## What we found\n\n- A dropped connection leaves the import at the last 100-row step.\n"}
   {
-  "deadline": "2026-10-02T18:40:43Z",
+  "deadline": "2026-10-02T19:23:20Z",
   "saved": "Saved. If the time box ends now, this is what is kept.",
-  "time_left": "The time box ends at 18:40 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."
 }
 
 # SPK-003: spikes.deadline_at and work_claims.deadline_at backdated by SQL; waiting for the heartbeat
@@ -360,13 +360,13 @@
   "claim": {
     "kind": "chat",
     "last_activity": "findings saved",
-    "last_activity_at": "2026-10-02T14:40:43Z",
-    "since": "2026-10-02T14:40:43Z",
+    "last_activity_at": "2026-10-02T15:23:21Z",
+    "since": "2026-10-02T15:23:20Z",
     "state": "ended",
     "who": "the chat agent"
   },
   "created_via": "mcp",
-  "deadline": "2026-10-02T14:39:44Z",
+  "deadline": "2026-10-02T15:22:21Z",
   "end_note": "",
   "ended_how": "time_box",
   "executor": {
@@ -439,7 +439,7 @@
     "question": "Can an import be cancelled half way without leaving rows behind?",
     "where_it_came_from": "This spike was written down on the feature FEAT-001, Bulk import.\n\nImport a whole customer list in one go."
   },
-  "deadline": "2026-10-02T18:40:46Z",
+  "deadline": "2026-10-02T19:23:27Z",
   "next": "Work on the question in the working copy, save findings as you go with save_spike_findings, and call submit_spike when you are done.",
   "rules": [
     "Work only inside the working copy named in this result. It is a throwaway copy: it is discarded when the spike ends, and nothing in it is kept or merged.",
@@ -456,13 +456,13 @@
     "claim": {
       "kind": "chat",
       "last_activity": "claimed",
-      "last_activity_at": "2026-10-02T14:40:47Z",
-      "since": "2026-10-02T14:40:47Z",
+      "last_activity_at": "2026-10-02T15:23:27Z",
+      "since": "2026-10-02T15:23:27Z",
       "state": "open",
       "who": "the chat agent"
     },
     "created_via": "mcp",
-    "deadline": "2026-10-02T18:40:46Z",
+    "deadline": "2026-10-02T19:23:27Z",
     "executor": {
       "kind": "chat",
       "model": "",
@@ -483,11 +483,11 @@
     "time_box_hours": 4,
     "tokens_used": null
   },
-  "time_left": "The time box ends at 18:40 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
   "working_copy": {
-    "base_commit": "967c4faa2e6aaea1e17dca9bef46f90a09407808",
+    "base_commit": "0256e2df05c11460f73300cae64f3831f701edea",
     "detached": true,
-    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-4a5b97"
+    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-ec66ef"
   }
 }
 
@@ -500,13 +500,13 @@
   "claim": {
     "kind": "chat",
     "last_activity": "claimed",
-    "last_activity_at": "2026-10-01T12:40:47Z",
-    "since": "2026-10-01T12:40:47Z",
+    "last_activity_at": "2026-10-01T13:23:27Z",
+    "since": "2026-10-01T13:23:27Z",
     "state": "open",
     "who": "the chat agent"
   },
   "created_via": "mcp",
-  "deadline": "2026-10-02T18:40:46Z",
+  "deadline": "2026-10-02T19:23:27Z",
   "executor": {
     "kind": "chat",
     "model": "",

@@ -279,6 +279,11 @@ None is a major.
 13. **`claim-stale` with the defaults rarely fires before a 4-hour deadline**
     (24-hour expiry). SD-20 says so; a project may want a shorter expiry for
     spikes.
+14. **Some token and budget wording remains where a chat or person spike can
+    be chosen** (the walkthrough's second run): the start screen's subtitle
+    says "Starting spends tokens… its budget" whoever is chosen, the New spike
+    dialog offers only a budget, and the spikes list's intro says an agent
+    works on each spike.
 VERIFY_CANDIDATES_PLACEHOLDER
 
 ## Traps for the next session
