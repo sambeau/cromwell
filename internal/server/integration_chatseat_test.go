@@ -369,6 +369,11 @@ func TestVerdictsRecordWhoAndHow(t *testing.T) {
 	pathG := chatSpecPath("gamma")
 	h.writeCommitted(pathG, cascadeSpec("gamma"))
 	h.mustTool("attach_document", map[string]any{"path": pathG, "doc_type": "spec", "owner_type": "feature", "owner_path": "pf/gamma"})
+	// Let beta's unscripted review rest first: the mock's steps are one FIFO
+	// taken by whichever dispatch asks next, and on a busy runner a review
+	// still queued from beta's resubmission took gamma's approval (CI run
+	// 17), leaving gamma's review with nothing and this wait timing out.
+	h.quiet()
 	h.scriptApproval()
 	sub = h.mustTool("submit_for_review", map[string]any{"document": pathG})
 	if done, _ := sub["done"].(string); !strings.Contains(done, "held for a person") {
