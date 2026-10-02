@@ -21,8 +21,7 @@ type Kind struct {
 	Prefix string // "INIT", "FEAT", …
 	// Table is the entity table whose rows carry this prefix — for most, the
 	// one whose public_id column defaults to it (a bug names its own) — or
-	// "" while the entity doesn't exist (spikes) or isn't an entity
-	// (decisions are documents).
+	// "" when it isn't an entity (decisions are documents).
 	Table string
 }
 
@@ -35,7 +34,7 @@ var Kinds = []Kind{
 	// A bug is a features row with kind 'bug' (SPEC-019 SD-1); its insert
 	// names mint_ident('BUG') rather than taking the column default.
 	{Name: "bug", Prefix: "BUG", Table: "features"},
-	{Name: "spike", Prefix: "SPK"},
+	{Name: "spike", Prefix: "SPK", Table: "spikes"},
 	{Name: "decision", Prefix: "DEC"},
 	{Name: "milestone", Prefix: "MS", Table: "milestones"},
 	{Name: "roadmap", Prefix: "RM", Table: "roadmaps"},
@@ -44,8 +43,8 @@ var Kinds = []Kind{
 
 // DocTypes are the document types an ID can name, in database form
 // (migration 0001's document_type, plus 0010's decision, 0012's conventions and
-// 0013's bug_report).
-var DocTypes = []string{"spec", "dev_plan", "design", "research", "report", "note", "policy", "decision", "conventions", "bug_report"}
+// 0013's bug_report and 0015's findings).
+var DocTypes = []string{"spec", "dev_plan", "design", "research", "report", "note", "policy", "decision", "conventions", "bug_report", "findings"}
 
 // IsDocType reports whether t is a document type.
 func IsDocType(t string) bool {

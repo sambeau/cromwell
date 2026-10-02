@@ -9,6 +9,7 @@ const (
 	DocTypeSpec      = "spec"
 	DocTypeDevPlan   = "dev_plan"
 	DocTypeBugReport = "bug_report"
+	DocTypeFindings  = "findings"
 )
 
 // IsSpecType reports whether a document type is the first half of a
