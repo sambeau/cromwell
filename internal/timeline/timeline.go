@@ -234,6 +234,17 @@ var Rules = []Rule{
 		return "Rejected in triage", "abandoned", "request-changes"
 	}},
 
+	// A spike on the feature (SPEC-021 FR-8.3): when it starts and when its
+	// run ends. The event's label is the spike's ID. The feature's own
+	// pipeline goes on as it was, so these moments say what happened and no
+	// more; a spike's tokens are its own and never join the feature's.
+	{Kind: "spike.started", Make: func(e Event, _ *Context) (string, string, string) {
+		return "Spike " + e.Label + " started", "active", "spike"
+	}},
+	{Kind: "spike.ended", Make: func(e Event, _ *Context) (string, string, string) {
+		return "Spike " + e.Label + " ended: " + spikeEndWords(e.Str("how")), "review", "spike"
+	}},
+
 	// M3's "sent to development" event (DEC-006). Nothing emits it yet; a
 	// feature without one simply has no such moment (FR-5.3).
 	{Kind: "feature.sent", Make: fixed("Sent to development", "active", "start")},
@@ -293,6 +304,21 @@ var Rules = []Rule{
 		Make: func(e Event, _ *Context) (string, string, string) {
 			return "A person decided: " + answerWords(e.Payload["response"]), "done", "check"
 		}},
+}
+
+// spikeEndWords says how a spike's run ended, to follow "Spike SPK-003 ended: ".
+func spikeEndWords(how string) string {
+	switch how {
+	case "concluded":
+		return "it reached a conclusion"
+	case "budget":
+		return "it stopped at its budget"
+	case "turn_limit":
+		return "it stopped at its turn limit"
+	case "failed":
+		return "its run failed"
+	}
+	return "its run is over"
 }
 
 func plural(n int, one, many string) string {
@@ -438,7 +464,7 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 		switch {
 		case rule.Agentive != nil && rule.Agentive(e):
 			m.By = ByAgent
-		case e.Actor == "orchestrator" || roles[e.Actor]:
+		case e.Actor == "orchestrator" || e.Actor == "subutai" || roles[e.Actor]:
 			m.By = BySystem
 			if c := cause(rule, e, runs); c != nil {
 				m.By, m.Cause = ByAgent, c
