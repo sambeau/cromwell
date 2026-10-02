@@ -66,21 +66,6 @@ func tokensOfBudget(sp *store.Spike) string {
 	return groupThousands(sp.TokensUsed) + " of " + groupThousands(*sp.TokenBudget) + " tokens"
 }
 
-// spikeEndReason says how a run ended, to follow "its run has ended: ".
-func spikeEndedWords(how string) string {
-	switch how {
-	case store.SpikeConcluded:
-		return "the agent reached a conclusion"
-	case store.SpikeBudget:
-		return "it stopped at its budget"
-	case store.SpikeTurnLimit:
-		return "it stopped at its turn limit"
-	case store.SpikeFailed:
-		return "the run failed"
-	}
-	return "the run is over"
-}
-
 // spikeWhen is a moment in words: "2 October at 14:05".
 func spikeWhen(t time.Time) string { return t.Local().Format("2 January at 15:04") }
 
@@ -216,7 +201,7 @@ func spikeStateSentence(sp *store.Spike) string {
 	case store.SpikeRunning:
 		return "This spike is running."
 	case store.SpikeEnded:
-		return "This spike's run has ended: " + spikeEndedWords(sp.EndedHow) + ". It's waiting for you to read the findings."
+		return "This spike's run has ended: " + store.SpikeEndingOf(sp.EndedHow).Phrase + ". It's waiting for you to read the findings."
 	case store.SpikeClosed:
 		if sp.ClosedAs == store.SpikeAnswered {
 			return "This spike is closed: the question is answered."
@@ -359,7 +344,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 			m.Label = fmt.Sprintf("Started by %s, with a budget of %s tokens.", e.Actor, groupThousands(numField(pl, "budget")))
 			m.Icon, m.URL = "run", run
 		case "spike.ended":
-			m.Label = "Ended: " + spikeEndedWords(strField(pl, "how")) + "."
+			m.Label = "Ended: " + store.SpikeEndingOf(strField(pl, "how")).Phrase + "."
 			if b := numField(pl, "token_budget"); b > 0 {
 				m.Label += fmt.Sprintf(" It used %s of its %s tokens.", groupThousands(numField(pl, "tokens_used")), groupThousands(b))
 			} else {

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"subutai/internal/store"
 )
 
 // Event is one audit row about the feature, its documents or its tasks.
@@ -250,7 +252,7 @@ var Rules = []Rule{
 		return "Spike " + e.Label + " started", "idea", "spike"
 	}},
 	{Kind: "spike.ended", Aside: true, Make: func(e Event, _ *Context) (string, string, string) {
-		return "Spike " + e.Label + " ended: " + spikeEndWords(e.Str("how")), "idea", "spike"
+		return "Spike " + e.Label + " ended: " + store.SpikeEndingOf(e.Str("how")).Phrase, "idea", "spike"
 	}},
 
 	// M3's "sent to development" event (DEC-006). Nothing emits it yet; a
@@ -312,21 +314,6 @@ var Rules = []Rule{
 		Make: func(e Event, _ *Context) (string, string, string) {
 			return "A person decided: " + answerWords(e.Payload["response"]), "done", "check"
 		}},
-}
-
-// spikeEndWords says how a spike's run ended, to follow "Spike SPK-003 ended: ".
-func spikeEndWords(how string) string {
-	switch how {
-	case "concluded":
-		return "it reached a conclusion"
-	case "budget":
-		return "it stopped at its budget"
-	case "turn_limit":
-		return "it stopped at its turn limit"
-	case "failed":
-		return "its run failed"
-	}
-	return "its run is over"
 }
 
 func plural(n int, one, many string) string {

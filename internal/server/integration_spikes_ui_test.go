@@ -253,8 +253,8 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 	// One that concluded.
 	concl := h.endedSpike(in, "Does the API honour the header?", nil)
 	wants(t, "a concluded spike's page", h.uiText("/ui/s/"+concl.PublicID),
-		"This spike's run has ended: the agent reached a conclusion. It's waiting for you to read the findings.",
-		"Ended: the agent reached a conclusion.")
+		"This spike's run has ended: it reached a conclusion. It's waiting for you to read the findings.",
+		"Ended: it reached a conclusion.")
 
 	// The owner sections: the initiative lists the spikes it owns directly,
 	// the feature its own, each with its state and tokens used of budget.

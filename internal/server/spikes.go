@@ -355,17 +355,7 @@ const (
 )
 
 // notAnswered is the Answer a run that stopped has when it saved none (SD-8).
-func notAnswered(how string) string {
-	switch how {
-	case store.SpikeBudget:
-		return "Not answered: the spike stopped at its budget before it reached an answer."
-	case store.SpikeTurnLimit:
-		return "Not answered: the spike stopped at its turn limit before it reached an answer."
-	case store.SpikeFailed:
-		return "Not answered: the spike's run failed before it reached an answer."
-	}
-	return "Not answered: the run ended without saving an answer."
-}
+func notAnswered(how string) string { return store.SpikeEndingOf(how).NotAnswered }
 
 // oneLine puts text on one line, for a title or a sentence.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
@@ -373,32 +363,33 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 // endedSentence is the server's How this spike ended section (FR-2.3).
 func endedSentence(e findingsEnd) string {
 	used, budget := groupThousands(e.Used), groupThousands(e.Budget)
+	lead := store.SpikeEndingOf(e.How).Lead
 	var b strings.Builder
 	switch e.How {
 	case store.SpikeConcluded:
-		fmt.Fprintf(&b, "The agent reached a conclusion. It used %s of its %s tokens.", used, budget)
+		fmt.Fprintf(&b, "%s. It used %s of its %s tokens.", lead, used, budget)
 	case store.SpikeBudget:
 		switch {
 		case e.Used > e.Budget:
-			fmt.Fprintf(&b, "The spike stopped at its budget. It used %s tokens, which is more than its budget of %s.", used, budget)
+			fmt.Fprintf(&b, "%s. It used %s tokens, which is more than its budget of %s.", lead, used, budget)
 		case e.Used == e.Budget:
-			fmt.Fprintf(&b, "The spike stopped at its budget. It used all %s tokens of it.", budget)
+			fmt.Fprintf(&b, "%s. It used all of its %s tokens.", lead, budget)
 		default:
 			// The run never begins a call it can see would cross the budget
 			// (SD-7), so it can stop with some of the budget left.
-			fmt.Fprintf(&b, "The spike stopped at its budget, because its next step would have gone over. It used %s of its %s tokens.", used, budget)
+			fmt.Fprintf(&b, "%s, because its next step would have gone over. It used %s of its %s tokens.", lead, used, budget)
 		}
 		b.WriteString(" The findings above are what it had saved by then.")
 	case store.SpikeTurnLimit:
-		fmt.Fprintf(&b, "The spike stopped at its turn limit of %d turns, having used %s of its %s tokens. The findings above are what it had saved by then.",
-			e.TurnCap, used, budget)
+		fmt.Fprintf(&b, "%s of %d turns, having used %s of its %s tokens. The findings above are what it had saved by then.",
+			lead, e.TurnCap, used, budget)
 	default:
 		note := strings.TrimRight(oneLine(e.Note), ". ")
 		if note == "" {
 			note = "no reason was recorded"
 		}
-		fmt.Fprintf(&b, "The spike's run failed: %s. It used %s of its %s tokens. The findings above are what it had saved by then.",
-			note, used, budget)
+		fmt.Fprintf(&b, "%s: %s. It used %s of its %s tokens. The findings above are what it had saved by then.",
+			store.SpikeEndingOf(store.SpikeFailed).Lead, note, used, budget)
 	}
 	if len(e.Refs) > 0 {
 		quoted := make([]string, len(e.Refs))

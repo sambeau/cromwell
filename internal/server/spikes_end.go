@@ -174,19 +174,6 @@ func (s *Server) finishSpikeEnding(ctx context.Context, sp *store.Spike) error {
 	return nil
 }
 
-// spikeEndReason says how a run ended, for the findings' commit message.
-func spikeEndReason(how string) string {
-	switch how {
-	case store.SpikeConcluded:
-		return "concluded"
-	case store.SpikeBudget:
-		return "stopped at the budget"
-	case store.SpikeTurnLimit:
-		return "stopped at the turn limit"
-	}
-	return "the run failed"
-}
-
 // commitSpikeFindings commits the findings file in the main checkout, once:
 // when it has never been committed. What a person edits later is theirs to
 // commit, and isn't swept up here.
@@ -195,7 +182,7 @@ func (s *Server) commitSpikeFindings(sp *store.Spike, doc *store.Document) bool 
 	if err != nil || strings.TrimSpace(out) != "" {
 		return false
 	}
-	s.commitDocument(doc.Path, fmt.Sprintf("%s: findings (%s)", sp.PublicID, spikeEndReason(sp.EndedHow)))
+	s.commitDocument(doc.Path, fmt.Sprintf("%s: findings (%s)", sp.PublicID, store.SpikeEndingOf(sp.EndedHow).Commit))
 	return true
 }
 
