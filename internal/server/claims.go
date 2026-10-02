@@ -213,17 +213,6 @@ func (s *Server) withWorkingCopy(path string, fn func() error) error {
 	return fn()
 }
 
-// watchBranch runs the branch watch (SPEC-020 FR-5.6) for a worktree. It is
-// called before every commit the server makes in the working copy, holding
-// its lock, so a person's commit made just before Subutai's is judged and not
-// swallowed (FR-5.7).
-//
-// TODO(M13 T4): the branch watch. Until it is built this does nothing.
-func (s *Server) watchBranch(ctx context.Context, wt *store.Worktree) {
-	_ = ctx
-	_ = wt
-}
-
 // ---- The fingerprint (FR-5.2) ----
 
 // worktreeFingerprint is a hash of the branch head and of `git
@@ -574,7 +563,7 @@ func (s *Server) submitLocked(ctx context.Context, c claimable, t *claimTarget, 
 	}
 
 	if t.Worktree != nil {
-		s.watchBranch(ctx, t.Worktree)
+		s.watchBranchLogged(ctx, t.Worktree)
 	}
 	sub, err := c.prepareSubmit(ctx, t, cur, summary)
 	if err != nil {
@@ -714,7 +703,7 @@ func (s *Server) releaseLocked(ctx context.Context, c claimable, t *claimTarget,
 	}
 
 	if t.Worktree != nil {
-		s.watchBranch(ctx, t.Worktree)
+		s.watchBranchLogged(ctx, t.Worktree)
 	}
 	r, err := c.prepareRelease(ctx, t, cur)
 	if err != nil {

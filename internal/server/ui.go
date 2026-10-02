@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -438,6 +439,12 @@ func verbLabel(v any) string {
 		return "Carry on"
 	case "pause":
 		return "Pause"
+	case "keep":
+		return "Keep the claim"
+	case "release":
+		return "Release it to an agent"
+	case "seen":
+		return "I've seen this"
 	default:
 		return stateLabel(v)
 	}
@@ -457,6 +464,8 @@ func verbIcon(v any) string {
 		return "refresh"
 	case "pause":
 		return "clock"
+	case "seen":
+		return "check"
 	default:
 		return "arrow-right"
 	}
@@ -482,6 +491,12 @@ func verbConsequence(v any) string {
 		return "The run picks up where it left off."
 	case "pause":
 		return "The work is held where it is until you come back to it."
+	case "keep":
+		return "The claim stays with whoever holds it, and the clock starts again."
+	case "release":
+		return "The claim ends, the work in the working copy is kept, and an agent takes the task."
+	case "seen":
+		return "Nothing changes: the commits stay on the branch and the merge isn't held."
 	default:
 		return "The agent resumes with your answer."
 	}
@@ -797,6 +812,10 @@ type inboxItem struct {
 	// FR-9.2a): the affected specs, each answered keep-or-invalidate on its
 	// own line. Every other kind answers with one verb from Options.
 	RevisionSpecs []revisionSpecView
+	// LastActivity says what a claim's last activity was and when, for the
+	// claim questions, so a person can see if the claimant came back
+	// (SPEC-020 FR-5.3).
+	LastActivity string
 }
 
 // revisionSpecView is one line of the design-revision form.
@@ -814,6 +833,9 @@ func (s *Server) inboxItems(r *http.Request) ([]inboxItem, error) {
 	items := make([]inboxItem, 0, len(pending))
 	for _, cp := range pending {
 		item := inboxItem{Checkpoint: cp, Options: answerOptions(cp.Kind)}
+		if isClaimQuestion(cp.Kind) {
+			item.LastActivity = claimLastActivity(cp.Context)
+		}
 		if cp.Kind == "design-revision" {
 			var cctx struct {
 				Affected []revisionSpecView `json:"affected"`
@@ -825,6 +847,31 @@ func (s *Server) inboxItems(r *http.Request) ([]inboxItem, error) {
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+// claimLastActivity says what the claim's last activity was, from the
+// question's context: "Last activity: a change in the working copy, 26 hours
+// ago."
+func claimLastActivity(raw json.RawMessage) string {
+	var c struct {
+		LastActivity   string `json:"last_activity"`
+		LastActivityAt string `json:"last_activity_at"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil || c.LastActivity == "" {
+		return ""
+	}
+	what := map[string]string{
+		"claimed": "claimed", "renewed": "renewed", "resumed": "resumed", "submitted": "submitted",
+		"sent_back": "sent back by its code reviewer", "kept": "kept by a person",
+		"worktree": "a change in the working copy",
+	}[c.LastActivity]
+	if what == "" {
+		what = c.LastActivity
+	}
+	if at, err := time.Parse(time.RFC3339, c.LastActivityAt); err == nil {
+		return "Last activity: " + what + ", " + agoWords(at, time.Now()) + "."
+	}
+	return "Last activity: " + what + "."
 }
 
 func (s *Server) handleUIInbox(w http.ResponseWriter, r *http.Request) {
@@ -896,11 +943,24 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actor := s.uiActor()
+	// An answer to a claim question that was withdrawn, or already answered,
+	// is a no-op with a notice, not an error (SPEC-020 FR-5.4).
+	if cpBefore.State != "pending" && isClaimQuestion(cpBefore.Kind) {
+		s.renderInboxWithNotice(w, r, claimMovedOnNotice)
+		return
+	}
 	var cp *store.Checkpoint
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		cp, err = store.RespondCheckpoint(ctx, tx, id, response, actor)
 		return err
 	})
+	if err != nil && isClaimQuestion(cpBefore.Kind) {
+		// Withdrawn between the read and the answer.
+		if again, gerr := store.GetCheckpoint(ctx, s.Store.Pool, id); gerr == nil && again.State != "pending" {
+			s.renderInboxWithNotice(w, r, claimMovedOnNotice)
+			return
+		}
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -913,6 +973,22 @@ func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
 		s.uiError(w, err)
 		return
 	}
+	s.render(w, "frag-inbox", items)
+}
+
+func isClaimQuestion(kind string) bool {
+	return kind == "claim-stale" || kind == "claim-deadline"
+}
+
+// renderInboxWithNotice renders the inbox list with a sentence above it, for
+// an answer that changed nothing.
+func (s *Server) renderInboxWithNotice(w http.ResponseWriter, r *http.Request, notice string) {
+	items, err := s.inboxItems(r)
+	if err != nil {
+		s.uiError(w, err)
+		return
+	}
+	fmt.Fprintf(w, `<div class="banner" role="status"><span>%s</span></div>`, html.EscapeString(notice))
 	s.render(w, "frag-inbox", items)
 }
 

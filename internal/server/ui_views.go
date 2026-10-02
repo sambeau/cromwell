@@ -49,6 +49,12 @@ func answerOptions(kind string) []string {
 		return nil
 	case "budget":
 		return []string{"proceed"}
+	case "claim-stale", "claim-deadline":
+		// Keep the claim, or release it to an agent (SPEC-020 FR-5.3).
+		return []string{"keep", "release"}
+	case "unclaimed-commit":
+		// A notice with one answer (SPEC-020 SD-11).
+		return []string{"seen"}
 	default:
 		// worktree-failure, merge-conflict, config-error, document-integrity:
 		// manual-fix checkpoints the engine takes no follow-up action on;
@@ -79,6 +85,10 @@ func responseFor(kind, verb, reason string) map[string]any {
 		r["decision"] = verb // approve | abandon
 	case "revision-in-flight":
 		r["continue"] = verb == "continue"
+	case "claim-stale", "claim-deadline", "unclaimed-commit":
+		// keep | release, or seen; the rules engine routes keep and release
+		// to the claim service (SPEC-020 FR-5.10).
+		r["answer"] = verb
 	case "budget":
 		// Any answer re-kicks the queue; record the verb for the audit trail.
 		r["answer"] = verb
