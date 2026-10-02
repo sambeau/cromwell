@@ -628,3 +628,360 @@ Round 2's major: an agent that deleted its own working copy, followed by any
 
 The minor findings still open are listed in the
 [M14 handoff](../notes/handoff-M14-2026-10-02.md) as bug-report candidates.
+
+## 6. Stage 2 spec review (2026-10-02)
+
+**Scope.** SPEC-021 §4 (SD-17 to SD-25, FR-11 to FR-18, NFR-10 to NFR-12,
+the stage 2 definition of done and choices 15 to 21), on branch
+`claude/subutai-m14-stage2-spikes`. It was checked against DEC-006 with
+Amendment 1, DEC-007, DESIGN-010 §5b, §5c and §10, the definition-of-done
+research §3, SPEC-020 (FR-1, FR-2.7 to FR-2.10, FR-5, FR-7), the stage 1
+parts of SPEC-021, both handoffs, and the code on the branch: the claim
+service (`claims.go`, `claims_task.go`, `claim_sweep.go`), the spike service
+(`spikes.go`, `spikes_end.go`, `spikes_plan.go`, `spikes_leak.go`,
+`ui_spikes.go`, `mcp_spike_tools.go`), `store/claims.go`,
+`store/executions.go`, `store/spikes.go`, `lifecycle/claim.go`, migrations
+`0014` and `0015`, the Inbox (`ui.go`, `ui_views.go`), the rules
+(`rules_claims.go`), the timeline and the tool-set test.
+
+**Overall.** The design holds together. Reusing M13's claim record, its
+execution rows and its sweep is the right call, and `feature_id` null is
+already served by the partial indexes and by `claimLocked`'s branch watch
+and base-commit reset, which skip a target with no worktree row and no task.
+The lock order spike then claim doesn't cross anything that exists: nothing
+that locks a feature touches a spike row, and the paths that lock a claim
+first (`raiseClaimCheckpoint`, `KeepClaimAnswered`, the fingerprint) lock
+nothing else. The database checks in FR-11.1 are consistent with idea →
+running → ended → closed and with asking again, which creates a new idea.
+
+The weak points are where the spec says "SPEC-020's claim" but the code
+behind that phrase is task-shaped, the race between a submit and the
+deadline, and three places where stage 1 used `tokens_used > 0` or a
+budget to mean "a run happened".
+
+### Material
+
+#### R21-S2-1 — A submit near the deadline can lose its findings, or end the spike as `time_box`
+
+**Where:** FR-13.7, FR-15.1, FR-15.2, FR-12.4; `spikes_end.go:60-88`.
+
+**What is wrong.** `EndSpike` is serialised by `spikeEndMu`, but FR-13.7
+holds nothing across its steps 1 to 4. Two orders break:
+- *The heartbeat's transaction wins.* Step 1 passed at 17:03:59. The
+  heartbeat's `EndSpike(time_box)` locks the spike, writes the findings from
+  the older draft and expires the claim. Step 3 then finds the claim ended
+  and refuses. The findings the claimant submitted are never saved
+  (`SaveSpikeDraft` refuses a spike that isn't running), and the claimant is
+  told the time box ended.
+- *The submit's transaction wins.* Step 3 commits (claim `done`), and the
+  heartbeat runs `EndSpike(time_box)` before step 4. `EndSpikeState` is
+  conditional only on `running`, so the spike ends as `time_box`, with "the
+  spike reached the end of its time box" in findings that were handed in.
+  Step 4 then finds it ended and returns success.
+
+The same ambiguity is in reconciliation: FR-15.2 adds a third case (a
+running spike whose latest claim ended `done` is ended `concluded`), but
+FR-15.1 also ends any running spike past its deadline, and the spec doesn't
+say which is checked first. FR-12.4 says reconciliation ends a chat spike "in
+two cases only (FR-15.1, FR-14.4)"; FR-14.4 is the claim sweep, and FR-15.2's
+case is missing.
+
+**Fix.**
+- `SubmitSpike` takes `spikeEndMu` before step 3 and holds it through step 4
+  (with an internal `endSpikeLocked` that doesn't take it again), so a
+  heartbeat ending can't fall between them.
+- Step 3 judges the deadline again under the spike's row lock. Say which
+  wins when it has passed by then: either the submit is refused with "the
+  time box ended", having first saved the text as the draft so the findings
+  keep it, or (simpler, and kinder) a submit whose step 1 passed is
+  honoured.
+- `EndSpike(time_box)` reads the latest claim under the spike lock, and a
+  spike whose latest claim ended `done` ends as `concluded`, never
+  `time_box`. Reconciliation checks the `done` case before the deadline.
+- FR-12.4 names all three cases: deadline passed (FR-15.1), latest claim
+  `done` (FR-15.2), and nothing else.
+- Acceptance: a test that backdates the deadline between `SubmitSpike`'s
+  check and its transaction, in both orders, and checks the findings and
+  `ended_how`.
+
+#### R21-S2-2 — "SPEC-020's claim" is task-shaped beyond `claimLocked`, and the spec doesn't say which paths a spike uses
+
+**Where:** SD-19, FR-13.1, FR-13.2, FR-13.3, FR-13.4, FR-14.1, NFR-10;
+`claims.go`.
+
+**What is wrong.** FR-13.2 adapts one place (the lock in the claim's
+transaction). The rest of the shared service assumes a task and a feature:
+- `resolveClaimRef` (`claims.go:316-329`) accepts only a task's ID, and
+  `ClaimWork`, `SubmitWork` and `ReleaseClaim` all start there;
+- `submitLocked` dereferences `t.Feature` (`claims.go:577`, `602`), refuses
+  when nothing in the working copy changed (`claims.go:583-589`, wrong for a
+  spike that only read code), and leaves the claim `submitted`, not `ended`;
+- `releaseLocked` dereferences `t.Feature` (`claims.go:741`);
+- `claimResult` (`claims.go:465-495`) reads the task's round and review
+  comments, takes the base commit from `Task.BaseCommit` (empty for a spike,
+  but FR-13.4 returns `base_commit`), and calls `claimRules()`, whose
+  sentences are the task's (`claims.go:518-525`) and not FR-13.4's;
+- `ClaimWork` notifies `"task"` (`claims.go:357`), so the spike's page isn't
+  told; its stale-state refusal says "Look at it again with get_feature".
+
+FR-13.1 still lists `prepareSubmit`, `onSubmit`, `prepareRelease` and
+`onRelease` "as FR-13.6 and FR-14", while NFR-10 names separate
+`SubmitSpike` and `ReleaseSpikeClaim`. A builder can't tell whether a
+spike's submit goes through `submitLocked` (which breaks) or around it
+(which leaves those four methods unused).
+
+**Fix.** Say exactly:
+- `ClaimSpike` reuses `claimLocked`, with the spike's row lock in place of
+  `LockFeatureAndTask` (best as a `lock(ctx, tx, t)` method on the
+  claimable, so `claimLocked` holds no `if spike`);
+- the result is built by the claimable: add `rules()` to the interface (task:
+  `claimRuleSentences`; spike: FR-13.4's), and have `claimResult` skip the
+  task's round, review comments and base commit when `t.Task` is nil, taking
+  the base from the spike's row;
+- `SubmitSpike` and `ReleaseSpikeClaim` are the spike's own paths over the
+  shared store functions (`LockCurrentClaimFor`, `TransitionClaim`,
+  `MarkClaimExecutionSubmitted`); they don't call `submitLocked` or
+  `releaseLocked`, and the spike's `prepareSubmit`, `onSubmit`,
+  `prepareRelease` and `onRelease` return an error, so a wrong call is loud;
+- the notify and stale-state sentences come from the target (`spike`,
+  `get_spike`).
+
+#### R21-S2-3 — The leak check fails open again for a chat or person spike
+
+**Where:** FR-13.3, FR-15.2, FR-15 acceptance; `spikes_leak.go:133-140`,
+`spikes_end.go:247`.
+
+**What is wrong.** Round 2's major was an agent deleting its own working
+copy, after which the leak check reported nothing. The fix treats a missing
+directory as "couldn't check" only when `sp.TokensUsed > 0`, as the sign
+that a working copy existed. A chat or person spike never adds tokens
+(SD-24), so for it a deleted working copy, followed by any `git worktree
+prune`, again reads as "nothing kept". FR-13.3 changes the same test in
+`ensureSpikeWorktree` ("for a spike that has had a claim") but not the one
+in `leakedRefs`, which `EndSpike` runs at the time box. Stage 2 also makes
+the handoff's bug candidate N1 (a leak recorded before a remake is final)
+more likely, since a released and reclaimed spike can be remade several
+times.
+
+**Fix.** Replace `TokensUsed > 0` in both places with one predicate,
+`spikeHadWorkingCopy`: true for an agent spike that has used tokens, and for
+a chat or person spike whose worktree was made (record it, for example an
+audit row `spike.worktree_made` at FR-12.2 and at each remake, or simply
+treat every started chat or person spike as having had one). Add to FR-15's
+acceptance: a chat spike whose working copy was deleted and pruned before
+the time box reports "Subutai couldn't check whether code from this spike
+was kept".
+
+#### R21-S2-4 — The Inbox would offer "Release it to an agent" on a spike, and promise an agent takes it
+
+**Where:** SD-22, FR-14.2 and its acceptance, NFR-12; `ui.go:452-453`,
+`ui.go:506-507`, `timeline.go:420-423`.
+
+**What is wrong.** The Inbox's verbs are labelled by `verbLabel` and
+`verbConsequence`, which know nothing of the kind or the item: `release` is
+always "Release it to an agent", with "The claim ends, the work in the
+working copy is kept, and an agent takes the task." The `release_label` the
+claimable returns is stored in the checkpoint's context
+(`claim_sweep.go:165`) but nothing reads it. On a spike both sentences are
+false (SD-22: nothing is queued), and FR-14.2's acceptance, which presses
+**Release the claim**, can't be met. The timeline describes the checkpoint
+as "is someone still working on a task". None of these files is in NFR-12's
+list.
+
+**Fix.** FR-14.2 says the Inbox reads the label and the consequence from the
+checkpoint's context (`release_label`, and a new `release_consequence` the
+claimable also returns: for a spike, "The claim ends. The spike keeps
+running, its draft and working copy are kept, and its executor can claim it
+again before the time box ends."). `timeline.go`'s `checkpointAbout` says
+"is someone still working on this" for both. Add `ui.go`, the Inbox
+template and `timeline.go` to NFR-12, and a page test that the spike's
+question shows **Release the claim** and no mention of an agent.
+
+#### R21-S2-5 — A person spike lets the executor judge their own work, and the chat rule contradicts the relay DEC-006 allows
+
+**Where:** SD-23, SD-25, FR-13.4 (rules), FR-13.7; DEC-007 decision 2,
+DEC-006 Amendment 1 decision 8.
+
+**What is wrong.**
+- DEC-007 decision 2: judging stages belong to an independent party, "for
+  documents, a human verdict", and "the executor of the work can never judge
+  it". The findings are a document with `approved_by: human` (SD-9). In a
+  person spike, the person who wrote the findings by hand is the one who
+  approves them, and who closes the spike as answered. In a one-person
+  project there is nobody else. DESIGN-010 §5b doesn't list spike closing
+  among the judging stages, and §10 says "someone reads the findings", so
+  the reading that this is allowed is available, but the spec doesn't make
+  it, and SD-25 ("judging stays a person's") is silent on which person.
+- DEC-006 Amendment 1 lets the chat agent relay "a human's verdict on any
+  document". `relay_verdict` (`mcp_relay.go:62`) accepts any document, so
+  the chat agent can relay the person's approval of findings it wrote. That
+  is a human verdict, so it is allowed. But FR-13.4's rule tells the chat
+  agent "You can't ... approve its findings", which it will read as a ban on
+  the relay too.
+
+**Fix.** Add an SD (and choice 22 for Sam) that says, citing DEC-007
+decision 2 and DESIGN-010 §5b and §10: closing a spike and approving its
+findings are a person's reading of the answer, not an independent judging
+stage, so the person who ran a spike may close it and approve its findings;
+the audit row records that the closer was the executor. Or, if Sam rules
+the other way, say what a one-person project does. Reword the rule to "You
+can't close the spike, or approve its findings on your own judgement; a
+person decides, and you may carry their verdict with their words, as for
+any document." and match `submit_spike`'s `next` and the chat skill.
+
+### Minor
+
+#### R21-S2-6 — A renewal past the deadline succeeds
+
+**Where:** FR-13.1 (the past-the-deadline refusal), FR-13.3;
+`claims.go:404-409`.
+
+`claimLocked` doesn't call `refusal` for a renewal, so the holder calling
+`claim_spike` after 17:04, before the heartbeat ends the spike, gets a
+renewed claim and a contract with negative time left. **Fix:** FR-13.3 says
+the deadline is checked before `claimLocked` (or the spike's refusal also
+runs on a renewal), and adds that case to the acceptance.
+
+#### R21-S2-7 — Saving findings doesn't say how it re-checks the claim, and the store helper it names doesn't withdraw the question
+
+**Where:** FR-13.6; `store/claims.go:237-246`, `claim_sweep.go:120-135`.
+
+FR-13.6 checks the claim, then saves "in one transaction", but doesn't lock
+or re-check the claim inside it, so a release between the two lets a
+non-holder's draft through (`SaveSpikeDraft` checks only `running`). It
+also says recording activity "withdraws a pending `claim-stale`";
+`RecordClaimActivity` neither withdraws nor audits; the sweep does both by
+hand. **Fix:** the transaction locks the spike then the claim, re-checks the
+holder, state and deadline, saves the draft, records activity `findings`,
+audits `claim.activity` and withdraws `claim-stale`, as `sweepFingerprint`
+does (or one new store helper does all three).
+
+#### R21-S2-8 — The in-process locks need an order, and the start's worktree isn't under one
+
+**Where:** FR-12.2, FR-13.3, FR-14.4, FR-15.1; `spikes_end.go:68`,
+`spikes_end.go:247-251`, `claims.go:205-215`.
+
+`ensureSpikeWorktree` takes `spikeEndMu` inside the claim's working-copy
+lock, so the order is already "working copy, then `spikeEndMu`". Nothing in
+the spec stops an implementer from having `EndSpike` take the working-copy
+lock while it holds `spikeEndMu`, which would deadlock with a claim. FR-12.2
+makes the worktree after the start without the working-copy lock, so a
+claim arriving at once can run `RemoveAll` and `worktree add` alongside it.
+And `EndSpike(time_box)` discards without that lock, so a claim that
+started a remake just before can recreate the directory after the discard
+(the next leftover-directory sweep removes it, but only by luck of order).
+**Fix:** state the order (working copy, then `spikeEndMu`, then row locks);
+FR-12.2's make goes through `ensureSpikeWorktree` under
+`withWorkingCopy`; and the time-box ending takes the spike's working-copy
+lock before `spikeEndMu`, from both the sweep and reconciliation.
+
+#### R21-S2-9 — The migration's order and two of its checks need tightening
+
+**Where:** FR-11.1; `0014_executors.sql:25,34`, `0015_spikes.sql:91-92`.
+- The new `spikes_started` validates existing rows when it is added, so the
+  `executor = 'agent'` backfill must run before it. FR-11.1 lists the checks
+  first. Say "backfill, then add the checks".
+- `work_claims` has two end-reason checks: the unnamed value check
+  (Postgres's name `work_claims_end_reason_check`) and the named
+  `work_claims_end_reason` (ended exactly when there is a reason). Name the
+  one to drop, so the second isn't dropped by mistake.
+- `spikes_started` applies only to `running` and `ended`, so a closed spike
+  that ran isn't required to have an executor, and a SQL check passes on
+  NULL: `ended_how = 'time_box'` with a null executor passes
+  `spikes_ended_how_executor`. Key the check on `started_at IS NOT NULL`
+  rather than the state, and write the executor checks with `IS NOT NULL`.
+- Nothing forbids a `deadline_at` on an agent spike. Add it to
+  `spikes_one_limit` ("an agent spike has no time box and no deadline").
+
+#### R21-S2-10 — The agent spike's execution row is written at a different moment from SPEC-020's
+
+**Where:** FR-12.2, FR-11.1 backfill; SPEC-020 FR-1.2;
+`store/executions.go:62-76`, `store/dispatches.go:561`.
+
+SPEC-020 FR-1.2 records an agent row "when an implement dispatch starts
+running", and FR-11.1's backfill follows that (`dispatch.running`). FR-12.2
+writes it in the start's transaction, when the run is only queued, so a run
+that never starts still reads "Run by the spike runner", and new rows and
+backfilled rows mean different moments. `RecordAgentExecution` is also
+hard-wired to `task` and its round. **Fix:** record the row when the
+`run-spike` dispatch is marked running (a `ref_type`-taking helper beside
+`RecordAgentExecution`, round 1), and add `store/executions.go` and the
+dispatcher's start to NFR-12. If queue time is kept on purpose, say so and
+why SPEC-020's rule doesn't apply.
+
+#### R21-S2-11 — The sweep asks "still working on it?" one step before it ends the spike
+
+**Where:** FR-14.4; `claim_sweep.go:77-94`.
+
+Step 2 runs before step 3, so a spike claim that is both idle and past its
+deadline raises `claim-stale` and then, in the same pass, has the spike
+ended (which withdraws it). The Inbox flickers a question nobody can
+answer. **Fix:** for a claimable that implements `deadlineEnder`, check the
+deadline first and skip step 2 when it has passed.
+
+#### R21-S2-12 — Over a long time box, ordinary tags and stashes read as kept code
+
+**Where:** FR-15 acceptance (the leak check); `spikes_leak.go:176-179`.
+
+A changed tag or `refs/stash` is always reported, whatever it holds. That
+was rare in a run of minutes. A person spike runs in the person's own
+repository for up to 168 hours, while they tag releases and stash in the
+main checkout, and each would raise `spike-code-kept`. **Fix:** report a
+tag or a stash entry only when it holds a commit made in the spike's
+worktree (for the stash, walk its reflog entries and their parents), or
+keep the rule and say in FR-6.3's accepted limits that a long time box makes
+false reports likely.
+
+#### R21-S2-13 — Stage 1's budget-only surfaces aren't all named
+
+**Where:** FR-15.3, FR-16.1, SD-13; `store/spike_endings.go`,
+`ui_spikes.go:343-344`, `ui_spikes.go:468-469`.
+- `spikeEndings` needs a `time_box` entry with all five fields; FR-15.3
+  gives only the Lead and the not-answered sentences, not the timeline's
+  Phrase, the page's Run line or the commit message's words.
+- The close dialog's **Ask again with a new budget** (SD-13) is offered on a
+  chat or person spike, with a budget of 0 (`AgainBudget` reads
+  `TokenBudget`). Say what asking again offers for one (the same dialog
+  with no budget field, since the executor is chosen again at the start).
+- The start notice ("has started, with a budget of …") has no time-box
+  form. Give it one.
+
+#### R21-S2-14 — The stage 2 definition of done doesn't name §4's evidence
+
+**Where:** "Stage 2 definition of done", §6 item 6, NFR-8.
+
+§6 item 6 asks for cited evidence for §3 and §5; "applied to stage 2"
+doesn't say §4's acceptance criteria need it. NFR-8 still says the only
+typed values are the question and the budget; the time box is now typed
+too. **Fix:** say "every acceptance criterion in §4 has cited evidence",
+and add the time box to NFR-8.
+
+### Checked and found true
+
+- `work_claims` and `executions` have no foreign key on `ref_id`, and the
+  open-feature index is partial on `feature_id IS NOT NULL`, so a spike's
+  claim needs no schema change beyond `expired` (`0014_executors.sql:15-41`).
+- `RecordClaimExecution` already uses round 1 for anything but a task, and
+  `executions_claim` is unique per claim and round, so each claim after a
+  release is its own row (`store/executions.go:81-94`).
+- `claimLocked` skips the branch watch and the base-commit reset when the
+  target has no worktree row and no task (`claims.go:368`, `443`), as
+  FR-13.2 says.
+- The rules engine routes `claim-stale` answers by the checkpoint's ref,
+  with no task assumption (`rules_claims.go:48-65`); only
+  `ReleaseClaimAnswered`'s `RefType != "task"` early return
+  (`claim_sweep.go:213-215`) needs FR-14.2's change, and `KeepClaim` with
+  `ClearDeadline` false (a `claim-stale` answer) leaves the spike's deadline
+  alone.
+- `TransitionClaim` withdraws `claim-stale` on every event, so `expire`
+  does so without extra code once `claimAuditKind` and `claimEndReason` gain
+  it (`store/claims.go:69-87`, `219-222`).
+- `ReconcileSpikes` already keeps the directory of every running spike,
+  whether or not it has a dispatch, because `SpikesToReconcile` returns all
+  running spikes (`store/spikes.go:449-459`); only `spikeRunEnding`'s "the
+  run was lost" case needs FR-12.4's guard.
+- `CloseSpike` closes only an ended spike or an idea, so no chat or person
+  spike can be closed while it runs, and no new route needs a refusal for
+  that (`store/spikes.go:371-391`).
+- The tool-set test checks method-not-found for each forbidden name
+  (`integration_mcp_test.go:194-212`), so FR-17.2 is testable as written.

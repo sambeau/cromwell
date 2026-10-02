@@ -1055,7 +1055,29 @@ except `TestSpikeCantBeClaimedYet`, which stage 2 replaces on purpose
   the web UI (DEC-006 Amendment 1, SD-5, SD-10), whoever runs it. The chat
   agent that ran a spike can't close it, approve its findings, release its
   claim, or move its deadline. The MCP tool-set test proves those tools don't
-  exist.
+  exist. Approving the findings stays what SD-9 makes it: a person's act on
+  the document page, or the chat agent's relay of a person's quoted verdict
+  (DEC-006 Amendment 1), never the chat agent's own judgement.
+
+- **SD-26 — The person who ran a spike may close it.** DEC-007 decision 2
+  says whoever does the work can't judge it. Closing a spike and approving
+  its findings aren't an independent judging stage: they are the person who
+  asked the question saying whether it is answered (DESIGN-010 §10, SD-10),
+  which only a person can say, and a one-person project has no one else. So
+  the person who ran a spike by hand may close it and approve its findings.
+  The `spike.closed` audit row records `closer_ran_it: true` when the closer
+  is the spike's person executor, and the page says "Closed by sam, who also
+  ran it." **Flagged for Sam:** the alternative is refusing that close and
+  saying what a one-person project does instead.
+
+- **SD-27 — Three in-process locks, in one order.** A chat or person spike's
+  worktree is touched by the start, a claim, the claim sweep, a submit and
+  the ending. Every path takes, in this order and only those it needs:
+  **the spike's working-copy lock** (`withWorkingCopy` on its worktree
+  path), then **`spikeEndMu`**, then **row locks** (the spike, then its
+  claim). The start's make, a claim's remake, the sweep's fingerprint, a
+  submit, and every ending (rules, heartbeat, sweep) hold the working-copy
+  lock, so a discard can't interleave with a remake.
 
 ### FR-11: The executor and the time box in the database
 
@@ -1067,26 +1089,31 @@ except `TestSpikeCantBeClaimedYet`, which stage 2 replaces on purpose
 | `time_box_hours` | whole hours, set at the start of a chat or person spike |
 | `deadline_at` | the start plus the time box, for a chat or person spike |
 
-It replaces stage 1's named checks that assume a token budget:
-- `spikes_started` becomes: a spike that is `running` or `ended` has
-  `started_at` and `executor`; an `agent` spike there has `token_budget`; a
-  `chat` or `person` spike there has `time_box_hours` and `deadline_at`;
-- `spikes_ended_how_values` gains `time_box`;
-- a new `spikes_ended_how_executor`: `budget` and `turn_limit` are only an
-  `agent` spike's endings, and `time_box` only a `chat` or `person` spike's;
-- a new `spikes_executor_values`, and `spikes_time_box_positive`
-  (`time_box_hours` is null or at least 1);
-- a new `spikes_one_limit`: no spike has both a `token_budget` and a
-  `time_box_hours`.
+In this order, so the new checks validate rows that already satisfy them:
+1. **Backfill** `executor = 'agent'` on every spike with `started_at` set,
+   and one inferred `agent` row in `executions` (`ref_type` `spike`, round 1,
+   `measured`, `inferred`, started at the first `dispatch.running` audit
+   row) for every `run-spike` dispatch that has one, as `0014` did for tasks.
+2. **Replace** stage 1's named checks that assume a token budget:
+   - `spikes_started` becomes, keyed on `started_at` rather than the state:
+     a spike with `started_at` set has an `executor`; a spike that is
+     `running` or `ended` has `started_at`; an `agent` spike with
+     `started_at` has `token_budget`; a `chat` or `person` spike with
+     `started_at` has `time_box_hours` and `deadline_at`;
+   - `spikes_ended_how_values` gains `time_box`;
+   - a new `spikes_ended_how_executor`: `budget` and `turn_limit` need
+     `executor IS NOT NULL AND executor = 'agent'`, and `time_box` needs
+     `executor IS NOT NULL AND executor IN ('chat', 'person')`;
+   - a new `spikes_executor_values` (null, or one of the three), and
+     `spikes_time_box_positive` (`time_box_hours` is null or 1 to 168);
+   - a new `spikes_one_limit`: an `agent` spike has no `time_box_hours` and
+     no `deadline_at`, and a `chat` or `person` spike has no `token_budget`.
+3. **Replace** `work_claims`' unnamed end-reason value check (Postgres
+   named it `work_claims_end_reason_check`) with a named
+   `work_claims_end_reason_values` that allows `expired` (SD-21). The named
+   `work_claims_end_reason` (ended exactly when there is a reason) is kept.
 
-It also replaces `work_claims`' end-reason value check so it allows
-`expired` (SD-21), and backfills:
-- `executor = 'agent'` on every spike with `started_at` set;
-- one inferred `agent` row in `executions` (`ref_type` `spike`, round 1,
-  `measured`, `inferred`) for every `run-spike` dispatch with a
-  `dispatch.running` audit row, as `0014` did for tasks.
-
-The migration names no new enum value. Each check is named.
+The migration names no new enum value. Each new check is named.
 
 **FR-11.2 — The store.** `store.Spike` gains `Executor`, `TimeBoxHours` and
 `DeadlineAt`. `store.StartSpike` takes the executor, and for chat or person
@@ -1098,8 +1125,11 @@ update; its audit row records the executor and the budget or the time box.
   refused: a running chat spike without a deadline; an agent spike ended as
   `time_box`; a chat spike ended at `budget`; both limits on one row; a time
   box of 0; a claim ended `expired` is accepted;
-- the migration runs on a database holding stage-1 spikes, and leaves each
+- the migration runs on a database holding stage-1 spikes (an idea, a
+  running one, an ended one and a closed one that ran), and leaves each
   started one with `executor = 'agent'` and one inferred execution row;
+- a closed spike that ran without an executor, and an agent spike with a
+  deadline, are refused;
 - `StartSpike` for a chat spike with a 4-hour time box records a deadline
   4 hours after `started_at`, to the second.
 
@@ -1124,17 +1154,22 @@ describe the spike runner, and say so.
 
 **FR-12.2 — Starting** (`POST /ui/spikes/start`, `executor` and either
 `budget` or `time_box` fields). `Server.StartSpike` takes the executor:
-- **agent**: as stage 1, plus an `executions` row (`agent`, the role, the
-  model, the run, round 1, `measured`) in the start's transaction;
+- **agent**: as stage 1. The `executions` row (`agent`, the role, the
+  model, the run, round 1, `measured`) is written when the dispatcher marks
+  the `run-spike` dispatch running, in the same transaction, as SPEC-020
+  FR-1.2 does for an implementer, and as the backfill reads it; a retried
+  attempt writes nothing new. `store.RecordAgentExecution` gains the
+  reference type, so one helper serves both;
 - **chat or person**: the same checks as stage 1 except the spike runner's
   (the findings template and its manifest are still required); the time box
   must be a whole number of hours from 1 to 168, refused otherwise with "A
   spike's time box is a whole number of hours, from 1 to 168."; the
   transaction moves the spike to `running` with the executor, the time box
   and the deadline, and **queues nothing**. After it commits, the worktree is
-  made at the base commit, detached, as the planner makes it for a run
-  (FR-4.2). If making it fails, the start still stands, and the first claim
-  makes it (FR-13.3).
+  made at the base commit, detached, through `ensureSpikeWorktree` under the
+  worktree's lock (SD-27), as the planner makes it for a run (FR-4.2). If
+  making it fails, the start still stands, and the first claim makes it
+  (FR-13.3).
 
 **FR-12.3 — Configuration.** `spikes.default_time_box_hours`, an integer
 pointer: absent means 4; otherwise 1 to 168, and the loader refuses anything
@@ -1143,8 +1178,16 @@ else with a sentence. The starter config documents it, commented, beside
 
 **FR-12.4 — Reconciliation knows a chat or person spike has no run.**
 `ReconcileSpikes` doesn't end a running chat or person spike for having no
-dispatch, and keeps its directory. It ends one in two cases only (FR-15.1,
-FR-14.4).
+dispatch, and keeps its directory. It ends one in two cases only, checked in
+this order (FR-15.2): its latest claim ended `done` (a submit that stopped
+before its ending), which ends it `concluded`; then its deadline has passed
+(FR-15.1), which ends it `time_box`. The claim sweep ends one too, at the
+deadline (FR-14.4).
+
+**FR-12.5 — What the start says.** The notice after starting a chat spike:
+"SPK-003 has started, with a time box of 4 hours. Ask the chat agent to run
+it." For a person spike: "SPK-003 has started, with a time box of 4 hours.
+Claim it below when you are ready." NFR-8's typed values gain the time box.
 
 **Acceptance:**
 - the start screen shows the three choices, the time box field and the
@@ -1156,7 +1199,9 @@ FR-14.4).
 - with no spike runner assigned, a chat or person spike still starts;
 - a heartbeat after the start leaves the running chat spike and its
   directory alone;
-- a dispatched spike's start writes its `agent` execution row.
+- a dispatched spike's run, marked running, writes its `agent` execution
+  row once, and a retried attempt doesn't write a second;
+- the start notices.
 
 ### FR-13: Claiming a spike
 
@@ -1188,21 +1233,46 @@ registered under `spike`:
   FR-14;
 - `contract`: FR-13.4.
 
-**FR-13.2 — The claim service serves a claim with no feature.** Where it
-locks the feature and the task, a spike's claim locks the spike's row
-(`SELECT … FOR UPDATE`) instead; the lock order is the spike, then the claim,
-and nothing that locks a feature also locks a spike. The branch watch and
-the base-commit reset are skipped, as they already are for a claim without a
-worktree row. The claim's execution row is `ref_type` `spike`, round 1,
+**FR-13.2 — What the spike shares with the task's claim, and what it
+doesn't.** Exactly:
+- **claiming and renewing** go through SPEC-020's `claimLocked`. The
+  claimable gains two methods: `lock(ctx, tx, t)`, which for a task is
+  `LockFeatureAndTask` and for a spike locks the spike's row (`SELECT … FOR
+  UPDATE`), so `claimLocked` holds no test of the kind; and `rules()`, the
+  claimant's rules (the task's `claimRuleSentences`, or FR-13.4's).
+  `claimResult` skips the task's round, review comments and base commit when
+  the target has no task, and takes the rules from the claimable. The
+  change notice goes to the claimed item's own kind (`spike`, and its
+  owner), not `task`. The branch watch and the base-commit reset are
+  skipped, as they already are for a claim without a feature;
+- **a renewal is refused after the deadline**, with the deadline's sentence:
+  for a spike, `claimLocked` runs the claimable's refusal on a renewal too
+  (its refusal for a renewal checks only the state and the deadline);
+- **submitting and releasing** don't go through SPEC-020's `submitLocked` and
+  `releaseLocked`, which commit, compare the working copy with its start,
+  queue a review or an implementer, and assume a feature. They are the
+  spike's own methods (FR-13.7, FR-14.1), which use the same store functions
+  (`LockCurrentClaimFor`, `TransitionClaim`, `MarkClaimExecutionSubmitted`).
+  The claimable's `prepareSubmit`, `onSubmit`, `prepareRelease` and
+  `onRelease` for a spike return an error saying so, and nothing calls them;
+- **`resolveClaimRef`** stays task-only. `ClaimSpike` resolves a spike's ID
+  itself.
+
+The lock order is SD-27's, and nothing that locks a feature also locks a
+spike. The claim's execution row is `ref_type` `spike`, round 1,
 `measured = false` (FR-1.2 of SPEC-020): every claim of a spike, including a
 claim after a release, is its own row.
 
 **FR-13.3 — Claiming** (`Server.ClaimSpike(ctx, ref, who)`, used by
 `claim_spike` and the UI). Before the claim, outside any transaction and
 holding the worktree's lock, the worktree is made if it is missing, as the
-planner does (FR-4.2); for a spike that has had a claim, what it kept is
-checked and recorded first, as stage 1 does for a spike that has used
-tokens. Then SPEC-020's claim, renewal or refusal. A claim by the holder of an
+planner does (FR-4.2). Whether what it kept must be checked and recorded
+first is one predicate, `spikeHadWorkingCopy`: true for an agent spike that
+has used tokens (stage 1's rule), and for every started chat or person
+spike, since its worktree is made at the start. The leak check's "couldn't
+check" path (FR-6.3) uses the same predicate in place of `TokensUsed > 0`,
+so a chat spike whose working copy vanished fails closed, as round 2 of
+the stage-1 review required. Then SPEC-020's claim, renewal or refusal. A claim by the holder of an
 open claim renews it.
 
 **FR-13.4 — What a claim returns** (`claim_spike`'s result, and the person's
@@ -1231,8 +1301,9 @@ panel):
   - "When you have an answer, or know the question can't be answered, call
     submit_spike with your findings in the template's sections.";
   - "A person reads the findings and decides whether the question is
-    answered. You can't close the spike, approve its findings, release your
-    claim or move its time box.";
+    answered. You can't close the spike, release your claim or move its time
+    box, and you can't approve its findings on your own judgement: only a
+    person's verdict, in their words, approves them.";
   - then the commands the project allows, as `claim_task`'s rules list them;
 - `next`: "Work on the question in the working copy, save findings as you
   go with save_spike_findings, and call submit_spike when you are done."
@@ -1251,9 +1322,12 @@ text)`, used by `save_spike_findings` and the UI's draft editor:
   deadline must not have passed; otherwise refuse, saying who holds it, or
   that the time box has ended;
 - the text must not be blank;
-- in one transaction: the draft replaced (`store.SaveSpikeDraft`), and the
-  claim's activity `findings` recorded, which withdraws a pending
-  `claim-stale` (SPEC-020 FR-5.4). `claimActivityWords` says "findings saved".
+- in one transaction, locking the spike then the claim and re-checking the
+  holder, the state and the deadline: the draft replaced
+  (`store.SaveSpikeDraft`), the claim's activity `findings` recorded, a
+  `claim.activity` audit row, and a pending `claim-stale` withdrawn, as the
+  sweep does for a working-copy change (SPEC-020 FR-5.4). One store helper
+  does the last three. `claimActivityWords` says "findings saved".
 
 `save_spike_findings` takes `spike` and `findings`. Its result: "Saved. If
 the time box ends now, this is what is kept." and the time left.
@@ -1265,12 +1339,21 @@ used by `submit_spike` and **I've finished**:
 2. The findings are the text given, or, when it is blank, the saved draft.
    Validate them as `finish_spike` does (`validateFinishSpike`); a refusal
    names what is missing.
-3. In one transaction, locking the spike then the claim: the draft saved;
-   the claim's `submit` then `done` (activity `submitted`); `submitted_at` on
+3. Take the worktree's lock, then `spikeEndMu` (SD-27), and hold both
+   through step 5, so no ending can fall between them.
+4. In one transaction, locking the spike then the claim, and re-checking
+   that the claim is still this claimant's and `open`: the draft saved; the
+   claim's `submit` then `done` (activity `submitted`); `submitted_at` on
    the claim's execution; the audit row `claim.submitted` with no commit and
-   no review.
-4. Then `EndSpike(concluded)`. If the server stops between 3 and 4,
-   reconciliation finishes it (FR-15.2).
+   no review. The deadline is **not** judged again here: a submit that
+   passed step 1 is honoured, even if the deadline passes while it runs. If
+   an ending won the locks first, the claim is no longer open, and the
+   submit is refused with the time box's sentence; the findings it carried
+   are lost, and the refusal says so ("The time box ended before this
+   arrived, so the spike ended with the findings saved before it.").
+5. Then the ending, as `concluded` (an internal `endSpikeLocked` that doesn't
+   take `spikeEndMu` again). If the server stops between 4 and 5,
+   reconciliation finishes it (FR-12.4).
 
 `submit_spike` takes `spike` and `findings` (optional). Its result: the spike
 entry (now `ended`), the findings document's ID and path, and `next`: "A
@@ -1321,14 +1404,28 @@ with **Keep the claim** (SPEC-020's `KeepClaimAnswered`, unchanged) or
 claim through FR-14.1 instead of ignoring it). An answer to a claim that has
 moved on is a no-op with SPEC-020's notice.
 
+The Inbox reads the release answer's words and their consequence from the
+checkpoint's context, not from fixed task words: `release_label` (which the
+sweep already stores) and a new `release_consequence`, which the claimable
+returns beside the label. For a task they are unchanged ("Release it to an
+agent"; "The claim ends, the work in the working copy is kept, and an agent
+takes the task."). For a spike: "Release the claim"; "The claim ends. The
+spike keeps running, its draft and working copy are kept, and its executor
+can claim it again before the time box ends." A checkpoint raised before
+this change, with no `release_consequence`, falls back to the task's words.
+The timeline's checkpoint moment for a spike reads "Waiting for a person: is
+someone still working on a spike".
+
 **FR-14.3 — Activity.** Saving findings (FR-13.6), a change in the working
 copy (the sweep's fingerprint, SPEC-020 FR-5.2, which works in a detached
 worktree), a renewal and a submit are a spike claim's activity.
 
-**FR-14.4 — The claim sweep and the deadline.** The sweep's step 3, for a
-spike's claim past its deadline, ends the spike (FR-15.1) instead of raising
-`claim-deadline`. It does this through an optional interface the spike's
-claimable implements (`deadlineEnder`), so the task's path is unchanged.
+**FR-14.4 — The claim sweep and the deadline.** For a claimable that
+implements an optional interface, `deadlineEnder` (the spike's does), the
+sweep judges the deadline **first**: past it, it ends the spike (FR-15.1)
+and skips steps 2 and 3, so it never raises `claim-stale` a moment before
+the ending withdraws it, and never raises `claim-deadline`. The task's path
+is unchanged.
 
 **Acceptance:**
 - a person releases a chat spike's claim; the spike is still running, and
@@ -1337,7 +1434,11 @@ claimable implements (`deadlineEnder`), so the task's path is unchanged.
   `claim-stale` on the spike with the question above; saving findings
   withdraws it; **Release the claim** releases it; **Keep the claim** keeps
   it;
-- no `claim-deadline` checkpoint is ever raised for a spike.
+- the Inbox shows a spike's `claim-stale` with **Release the claim** and the
+  spike's consequence, and a task's with its words unchanged;
+- with both the expiry and the deadline passed, one sweep ends the spike and
+  raises no `claim-stale`; no `claim-deadline` checkpoint is ever raised for
+  a spike.
 
 ### FR-15: The time box ends the spike
 
@@ -1348,13 +1449,22 @@ running `chat` or `person` spike whose deadline has passed:
 can't both write findings.
 
 **FR-15.2 — Ending a chat or person spike.** `EndSpike` accepts `time_box`,
-and only for a `chat` or `person` spike. In the transaction that moves the
-spike to `ended`, after locking the spike, any claim on it that hasn't ended
-is ended with the claim machine's `expire` (SD-21), audited, and its pending
-`claim-stale` withdrawn. Everything else is FR-6: the leak check first, the
-findings from the draft, the commit, the discard. Reconciliation also ends a
-running chat or person spike whose latest claim ended `done` (a submit that
-stopped before step 4 of FR-13.7) as `concluded`.
+and only for a `chat` or `person` spike. Every ending of a chat or person
+spike takes the worktree's lock before `spikeEndMu` (SD-27). In the
+transaction that moves the spike to `ended`, after locking the spike, it
+reads the latest claim: if that claim ended `done`, the spike ends as
+`concluded`, never `time_box` (a submit got there first); otherwise any claim
+on it that hasn't ended is ended with the claim machine's `expire` (SD-21),
+audited, and its pending `claim-stale` withdrawn. Everything else is FR-6:
+the leak check first, the findings from the draft, the commit, the discard.
+
+**FR-15.4 — The leak check over a long time box.** FR-6.3's check reports a
+new or moved tag, and any stash, as possibly kept code. Over a time box of
+up to a week, a person's ordinary tags and stashes in the main checkout are
+likely, and would each be reported. Stage 2 keeps the rule, which fails
+safe, and FR-6.3's accepted limits say a long time box makes false reports
+likely; the `spike-code-kept` answer, "I've dealt with it", costs a person a
+look. **Flagged for Sam** with choice 2.
 
 **FR-15.3 — The findings say how it ended.** For `time_box`, SD-8's
 completion gives:
@@ -1368,6 +1478,17 @@ completion gives:
 Neither says a number of tokens. Both add: "It ran in chat, so its tokens
 weren't measured." or "It was run by hand, so its tokens weren't measured."
 
+`store.spikeEndings` gains a `time_box` entry with every field the other
+endings have: the timeline's phrase ("Reached its time box"), the page's run
+line ("The spike reached the end of its time box."), the commit message's
+words ("time box ended"), the lead and the not-answered sentence above.
+
+**FR-15.5 — Asking again after a chat or person spike.** The close dialog's
+third choice on such a spike reads **Ask again**, with no budget field
+(`AgainBudget` reads the token budget, which it hasn't): the new spike's
+executor, and its budget or time box, are chosen on its own start screen.
+It is created with no budget override.
+
 **Acceptance:**
 - with `deadline_at` backdated, one heartbeat ends a claimed chat spike as
   `time_box`: its findings hold the saved draft and the time-box sentence,
@@ -1376,7 +1497,13 @@ weren't measured." or "It was run by hand, so its tokens weren't measured."
 - a spike past its deadline whose leak check finds a branch made in its
   worktree reports it, as stage 1's leak check does;
 - a running chat spike whose claim ended `done` is ended `concluded` by
-  reconciliation;
+  reconciliation, even when its deadline has also passed;
+- a submit and a deadline ending, run at once, leave either the submitted
+  findings and `concluded`, or a refused submit whose refusal says the
+  findings were lost and `time_box`, never findings that say `time_box`
+  after a submit was accepted;
+- a chat spike whose working copy was deleted and pruned before its time box
+  ends reports that the check couldn't run (fails closed);
 - `EndSpike(time_box)` on an agent spike is refused.
 
 ### FR-16: Where it shows
@@ -1416,8 +1543,14 @@ weren't measured." or "It was run by hand, so its tokens weren't measured."
 **FR-16.3 — The spikes list** (`/ui/spikes` and the owner's section) shows
 the executor beside the state, as a word: "agent", "chat" or "by hand".
 
+**FR-16.4 — Closing by the person who ran it** (SD-26). The close is
+allowed, the audit row carries `closer_ran_it`, and the closed spike's page
+says "Closed by sam, who also ran it."
+
 **Acceptance:** each line above, by a page test and a `get_spike` test; the
-time-box line and the unmeasured line on a chat spike's page.
+time-box line and the unmeasured line on a chat spike's page; a person spike
+closed by the person who ran it, with the audit field and the sentence; the
+ask-again dialog on a chat spike has no budget field.
 
 ### FR-17: The boundary
 
@@ -1464,14 +1597,20 @@ a person as answered; `TestPersonSpikeEndToEnd`, the same by hand in the UI.
   made outside the start's transaction, and the leak check runs before
   `EndSpike`'s.
 - **NFR-12 — Migration `0016` only.** Shared files: `claims.go` (the
-  registry, the no-feature lock, the `deadlineEnder` hook),
-  `claim_sweep.go` (step 3, the release answer), `lifecycle/claim.go`
-  (`expire`), `store/claims.go`, `mcp.go` (the registry line and the
+  registry, `lock` and `rules` on the interface, `claimResult`),
+  `claim_sweep.go` (the `deadlineEnder` hook, the release answer, the
+  release consequence), `lifecycle/claim.go` (`expire`), `store/claims.go`,
+  `store/executions.go` (the reference type on `RecordAgentExecution`),
+  `internal/dispatch/dispatch.go` (the agent row when a `run-spike` run
+  starts), `ui.go` and the Inbox template (the release words), `timeline`
+  (the spike's claim moment), `mcp.go` (the registry line and the
   `initialize` sentence), and the tool-set test.
 
 ### Stage 2 definition of done
 
-The orchestration note's checks, applied to stage 2, plus:
+The orchestration note's checks, applied to stage 2, with
+`verification_passed` meaning every acceptance criterion in §4 has cited
+evidence, plus:
 - a browser walkthrough without an AI provider: start a chat spike and a
   person spike from the start screen, claim the chat spike over MCP, save
   and submit findings, see the time-box and unmeasured lines, run the person
@@ -1494,7 +1633,11 @@ The orchestration note's checks, applied to stage 2, plus:
 20. releasing a spike's claim only frees it for its executor to claim again
     (SD-22);
 21. submitting ends the run with no reviewer, as a dispatched spike's
-    conclusion does (SD-23).
+    conclusion does (SD-23);
+22. the person who ran a spike may close it and approve its findings
+    (SD-26);
+23. the leak check keeps reporting any new tag or stash, so a long time box
+    may report a person's ordinary ones (FR-15.4).
 
 ## 5. Non-functional requirements
 
@@ -1551,7 +1694,8 @@ The orchestration note's checks, applied to stage 2, plus:
 - **NFR-7 — Human prose** in every label, refusal, notice and tool
   description (D-6). British spelling.
 - **NFR-8 — No typed paths.** Forms carry row ids in hidden fields; the only
-  typed values are the question and the budget.
+  typed values are the question, the budget, the time box (stage 2) and a
+  person's findings in the draft editor (stage 2).
 - **NFR-9 — Tested as before.** Integration tests with the mock provider
   against real Postgres cover every FR. `go vet ./...` and
   `go test -race -count=1 ./...` are clean, and the integration tests run
@@ -1667,6 +1811,29 @@ each marked where it stands:
 - **FR-10.3, the loader**. Round 1 found the first wording refused a copied
   `spike-runner.yaml` before its assignment, which broke FR-10.4's upgrade
   path.
+
+**Stage 2** ([REVIEW-021](../reviews/REVIEW-021-spikes.md) §6). The first
+draft's S2-1 to S2-9 became SD-17 to SD-25 and FR-11 to FR-18, using
+SPEC-020's names: `claim_spike` rather than `claim_task`'s spike form, the
+claim's `deadline_at`, `executions.measured`, and `spikes.default_time_box_hours`
+rather than `default_time_box`. Then the review's fourteen findings:
+
+| Finding | What changed |
+|---|---|
+| R21-S2-1 (material) | FR-13.7: the submit holds the worktree's lock and `spikeEndMu` through its ending, and a submit that passed its check is honoured; FR-15.2: an ending whose latest claim ended `done` is `concluded`; FR-12.4: reconciliation's cases, in order. |
+| R21-S2-2 (material) | FR-13.2 says exactly what a spike shares with the task's claim: `lock` and `rules` on the interface, `claimResult` without a task; the spike's own submit and release. |
+| R21-S2-3 (material) | FR-13.3: one predicate, `spikeHadWorkingCopy`, replaces `TokensUsed > 0` in the remake and the leak check. |
+| R21-S2-4 (material) | FR-14.2: the Inbox reads `release_label` and a new `release_consequence` from the checkpoint; the timeline's spike moment; NFR-12. |
+| R21-S2-5 (material) | SD-26 (choice 22): the person who ran a spike may close it, recorded; SD-25 and the claim's rule allow the relay of a person's verdict. |
+| R21-S2-6 | FR-13.2: a renewal after the deadline is refused. |
+| R21-S2-7 | FR-13.6: the save locks and re-checks, audits and withdraws, in one helper. |
+| R21-S2-8 | SD-27: the order of the three locks; the start's make under the worktree's lock. |
+| R21-S2-9 | FR-11.1: backfill first; the checks keyed on `started_at`, written with `IS NOT NULL`; no deadline on an agent spike; the end-reason check named. |
+| R21-S2-10 | FR-12.2: the agent row when the run starts, as SPEC-020 FR-1.2; one helper with a reference type. |
+| R21-S2-11 | FR-14.4: the deadline first, then nothing else. |
+| R21-S2-12 | FR-15.4 (choice 23): the rule stays and fails safe; the limit is named. |
+| R21-S2-13 | FR-15.3's `time_box` ending in full; FR-15.5, asking again without a budget; FR-12.5, the start notices. |
+| R21-S2-14 | The stage 2 definition of done asks for §4's evidence; NFR-8 names the time box and the draft. |
 
 ## Appendix A: where an owner or reference type is switched on
 
