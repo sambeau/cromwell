@@ -147,6 +147,10 @@ type entityPage struct {
 	// Timeline is a feature's journey (SPEC-012 FR-6). On a feature page it
 	// replaces Activity, whose events it carries as its detail level (SD-7).
 	Timeline *timelineView
+	// Tasks are a feature's tasks with who executes each, and ClaimWaiting
+	// says when a claim holds its working copy (SPEC-020 FR-1.6, FR-4.4).
+	Tasks        []taskRow
+	ClaimWaiting string
 
 	// Bugs (SPEC-019 FR-2.5, FR-5.1, FR-5.2): the triage card on a bug's
 	// page, the open bugs hanging off this initiative or feature, and
@@ -635,6 +639,9 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 		return nil, err
 	}
 	if page.Timeline, err = s.featureTimeline(ctx, f.ID); err != nil {
+		return nil, err
+	}
+	if page.Tasks, page.ClaimWaiting, err = s.featureTaskRows(ctx, f.ID); err != nil {
 		return nil, err
 	}
 	if err := s.bugPageParts(ctx, page); err != nil {

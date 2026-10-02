@@ -85,7 +85,8 @@ var uiFuncs = template.FuncMap{
 	"tierTitle":    tierTitle,
 	"docIcon":      docIcon,
 	// Audit kinds are machine identifiers; an activity feed is for people.
-	"eventLabel": eventLabel,
+	"eventLabel":       eventLabel,
+	"executorIconName": executorIcon,
 	// The inbox spells out what each answer will do, because these decisions are
 	// expensive to reverse and a sentence of prose is cheap.
 	"verbLabel":       verbLabel,
@@ -693,6 +694,10 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/document/request-review", s.handleDocRequestReview)
 	mux.HandleFunc("POST /ui/document/release", s.handleDocRelease)
 	mux.HandleFunc("POST /ui/feature/abandon", s.handleEntityFeatureAbandon)
+	// A person claims a task, submits it and releases a claim (SPEC-020 FR-4.2).
+	mux.HandleFunc("POST /ui/task/claim", s.handleUITaskClaim)
+	mux.HandleFunc("POST /ui/task/submit", s.handleUITaskSubmit)
+	mux.HandleFunc("POST /ui/task/release", s.handleUITaskRelease)
 	// Bugs (SPEC-019): report one from an initiative's or feature's page, and
 	// triage it from the queue or its own page.
 	mux.HandleFunc("POST /ui/bugs", s.handleUIReportBug)
