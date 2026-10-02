@@ -238,6 +238,12 @@ func TestG5CountsOpenSpikes(t *testing.T) {
 	if r := G5Open(0, 2); r.Pass || r.Reason != "2 open spike(s) in subtree" {
 		t.Errorf("G5Open(0, 2) = %+v", r)
 	}
+	if r := G5Open(1, 2); r.Pass || r.Reason != "1 non-terminal feature(s) and 2 open spike(s) in subtree" {
+		t.Errorf("G5Open(1, 2) = %+v", r)
+	}
+	if r := G5Open(3, 0); r.Pass || r.Reason != G5(3).Reason {
+		t.Errorf("G5Open(3, 0) = %+v, want what G5(3) says", r)
+	}
 	if r := G5Open(1, 3); r.Pass || r.Reason != "1 non-terminal feature(s) and 3 open spike(s) in subtree" {
 		t.Errorf("G5Open(1, 3) = %+v", r)
 	}

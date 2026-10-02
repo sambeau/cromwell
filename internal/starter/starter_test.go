@@ -277,6 +277,10 @@ func TestStarterHasSpikePack(t *testing.T) {
 	if c.Config.SpikeDefaultTokenBudget() != config.DefaultSpikeTokenBudget {
 		t.Errorf("budget %d", c.Config.SpikeDefaultTokenBudget())
 	}
+	// FR-10.1: the generated config includes the section, not as a comment.
+	if p := c.Config.Spikes.DefaultTokenBudget; p == nil || *p != config.DefaultSpikeTokenBudget {
+		t.Errorf("the generated config's spikes section = %v, want default_token_budget written out", p)
+	}
 	r := c.Roles["spike-runner"]
 	if r.Skill != "run-spike" || r.Limits == nil || r.Limits.TurnCap != 40 || !slices.Contains(r.Tools, "save_findings") {
 		t.Errorf("role: %+v", r)

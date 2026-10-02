@@ -268,6 +268,8 @@ func TestCreatingASpike(t *testing.T) {
 
 	// The database refuses a row that breaks each named check.
 	checks := map[string]string{
+		"spikes_ended_how_values":        `INSERT INTO spikes (id, initiative_id, question, state, ended_how, token_budget, started_at, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'ended', 'gave_up', 100, now(), 'x', 'ui')`,
+		"spikes_closed_as_values":        `INSERT INTO spikes (id, initiative_id, question, state, ended_how, closed_as, token_budget, started_at, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'closed', 'budget', 'maybe', 100, now(), 'x', 'ui')`,
 		"spikes_state":                   `INSERT INTO spikes (id, initiative_id, question, state, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'bogus', 'x', 'ui')`,
 		"spikes_closed_as":               `INSERT INTO spikes (id, initiative_id, question, state, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'closed', 'x', 'ui')`,
 		"spikes_started":                 `INSERT INTO spikes (id, initiative_id, question, state, created_by, created_via) VALUES (gen_random_uuid(), $1, 'q', 'running', 'x', 'ui')`,
@@ -1146,6 +1148,83 @@ func TestSpikeEndIsReconciled(t *testing.T) {
 	}
 }
 
+// FR-6.2: an ending that stopped after writing the findings file but before
+// registering it leaves a file with this spike's findings ID; the next call
+// writes the same path again rather than a second copy beside it. And findings
+// that are staged but were never committed are still committed.
+func TestSpikeEndingResumesFromAnOrphanFileAndAStagedOne(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	draft := "## Answer\n\nYes.\n\n## What we found\n\nA crash.\n"
+
+	sp := h.newSpike(in, "Did the crash leave a file?", nil)
+	started, d := h.startSpikeQuiet(sp, 1000)
+	if _, err := h.srv.ensureSpikeWorktree(started); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp.ID, draft); err != nil {
+		t.Fatal(err)
+	}
+	// The process dies after the file is written, before the transaction
+	// commits: nothing undoes it.
+	crash := errors.New("the process died")
+	err := h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		cur, err := store.GetSpike(ctx, tx, sp.ID)
+		if err != nil {
+			return err
+		}
+		if _, _, err := h.srv.writeFindings(ctx, tx, cur, draft, findingsEnd{How: store.SpikeBudget, Budget: 1000}); err != nil {
+			return err
+		}
+		return crash
+	})
+	if !errors.Is(err, crash) {
+		t.Fatalf("the simulated crash: %v", err)
+	}
+	orphan := strings.TrimSpace(h.gitOut("status", "--porcelain", "--untracked-files=all"))
+	if !strings.Contains(orphan, "SPK-001-findings.md") {
+		t.Fatalf("no orphan file after the crash:\n%s", orphan)
+	}
+	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE dispatches SET state = 'succeeded', outcome = '{"ended":"budget"}' WHERE id = $1`, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.ReconcileSpikes(ctx)
+	done := h.getSpike(sp.ID)
+	doc, _ := h.findingsOf(done)
+	if !strings.HasSuffix(doc.Path, "SPK-001-findings.md") {
+		t.Errorf("the findings were written to %s, not the path the crash left", doc.Path)
+	}
+	if out := h.gitOut("ls-files", "--", "*SPK-001-findings*"); strings.Count(strings.TrimSpace(out), "\n") != 0 || strings.TrimSpace(out) != doc.Path {
+		t.Errorf("tracked findings files:\n%s", out)
+	}
+	if out := h.gitOut("status", "--porcelain", "--untracked-files=all"); strings.Contains(out, "SPK-001") {
+		t.Errorf("a stray findings file is left over:\n%s", out)
+	}
+
+	// Staged, never committed.
+	sp2 := h.newSpike(in, "Did the commit fail after the add?", nil)
+	started2, d2 := h.startSpikeQuiet(sp2, 1000)
+	if _, err := h.srv.ensureSpikeWorktree(started2); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp2.ID, draft); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.srv.recordSpikeEnd(ctx, started2, store.SpikeBudget, ""); err != nil {
+		t.Fatal(err)
+	}
+	doc2, _ := h.findingsOf(h.getSpike(sp2.ID))
+	h.gitOut("add", "--", doc2.Path)
+	if _, err := h.srv.Store.Pool.Exec(ctx, `UPDATE dispatches SET state = 'succeeded', outcome = '{"ended":"budget"}' WHERE id = $1`, d2.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.ReconcileSpikes(ctx)
+	if h.gitOut("ls-tree", "--name-only", "HEAD", "--", doc2.Path) == "" {
+		t.Errorf("staged findings were never committed: %s", doc2.Path)
+	}
+}
+
 func TestLeftoverSpikeWorktreeIsRemoved(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -1422,6 +1501,9 @@ func TestSpikeHasNoMergePath(t *testing.T) {
 	for _, outcome := range []string{`{"ended":"budget"}`, `{"ended":"turn_limit"}`, findingsJSON(goodFindings), `{"merge":true}`} {
 		actions := rules.Decide(bus.DispatchSucceeded{DispatchID: uuid.New(), Purpose: "run-spike", Role: "spike-runner",
 			RefType: "spike", RefID: clean.ID, Outcome: json.RawMessage(outcome)}, rules.Snapshot{})
+		if len(actions) != 1 {
+			t.Errorf("a run-spike success (%s) led to %d actions, want the one that ends it", outcome, len(actions))
+		}
 		for _, a := range actions {
 			if _, ok := a.(rules.EndSpike); !ok {
 				t.Errorf("a run-spike success led to %T", a)
@@ -1623,6 +1705,37 @@ func TestOpenSpikesBlockArchivingTheirInitiative(t *testing.T) {
 	if code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf"}); code != 200 {
 		t.Errorf("archive with only a closed spike: %d %v", code, out)
 	}
+}
+
+// SD-14: the gate's refusal for an open spike is overridable, like any G5
+// refusal: an answered gate-override checkpoint archives the initiative.
+func TestArchiveOverrideWithAnOpenSpike(t *testing.T) {
+	h := newHarness(t)
+	in := h.spikeInitiative("pf")
+	h.newSpike(in, "Is it safe to archive?", nil)
+
+	code, out := h.call("POST", "/api/initiatives/archive", map[string]string{"path": "pf", "reason": "descoping"})
+	if code != 409 || !strings.Contains(out["reason"].(string), "1 open spike(s)") {
+		t.Fatalf("archive should be blocked by the open spike: %d %v", code, out)
+	}
+	var checkpointID string
+	h.eventually("gate-override checkpoint", func() bool {
+		for _, cp := range h.pendingByKind("gate-override") {
+			checkpointID = cp.ID.String()
+			return true
+		}
+		return false
+	})
+	if code, out := h.call("POST", "/api/respond", map[string]any{
+		"id": checkpointID, "response": map[string]any{"override": true, "reason": "the question went away"}}); code != 200 {
+		t.Fatalf("answering the override: %d %v", code, out)
+	}
+	h.eventually("archived", func() bool {
+		var archived bool
+		_ = h.srv.Store.Pool.QueryRow(context.Background(),
+			`SELECT archived FROM initiatives WHERE slug = 'pf'`).Scan(&archived)
+		return archived
+	})
 }
 
 // ---- Appendix A: the places that switch on an owner ----
