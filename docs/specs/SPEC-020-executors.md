@@ -941,9 +941,10 @@ question, rather than raising a second: checkpoints are one per kind and item
 while pending.
 
 **FR-5.9 — `watched_head` starts at the branch head** once `addWorktree` has
-created the branch (in `StartFeature`, and in the worktree-failure retry). The
-migration sets it for every live worktree, so history before M13 is never
-reported.
+created the branch (in `StartFeature`, and in the worktree-failure retry). A
+migration can't run git, so at boot Subutai sets it to the branch head for
+every live worktree that has none, as SPEC-017's provenance backfill runs at
+boot. History before M13 is never reported.
 
 **FR-5.10 — The Inbox** shows `claim-stale`, `claim-deadline` and
 `unclaimed-commit` with their answers. `responseFor` gains the three kinds,
