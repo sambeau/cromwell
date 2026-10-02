@@ -1041,7 +1041,7 @@ func TestSpikeEndIsReconciled(t *testing.T) {
 	// still running, with its worktree, until the next heartbeat.
 	sp := h.newSpike(in, "Was the event lost?", nil)
 	started, d := h.startSpikeQuiet(sp, 1000)
-	if _, err := h.srv.ensureSpikeWorktree(started); err != nil {
+	if _, err := h.srv.ensureSpikeWorktree(ctx, started); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp.ID, "## Answer\n\nProbably.\n\n## What we found\n\nA lost event.\n"); err != nil {
@@ -1116,7 +1116,7 @@ func TestSpikeEndIsReconciled(t *testing.T) {
 	// without writing them twice.
 	sp6 := h.newSpike(in, "Did the ending stop halfway?", nil)
 	started6, _ := h.startSpikeQuiet(sp6, 1000)
-	if _, err := h.srv.ensureSpikeWorktree(started6); err != nil {
+	if _, err := h.srv.ensureSpikeWorktree(ctx, started6); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp6.ID, "## Answer\n\nYes.\n\n## What we found\n\nHalfway.\n"); err != nil {
@@ -1160,7 +1160,7 @@ func TestSpikeEndingResumesFromAnOrphanFileAndAStagedOne(t *testing.T) {
 
 	sp := h.newSpike(in, "Did the crash leave a file?", nil)
 	started, d := h.startSpikeQuiet(sp, 1000)
-	if _, err := h.srv.ensureSpikeWorktree(started); err != nil {
+	if _, err := h.srv.ensureSpikeWorktree(ctx, started); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp.ID, draft); err != nil {
@@ -1205,7 +1205,7 @@ func TestSpikeEndingResumesFromAnOrphanFileAndAStagedOne(t *testing.T) {
 	// Staged, never committed.
 	sp2 := h.newSpike(in, "Did the commit fail after the add?", nil)
 	started2, d2 := h.startSpikeQuiet(sp2, 1000)
-	if _, err := h.srv.ensureSpikeWorktree(started2); err != nil {
+	if _, err := h.srv.ensureSpikeWorktree(ctx, started2); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveSpikeDraft(ctx, h.srv.Store.Pool, sp2.ID, draft); err != nil {
@@ -1242,7 +1242,7 @@ func TestLeftoverSpikeWorktreeIsRemoved(t *testing.T) {
 	// A running spike's worktree must survive the sweep, and a feature's must too.
 	run := h.newSpike(in, "Is this one still running?", nil)
 	started, _ := h.startSpikeQuiet(run, 1000)
-	runDir, err := h.srv.ensureSpikeWorktree(started)
+	runDir, err := h.srv.ensureSpikeWorktree(ctx, started)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1250,7 +1250,7 @@ func TestLeftoverSpikeWorktreeIsRemoved(t *testing.T) {
 	// An ended spike whose worktree was never discarded.
 	ended := h.newSpike(in, "Was this one left behind?", nil)
 	endedStarted, _ := h.startSpikeQuiet(ended, 1000)
-	endedDir, err := h.srv.ensureSpikeWorktree(endedStarted)
+	endedDir, err := h.srv.ensureSpikeWorktree(ctx, endedStarted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1619,6 +1619,65 @@ func TestSpikeHasNoMergePath(t *testing.T) {
 		}
 		if got := h.auditKinds("spike.code_kept", quiet.ID); got != 0 || len(h.keptCheckpoints(quiet)) != 0 {
 			t.Errorf("checking out a newer main raised a leak (%d audit rows)", got)
+		}
+	})
+	t.Run("a working copy deleted and pruned away", func(t *testing.T) {
+		// Git forgets a worktree whose directory is gone, reflog and all, as
+		// soon as anything prunes: the check can't tell what was kept, so it
+		// fails closed.
+		script := commit + `c a && git branch keep-gone && d="$PWD" && cd / && rm -rf "$d" && git -C '` + h.root + `' worktree prune`
+		gone := h.runLeakScript(in, "Is a vanished working copy caught?", script)
+		if out := h.gitOut("branch", "--list", "keep-gone"); !strings.Contains(out, "keep-gone") {
+			t.Fatalf("the branch the script made is gone: %q", out)
+		}
+		_, text := h.findingsOf(gone)
+		if want := "Subutai couldn't check whether code from this spike was kept: the working copy was removed, so git's record of it is gone."; !strings.Contains(text, want) {
+			t.Errorf("the findings don't say %q:\n%s", want, text)
+		}
+		if got := h.auditKinds("spike.code_kept", gone.ID); got != 1 {
+			t.Errorf("%d spike.code_kept audit rows, want 1", got)
+		}
+		cps := h.keptCheckpoints(gone)
+		if len(cps) != 1 || !strings.Contains(cps[0].Question, "couldn't check whether code from "+gone.PublicID) {
+			t.Fatalf("the checkpoint = %+v", cps)
+		}
+		var payload struct {
+			Refs         []string `json:"refs"`
+			CouldntCheck string   `json:"couldnt_check"`
+		}
+		if err := json.Unmarshal(cps[0].Context, &payload); err != nil || payload.Refs == nil || len(payload.Refs) != 0 ||
+			!strings.Contains(payload.CouldntCheck, "the working copy was removed") {
+			t.Errorf("the checkpoint's payload = %s (%v)", cps[0].Context, err)
+		}
+	})
+	t.Run("a damaged working copy that a retry would remake", func(t *testing.T) {
+		// The agent commits, branches and removes its worktree's .git file,
+		// then the attempt fails. The retry remakes the working copy, and
+		// that prunes the reflog, so what was kept is recorded first, once.
+		h.setBuild(commit + "c a && git branch keep-retry && rm .git")
+		sp := h.newSpike(in, "Is a leak before a remake caught?", nil)
+		h.mock.RespondToolUse("run_command", `{"name":"build"}`, tiny)
+		h.mock.Fail(errors.New("the provider is down"))
+		h.saveCall(tiny, "Yes.", "The retry saved this.")
+		h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+		h.startSpike(sp, 0)
+		sp = h.settle(sp, true)
+		if sp.State != store.SpikeEnded {
+			t.Fatalf("the spike is %s", sp.State)
+		}
+		_, text := h.findingsOf(sp)
+		if want := "Code from this spike was kept on `keep-retry`, outside its working copy."; !strings.Contains(text, want) {
+			t.Errorf("the findings don't say %q:\n%s", want, text)
+		}
+		if got := h.auditKinds("spike.code_kept", sp.ID); got != 1 {
+			t.Errorf("%d spike.code_kept audit rows, want 1", got)
+		}
+		if cps := h.keptCheckpoints(sp); len(cps) != 1 || !strings.Contains(cps[0].Question, "was kept on `keep-retry`") {
+			t.Errorf("the checkpoint = %+v", cps)
+		}
+		var raised int
+		if err := h.srv.Store.Pool.QueryRow(context.Background(), `SELECT count(*) FROM checkpoints WHERE kind = 'spike-code-kept' AND ref_id = $1`, sp.ID).Scan(&raised); err != nil || raised != 1 {
+			t.Errorf("%d checkpoints raised (%v), want 1", raised, err)
 		}
 	})
 	for _, tc := range []struct{ name, script, why string }{

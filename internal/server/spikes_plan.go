@@ -111,7 +111,7 @@ func (s *Server) planSpike(ctx context.Context, d *store.Dispatch) (*dispatch.Pl
 	if err != nil {
 		return nil, err
 	}
-	worktree, err := s.ensureSpikeWorktree(sp)
+	worktree, err := s.ensureSpikeWorktree(ctx, sp)
 	if err != nil {
 		return nil, fmt.Errorf("the spike's working copy couldn't be made: %w", err)
 	}

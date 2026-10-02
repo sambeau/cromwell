@@ -232,14 +232,25 @@ func (s *Server) discardSpikeWorktree(ctx context.Context, sp *store.Spike) erro
 // ensureSpikeWorktree makes sure the spike's worktree exists before the run's
 // first call (FR-4.2): if the path has no .git, anything there is removed and
 // a detached worktree is made at the base commit. A detached worktree has no
-// branch, so there is nothing to merge (SD-2).
-func (s *Server) ensureSpikeWorktree(sp *store.Spike) (string, error) {
+// branch, so there is nothing to merge (SD-2). A spike that has used tokens had
+// a working copy, and the remake would prune the reflog the leak check reads,
+// so what it kept is checked and recorded first; the end of the run then finds
+// that record and doesn't raise it again.
+func (s *Server) ensureSpikeWorktree(ctx context.Context, sp *store.Spike) (string, error) {
 	abs := s.worktreeAbs(sp.WorktreePath)
 	if !spikeWorktreeOK(abs) {
 		return "", fmt.Errorf("the spike's working copy path %q isn't one Subutai makes", sp.WorktreePath)
 	}
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
 		return abs, nil
+	}
+	if sp.TokensUsed > 0 {
+		s.spikeEndMu.Lock()
+		_, err := s.spikeKept(ctx, sp)
+		s.spikeEndMu.Unlock()
+		if err != nil {
+			return "", err
+		}
 	}
 	if err := os.RemoveAll(abs); err != nil {
 		return "", err

@@ -479,6 +479,21 @@ func gitIn(dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// gitInWithStdin is gitIn with input on stdin, for a command whose arguments
+// could outgrow the command line.
+func gitInWithStdin(dir, stdin string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return string(out), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return string(out), nil
+}
+
 // planAuthor builds a write-spec or write-dev-plan plan (SPEC-009 FR-5.3,
 // FR-5.4). Authoring is read-only with respect to the worktree — documents
 // live in the main repository, never in one — so the plan carries a nil
