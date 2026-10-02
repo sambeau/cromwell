@@ -252,7 +252,7 @@
       {{range .Timeline}}
       <li class="activity-row">
         <span class="activity-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{.Icon}}"/></svg></span>
-        <span class="activity-text">{{if .URL}}<a href="{{.URL}}">{{.Label}}</a>{{else}}{{.Label}}{{end}} <span class="u-dim">{{ago .At}} ago</span></span>
+        <span class="activity-text">{{if .URL}}<a href="{{.URL}}">{{code .Label}}</a>{{else}}{{code .Label}}{{end}} <span class="u-dim">{{ago .At}} ago</span></span>
       </li>
       {{end}}
     </ul>
