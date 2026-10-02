@@ -29,6 +29,9 @@ func KnownTools() map[string]bool {
 		// FR-3.3). It writes nothing to the worktree, so read-only roles —
 		// the code reviewer, the verifier — may declare it.
 		"report_bug": true,
+		// save_findings keeps a spike's draft findings (SPEC-021 FR-4.3). It
+		// writes nothing to the worktree, and only the spike runner may have it.
+		"save_findings": true,
 	}
 }
 
@@ -40,9 +43,10 @@ func MutatingTools() map[string]bool {
 }
 
 // isWorktreePurpose reports whether a purpose runs in a worktree, with the
-// role's profile tools offered: implementation, code review, verification.
+// role's profile tools offered: implementation, code review, verification,
+// and running a spike.
 func isWorktreePurpose(p string) bool {
-	return p == "implement-task" || p == "review-code" || p == "verify-feature"
+	return p == "implement-task" || p == "review-code" || p == "verify-feature" || p == "run-spike"
 }
 
 func hasTool(tools []string, name string) bool {
@@ -427,6 +431,16 @@ func Load(root string, knownRuleKinds map[string]bool) (*Compartment, error) {
 					errs = append(errs, errf(rel, "tools", "unknown tool %q", tool))
 				}
 			}
+			// The spike tools (SPEC-021 FR-10.3). A role file nobody is
+			// assigned is never offered tools, so it loads: a project can
+			// copy the spike runner before it assigns it (FR-10.4).
+			isSpikeRunner := cfg.Assignments["run-spike"] == name
+			if other := otherPurpose(cfg.Assignments, name, "run-spike"); hasTool(r.Tools, "save_findings") && other != "" {
+				errs = append(errs, errf(rel, "tools", "save_findings is for the spike runner, so role %s can't be offered it while it is assigned %s.", name, other))
+			}
+			if hasTool(r.Tools, "report_bug") && isSpikeRunner {
+				errs = append(errs, errf(rel, "tools", "A spike's agent puts what it finds in its findings, so role %s can't be offered report_bug.", name))
+			}
 		}
 		for purpose, role := range cfg.Assignments {
 			r, ok := c.Roles[role]
@@ -511,4 +525,16 @@ func isReadOnlyPurpose(purpose string) bool {
 		}
 	}
 	return false
+}
+
+// otherPurpose is a purpose, other than except, that the role is assigned, or
+// "" when it has none. The first by name, so the message doesn't vary.
+func otherPurpose(assignments map[string]string, role, except string) string {
+	found := ""
+	for purpose, r := range assignments {
+		if r == role && purpose != except && (found == "" || purpose < found) {
+			found = purpose
+		}
+	}
+	return found
 }

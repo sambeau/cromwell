@@ -2142,6 +2142,7 @@ dialog.modal::backdrop { background: var(--c-overlay); }
   border-color: var(--c-accent-line); background: var(--c-accent-soft);
   color: var(--c-text); font-weight: var(--fw-medium);
 }
+.journey-step--aside .journey-step-link { color: var(--c-text-3); }
 .journey-count { color: var(--c-text-3); font-variant-numeric: tabular-nums; }
 
 /* The detail: each moment, what led to it, and what ran in its phase. */
@@ -2156,6 +2157,7 @@ dialog.modal::backdrop { background: var(--c-overlay); }
 .moment[data-state="review"] .moment-mark    { color: var(--c-violet-mark); }
 .moment[data-state="active"] .moment-mark    { color: var(--c-amber-mark); }
 .moment[data-state="ready"] .moment-mark     { color: var(--c-blue-mark); }
+.moment--aside .moment-title { color: var(--c-text-3); }
 .moment-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
 .moment-meta { margin-left: auto; }
 .moment-cause { margin: var(--sp-2) 0 0 calc(16px + var(--sp-2)); }

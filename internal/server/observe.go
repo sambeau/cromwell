@@ -78,6 +78,8 @@ func runPurpose(purpose, label string) string {
 		return "Checking the feature against its specification"
 	case "estimate":
 		return "Estimating the size"
+	case "run-spike":
+		return "Running a spike"
 	}
 	if strings.HasPrefix(purpose, "review-") {
 		return "Reviewing the document" + about
@@ -281,8 +283,9 @@ func (s *Server) featureTimeline(ctx context.Context, featureID uuid.UUID) (*tim
 	// setting was unset (SPEC-017 FR-2.7).
 	moments := timeline.Build(events, truns, timeline.Options{Progress: progress, ChatActor: s.mcpActor()})
 	view := &timelineView{FeatureID: featureID, Line: timeline.Line(moments)}
+	current := timeline.CurrentIndex(moments) // never a spike's aside
 	for i, m := range moments {
-		mv := momentView{Moment: m, Index: i, Current: i == len(moments)-1}
+		mv := momentView{Moment: m, Index: i, Current: i == current}
 		if m.Cause != nil {
 			label := byID[m.Cause.ID].Label
 			if m.Cause.RefType == "feature" {
@@ -298,6 +301,8 @@ func (s *Server) featureTimeline(ctx context.Context, featureID uuid.UUID) (*tim
 			}
 		case "task":
 			mv.RefURL = "/ui/t/" + m.RefID.String()
+		case "spike":
+			mv.RefURL = "/ui/s/" + m.RefName // the label is the spike's ID (FR-8.3)
 		}
 		for _, r := range m.Runs {
 			label := byID[r.ID].Label
@@ -412,6 +417,9 @@ type runPage struct {
 	Turns         []turnView
 	Conclusion    conclusion
 	Ledger        []store.ToolCallRow
+	// SpikeHow is how the spike a run-spike run belongs to ended, so the
+	// conclusion can say it in a sentence (SPEC-021 FR-8.4).
+	SpikeHow string
 }
 
 func (p runPage) headTitle() string   { return p.Heading }
@@ -552,6 +560,11 @@ func (s *Server) buildRunPage(ctx context.Context, d *store.Dispatch, attemptPar
 			p.TokensOut += t.Out
 		}
 	}
+	if d.RefType == "spike" {
+		if sp, err := store.GetSpike(ctx, s.Store.Pool, d.RefID); err == nil {
+			p.SpikeHow = sp.EndedHow
+		}
+	}
 	p.Conclusion = p.conclude(d, entries)
 	return p, nil
 }
@@ -591,6 +604,20 @@ func (s *Server) runContext(ctx context.Context, d *store.Dispatch) (about, feat
 		if in, err := store.GetInitiative(ctx, s.Store.Pool, d.RefID); err == nil {
 			if path, err := s.initiativePath(ctx, in.ID); err == nil {
 				about = crumb{Label: in.Name, URL: "/ui/i/" + path, Kind: "initiative"}
+			}
+		}
+	case "spike":
+		// The run's crumbs lead to the spike and to what it was written on
+		// (SPEC-021 FR-8.4).
+		if sp, err := store.GetSpike(ctx, s.Store.Pool, d.RefID); err == nil {
+			label = sp.Question
+			about = crumb{ID: sp.PublicID, Label: sp.PublicID, URL: "/ui/s/" + sp.PublicID, Kind: "spike"}
+			if sp.FeatureID != nil {
+				feature = featureCrumb(*sp.FeatureID)
+			} else if in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID); err == nil {
+				if path, err := s.initiativePath(ctx, in.ID); err == nil {
+					feature = crumb{Label: in.Name, URL: "/ui/i/" + path, Kind: "initiative"}
+				}
 			}
 		}
 	}
@@ -668,6 +695,11 @@ func (p *runPage) buildTurns(entries []store.TranscriptEntry) {
 		case store.EntryError:
 			t := ensure(e.Turn)
 			t.Items = append(t.Items, turnItem{Kind: "error", Entry: e})
+		case store.EntryStop:
+			// A spike run that stopped at its budget or turn limit (SPEC-021
+			// FR-5.1): shown as a notice, since it isn't a failure.
+			t := ensure(e.Turn)
+			t.Items = append(t.Items, turnItem{Kind: "stop", Entry: e})
 		}
 	}
 }
@@ -711,6 +743,13 @@ func (p *runPage) conclude(d *store.Dispatch, entries []store.TranscriptEntry) c
 			msg = *d.Error
 		}
 		return conclusion{Kind: "error", Error: msg, Plain: failureWords(msg)}
+	}
+	if d.Purpose == "run-spike" {
+		// A spike's run is judged by how the spike ended, in a sentence
+		// (SPEC-021 FR-8.4), not by its outcome's JSON.
+		if p.SpikeHow != "" {
+			return conclusion{Kind: "spike", Plain: store.SpikeEndingOf(p.SpikeHow).Run}
+		}
 	}
 	if len(d.Outcome) == 0 {
 		return conclusion{Kind: "other", Raw: "The run finished without an outcome."}

@@ -280,6 +280,9 @@ func (s *Server) handleMilestoneMember(w http.ResponseWriter, r *http.Request) {
 // resolveMemberRef resolves a milestone member reference: an initiative, a
 // feature, or a nested milestone (SD-2 — no checklists).
 func (s *Server) resolveMemberRef(ctx context.Context, ref string) (string, uuid.UUID, error) {
+	if spikeRefRe.MatchString(strings.TrimSpace(ref)) {
+		return "", uuid.Nil, errors.New(spikeNotDeliverableRefusal)
+	}
 	if f, err := s.featureByPath(ctx, ref); err == nil {
 		return "feature", f.ID, nil
 	}

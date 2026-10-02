@@ -215,7 +215,7 @@ func (s *Server) mcpTools() []mcpTool {
 			}, "owner_type"),
 			Handler: s.mcpListDocuments,
 		},
-	}, append(append(append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...), s.mcpDecisionTools()...), append(s.mcpBugTools(), s.mcpClaimTools()...)...)...)
+	}, append(append(append(append(append(s.mcpPlanTools(), s.mcpChecklistTools()...), s.mcpRelayTools()...), s.mcpObserveTools()...), s.mcpDecisionTools()...), append(append(s.mcpBugTools(), s.mcpClaimTools()...), s.mcpSpikeTools()...)...)...)
 }
 
 // mcpToolNames is the sorted list of advertised tool names — the assertion
@@ -321,7 +321,8 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				"person, and submit it (claim_task, submit_task); its work is reviewed and verified by others, never by you, " +
 				"and the work-a-task skill says how. You cannot send work to development, start " +
 				"building, override a gate or answer the Inbox — a person does " +
-				"those from the command centre.",
+				"those from the command centre. You may write down a spike's question with " +
+				"create_spike; only a person can start or close one.",
 		})
 	case "ping":
 		writeRPCResult(w, req.ID, map[string]any{})

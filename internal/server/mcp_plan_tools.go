@@ -79,6 +79,9 @@ func (s *Server) mcpMemberArg(ctx context.Context, args map[string]any) (string,
 	if !ok {
 		return "", uuid.Nil, "", errors.New("say what to add or take out in \"member\": a feature or initiative path, or a checklist's or milestone's id or name")
 	}
+	if spikeRefRe.MatchString(ref) || memberType == "spike" {
+		return "", uuid.Nil, "", errors.New(spikeNotDeliverableRefusal)
+	}
 	switch memberType {
 	case "feature":
 		f, _, err := s.featureByRef(ctx, ref)

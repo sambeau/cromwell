@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -84,6 +85,54 @@ type Plan struct {
 	OutcomeTool     string
 	ValidateOutcome func(json.RawMessage) error
 	ToolCtx         *toolhost.Context
+
+	// Budget, if set, is a hard token limit on the run (SPEC-021 SD-7). Nil
+	// leaves the loop exactly as it always was.
+	Budget *Budget
+}
+
+// Budget is a hard token limit on one dispatch's run, shared across its
+// attempts (SPEC-021 SD-7). A run that reaches it stops cleanly, as a
+// success whose outcome says why (StopOutcome), rather than failing. A plan
+// with a Budget also stops, rather than fails, at its turn cap.
+type Budget struct {
+	Limit int64
+	// Total reads the run's tokens used so far, across every attempt (the
+	// database's figure).
+	Total func(ctx context.Context) (int64, error)
+	// Add adds one call's tokens and returns the new total, so overlapping
+	// attempts see each other's spending.
+	Add func(ctx context.Context, tokens int64) (int64, error)
+	// EarlyTools are run on the turn that crosses the budget, while the
+	// turn's other tools are not, so a save_findings on that turn is kept.
+	EarlyTools []string
+}
+
+// Why a budgeted run stopped (SPEC-021 FR-5.1).
+const (
+	StopBudget    = "budget"
+	StopTurnLimit = "turn_limit"
+)
+
+// StopOutcome is the outcome of a run that stopped rather than concluded.
+func StopOutcome(reason string) json.RawMessage {
+	out, _ := json.Marshal(map[string]string{"ended": reason})
+	return out
+}
+
+// BudgetTokens is what one call counts against a budget: input including
+// cache reads and writes, plus output. It agrees with store.RunSummary.Tokens,
+// which sums the same four columns, so the figure a person sees is the figure
+// the budget enforces.
+func BudgetTokens(u provider.Usage) int64 { return u.Input + u.Output + u.CacheRead + u.CacheWrite }
+
+// Thousands formats n with thousands separators: 40,000.
+func Thousands(n int64) string {
+	s := fmt.Sprint(n)
+	for i := len(s) - 3; i > 0 && s[i-1] != '-'; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 // Planner assembles a dispatch's plan. Implemented by the server (it owns
@@ -441,11 +490,26 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 
 	msgs := []provider.Message{provider.UserText(plan.User)}
 	seq := 0
+	b := plan.Budget
+	var spent, lastCall int64 // the run's tokens (all attempts), and the last call's
 	for turn := 0; turn < plan.TurnCap; turn++ {
 		if err := dp.stillCurrent(ctx, d); err != nil {
 			return nil, total, err
 		}
 		n := turn + 1
+
+		// Before every call: stop if the budget is spent, or if the next
+		// call, whose input holds everything the last one read and wrote,
+		// cannot fit in what is left (SPEC-021 FR-5.1).
+		if b != nil {
+			var err error
+			if spent, err = b.Total(ctx); err != nil {
+				return nil, total, err
+			}
+			if spent >= b.Limit || (turn > 0 && spent+lastCall > b.Limit) {
+				return dp.stopRun(ctx, rec, n, StopBudget, b.Limit, total)
+			}
+		}
 
 		began := time.Now()
 		resp, err := dp.completeWithRetry(ctx, prov, provider.Request{
@@ -456,6 +520,14 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 			return nil, total, err
 		}
 		total.Add(resp.Usage)
+		if b != nil {
+			// A call that was paid for is always counted, even if the
+			// attempt was given up on while it ran.
+			lastCall = BudgetTokens(resp.Usage)
+			if spent, err = b.Add(ctx, lastCall); err != nil {
+				return nil, total, err
+			}
+		}
 		// A model call can outlast the stall threshold. If the attempt was
 		// given up on meanwhile, stop here: its transcript already ends with
 		// why, and acting on this reply could race a retry (SPEC-012 FR-1.9).
@@ -506,6 +578,9 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 				rec.outcome(ctx, n, tu, recorded)
 				return tu.ToolInput, total, nil // dispatch complete
 			}
+			if b != nil && spent >= b.Limit && !slices.Contains(b.EarlyTools, tu.ToolName) {
+				continue // the run stops after this turn; only early tools run
+			}
 			began := time.Now()
 			result, isErr := dp.execTool(ctx, plan, tu)
 			took := time.Since(began)
@@ -517,11 +592,33 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 			recorded = append(recorded, rec.toolResult(n, tu, result, isErr, took))
 		}
 		rec.write(ctx, recorded...)
+		if b != nil && spent >= b.Limit {
+			return dp.stopRun(ctx, rec, n, StopBudget, b.Limit, total)
+		}
 		msgs = append(msgs,
 			provider.Message{Role: "assistant", Blocks: resp.Blocks},
 			provider.Message{Role: "user", Blocks: results})
 	}
+	if b != nil {
+		// A nudge on the last turn skips the check after the tools, so a call
+		// that crossed the budget there is still a budget stop.
+		if spent >= b.Limit {
+			return dp.stopRun(ctx, rec, plan.TurnCap, StopBudget, b.Limit, total)
+		}
+		return dp.stopRun(ctx, rec, plan.TurnCap, StopTurnLimit, int64(plan.TurnCap), total)
+	}
 	return nil, total, fmt.Errorf("turn cap %d reached without %s", plan.TurnCap, plan.OutcomeTool)
+}
+
+// stopRun ends a budgeted run that hit a limit: it records why in the
+// transcript and returns a successful attempt whose outcome says so.
+func (dp *Dispatcher) stopRun(ctx context.Context, rec *recorder, n int, reason string, limit int64, total provider.Usage) (json.RawMessage, provider.Usage, error) {
+	text := "The run stopped here because it reached its budget of " + Thousands(limit) + " tokens."
+	if reason == StopTurnLimit {
+		text = "The run stopped here because it reached its turn limit of " + Thousands(limit) + " turns."
+	}
+	rec.stop(ctx, n, text)
+	return StopOutcome(reason), total, nil
 }
 
 // stillCurrent refreshes the attempt's heartbeat and reports

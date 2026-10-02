@@ -1,6 +1,9 @@
 package lifecycle
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Gates are named, pure functions over current state (DESIGN-003 §8). Every
 // evaluation is audited by the caller as `gate.evaluated` with the returned
@@ -133,6 +136,25 @@ func G4(resolvedItems, doneItems int) GateResult {
 // G5 — initiative-archivable: no non-terminal features in the subtree.
 // Failure is overridable only via an answered gate-override checkpoint (L-6).
 func G5(nonTerminalFeatures int) GateResult {
+	return G5Open(nonTerminalFeatures, nil)
+}
+
+// G5Open is G5 that also names the spikes in the subtree that aren't closed
+// (by their IDs): a running one is spending tokens and an ended one waits for
+// a person to read it (SPEC-021 SD-14).
+func G5Open(nonTerminalFeatures int, openSpikes []string) GateResult {
+	if len(openSpikes) > 0 {
+		var reason string
+		if len(openSpikes) == 1 {
+			reason = openSpikes[0] + " is still open"
+		} else {
+			reason = joinIDs(openSpikes) + " are still open"
+		}
+		if nonTerminalFeatures > 0 {
+			reason = fmt.Sprintf("%d non-terminal feature(s) in subtree, and %s", nonTerminalFeatures, reason)
+		}
+		return GateResult{Gate: GateG5, Pass: false, Reason: reason}
+	}
 	if nonTerminalFeatures > 0 {
 		return GateResult{
 			Gate:   GateG5,
@@ -141,4 +163,12 @@ func G5(nonTerminalFeatures int) GateResult {
 		}
 	}
 	return GateResult{Gate: GateG5, Pass: true, Reason: "no non-terminal features in subtree"}
+}
+
+// joinIDs lists IDs as "A", "A and B" or "A, B and C".
+func joinIDs(ids []string) string {
+	if len(ids) == 1 {
+		return ids[0]
+	}
+	return strings.Join(ids[:len(ids)-1], ", ") + " and " + ids[len(ids)-1]
 }

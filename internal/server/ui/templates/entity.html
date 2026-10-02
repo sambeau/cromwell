@@ -140,7 +140,7 @@
 {{/* "Other" documents: the one rendered as the body is not repeated here
      (round 4 §2). The count stays, because a collapsed drawer needs a legible
      handle — one of the things round 4 deliberately kept. */}}
-{{template "bug-list" .}}
+{{template "bug-list" .}}{{template "spike-list" .}}
 
 {{with nonPrimary .Documents}}
 <details class="section" id="documents" open>

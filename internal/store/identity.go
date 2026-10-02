@@ -16,13 +16,13 @@ import (
 // nothing here mints an entity ID; this file reads IDs back, works out the ID
 // a new document should take, and records documents' identities and moves.
 
-// OwnerPublicID is the owner part of a document's ID: an initiative's or
-// feature's ID, or "PROJECT" (SD-6).
+// OwnerPublicID is the owner part of a document's ID: an initiative's,
+// feature's or spike's ID, or "PROJECT" (SD-6).
 func OwnerPublicID(ctx context.Context, q Querier, ownerType string, ownerID *uuid.UUID) (string, error) {
 	switch ownerType {
 	case "project":
 		return ident.ProjectOwner, nil
-	case "initiative", "feature":
+	case "initiative", "feature", "spike":
 		if ownerID == nil {
 			return "", fmt.Errorf("a %s owner needs an id", ownerType)
 		}

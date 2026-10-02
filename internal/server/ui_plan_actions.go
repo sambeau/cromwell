@@ -505,33 +505,51 @@ func (s *Server) memberFromForm(ctx context.Context, r *http.Request) (string, u
 	if err != nil {
 		return "", uuid.Nil, "", errors.New("Choose something to add first.")
 	}
+	if memberType == "spike" {
+		return "", uuid.Nil, "", errors.New(spikeNotDeliverableRefusal)
+	}
+	name, err := s.memberName(ctx, memberType, memberID)
+	if err != nil {
+		// A spike's id sent under another type finds nothing of that type;
+		// say what it is rather than that it wasn't found.
+		if _, serr := store.GetSpike(ctx, s.Store.Pool, memberID); serr == nil {
+			return "", uuid.Nil, "", errors.New(spikeNotDeliverableRefusal)
+		}
+		return "", uuid.Nil, "", err
+	}
+	return memberType, memberID, name, nil
+}
+
+// memberName finds a milestone member of the type a form named, and returns
+// its name.
+func (s *Server) memberName(ctx context.Context, memberType string, memberID uuid.UUID) (string, error) {
 	switch memberType {
 	case "feature":
 		f, err := store.GetFeature(ctx, s.Store.Pool, memberID)
 		if err != nil {
-			return "", uuid.Nil, "", err
+			return "", err
 		}
-		return memberType, memberID, f.Name, nil
+		return f.Name, nil
 	case "initiative":
 		in, err := store.GetInitiative(ctx, s.Store.Pool, memberID)
 		if err != nil {
-			return "", uuid.Nil, "", err
+			return "", err
 		}
-		return memberType, memberID, in.Name, nil
+		return in.Name, nil
 	case "milestone":
 		m, err := store.GetMilestone(ctx, s.Store.Pool, memberID)
 		if err != nil {
-			return "", uuid.Nil, "", err
+			return "", err
 		}
-		return memberType, memberID, m.Name, nil
+		return m.Name, nil
 	case "checklist":
 		c, err := store.GetChecklist(ctx, s.Store.Pool, memberID)
 		if err != nil {
-			return "", uuid.Nil, "", err
+			return "", err
 		}
-		return memberType, memberID, c.Name, nil
+		return c.Name, nil
 	}
-	return "", uuid.Nil, "", fmt.Errorf("a milestone can hold features, initiatives, checklists and other milestones, not %q", memberType)
+	return "", fmt.Errorf("a milestone can hold features, initiatives, checklists and other milestones, not %q", memberType)
 }
 
 func (s *Server) handleMilestoneMemberAdd(w http.ResponseWriter, r *http.Request) {

@@ -22,6 +22,7 @@
 
 {{/* The count of bug reports waiting for triage (SPEC-019 FR-2.4). */}}
 <div id="inbox-triage" class="u-mt-4" hx-get="/ui/frag/triage-line" hx-trigger="load, sse:changed" hx-swap="innerHTML"></div>
+<div id="inbox-spikes" class="u-mt-4" hx-get="/ui/frag/spikes-line" hx-trigger="load, sse:changed" hx-swap="innerHTML"></div>
 
 <div id="inbox-list" class="u-mt-4"
      hx-get="/ui/frag/inbox" hx-trigger="sse:changed" hx-swap="innerHTML">

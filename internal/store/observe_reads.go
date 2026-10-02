@@ -61,12 +61,22 @@ const featureRefs = `
 	)`
 
 // FeatureHistory returns every audit event about a feature, its documents and
-// its tasks, in the order they happened.
+// its tasks, in the order they happened. It also carries the moments a spike
+// on the feature starts and ends (SPEC-021 FR-8.3), labelled with the spike's
+// ID. Only those two kinds come in, and only here: a spike's runs and tokens
+// are never the feature's, so FeatureRuns and the token totals don't see them.
 func FeatureHistory(ctx context.Context, q Querier, featureID uuid.UUID) ([]HistoryEvent, error) {
-	rows, err := q.Query(ctx, featureRefs+`
+	rows, err := q.Query(ctx, featureRefs+`,
+	spike_refs AS (
+		SELECT rt, rid, doc_type, label, path FROM refs
+		UNION ALL
+		SELECT 'spike'::ref_type, sp.id, NULL::text, sp.public_id, NULL::text
+		FROM spikes sp WHERE sp.feature_id = $1
+	)
 		SELECT e.id, e.occurred_at, e.actor, e.kind, e.ref_type, e.ref_id, e.payload,
 		       COALESCE(r.doc_type, ''), COALESCE(r.label, ''), COALESCE(r.path, '')
-		FROM audit_events e JOIN refs r ON e.ref_type = r.rt AND e.ref_id = r.rid
+		FROM audit_events e JOIN spike_refs r ON e.ref_type = r.rt AND e.ref_id = r.rid
+		WHERE e.ref_type <> 'spike' OR e.kind IN ('spike.started', 'spike.ended')
 		ORDER BY e.occurred_at, e.id`, featureID)
 	if err != nil {
 		return nil, err

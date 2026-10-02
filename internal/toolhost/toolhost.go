@@ -31,8 +31,11 @@ type Context struct {
 	WorktreeRoot string
 	FeatureID    string
 	TaskID       string
-	Commands     map[string]CommandSpec
-	Profile      map[string]bool // tool names this dispatch's role may call
+	// SpikeID is the spike a run-spike dispatch works on (SPEC-021 FR-4.2);
+	// a spike's run has no feature or task. save_findings needs it.
+	SpikeID  string
+	Commands map[string]CommandSpec
+	Profile  map[string]bool // tool names this dispatch's role may call
 	// DispatchID and Role name the run, set by the dispatch loop, so a tool
 	// that records something — report_bug (SPEC-019 FR-3.3) — knows who did.
 	DispatchID string

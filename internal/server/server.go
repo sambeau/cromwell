@@ -56,6 +56,11 @@ type Server struct {
 	// copyLocks holds one lock per feature working copy, by path, serialising
 	// the git work done in it (SPEC-020 FR-2.8, withWorkingCopy).
 	copyLocks sync.Map
+
+	// spikeEndMu lets one spike end at a time, so the rules and the
+	// heartbeat's reconciliation can't both write a spike's findings
+	// (SPEC-021 FR-6.2).
+	spikeEndMu sync.Mutex
 }
 
 // lockedCopy is one working copy's lock.
@@ -152,6 +157,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.BackfillWatchedHeads(ctx); err != nil {
 		s.Log.Error("boot branch-watch backfill", "err", err)
 	}
+	s.ReconcileSpikes(ctx)
 	if err := s.ReconcileGates(ctx); err != nil {
 		s.Log.Error("boot gate reconciliation", "err", err)
 	}
@@ -273,6 +279,7 @@ func (s *Server) heartbeat(ctx context.Context) {
 			s.ReconcileAuthoringSweep(ctx)
 			s.findMovedDocuments(ctx)
 			s.GCWorktrees(ctx)
+			s.ReconcileSpikes(ctx)
 			s.PruneTranscriptsSweep(ctx, time.Now())
 			s.Dispatcher.Kick()
 		}

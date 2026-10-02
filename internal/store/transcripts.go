@@ -27,6 +27,9 @@ const (
 	EntryNudge      = "nudge"
 	EntryOutcome    = "outcome"
 	EntryError      = "error"
+	// EntryStop ends a spike run that stopped at its budget or turn limit
+	// (SPEC-021 FR-5.1).
+	EntryStop = "stop"
 )
 
 // TranscriptEntry is one row of a transcript.

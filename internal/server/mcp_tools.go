@@ -345,6 +345,8 @@ func (s *Server) mcpResolveOwner(ctx context.Context, ownerType, ownerPath strin
 			return nil, fmt.Errorf("there is no feature at %q; call get_tree to see what exists", ownerPath)
 		}
 		return &f.ID, nil
+	case "spike":
+		return nil, errors.New(spikeOwnsDocumentsRefusal)
 	}
 	return nil, fmt.Errorf("owner_type must be \"project\", \"initiative\" or \"feature\", not %q", ownerType)
 }

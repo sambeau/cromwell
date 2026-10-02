@@ -33,6 +33,8 @@ func (s *Server) Plan(ctx context.Context, d *store.Dispatch) (*dispatch.Plan, e
 		return s.planEstimate(ctx, d)
 	case "write-spec", "write-dev-plan":
 		return s.planAuthor(ctx, d)
+	case "run-spike":
+		return s.planSpike(ctx, d)
 	default:
 		// review-<type>: read-only document review (phase 1).
 		system, user, turnCap, err := s.buildReview(ctx, d)
@@ -508,6 +510,21 @@ func (s *Server) featureHead(ctx context.Context, featureID uuid.UUID) string {
 		return ""
 	}
 	return headOf(s.worktreeAbs(wt.Path))
+}
+
+// gitInWithStdin is gitIn with input on stdin, for a command whose arguments
+// could outgrow the command line.
+func gitInWithStdin(dir, stdin string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return string(out), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return string(out), nil
 }
 
 // planAuthor builds a write-spec or write-dev-plan plan (SPEC-009 FR-5.3,

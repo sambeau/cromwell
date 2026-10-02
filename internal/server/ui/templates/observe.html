@@ -28,7 +28,7 @@
 {{define "feature-timeline-line"}}
 <ol class="journey-line" aria-label="The major moments so far">
   {{range .Line}}
-  <li class="journey-step{{if .Current}} journey-step--current{{end}}" data-state="{{.State}}">
+  <li class="journey-step{{if .Current}} journey-step--current{{end}}{{if .Aside}} journey-step--aside{{end}}" data-state="{{.State}}">
     <a href="#moment-{{.Index}}" class="journey-step-link">
       <svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{.Icon}}"/></svg>
       <span>{{.Label}}{{if gt .Count 1}} <span class="journey-count">×{{.Count}}</span>{{end}}</span>
@@ -51,7 +51,7 @@
   <div class="section-body section-body--flush">
     <ol class="moments">
       {{range .Moments}}
-      <li class="moment{{if .Current}} moment--current{{end}}" id="moment-{{.Index}}" data-state="{{.State}}">
+      <li class="moment{{if .Current}} moment--current{{end}}{{if .Aside}} moment--aside{{end}}" id="moment-{{.Index}}" data-state="{{.State}}">
         <div class="moment-head">
           <span class="moment-mark"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{.Icon}}"/></svg></span>
           <span class="moment-title">{{if .RefURL}}<a href="{{.RefURL}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}</span>
@@ -217,6 +217,8 @@
         <summary><svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg> <span class="t-meta">What the engine recorded</span></summary>
         <pre class="transcript-pre">{{.Error}}</pre>
       </details>
+    {{else if eq .Kind "spike"}}
+      <p>{{.Plain}} <span class="t-meta">Its findings are on the spike's page.</span></p>
     {{else if eq .Kind "running"}}
       <p class="t-meta"><span class="live"><span class="live-dot"></span>Running</span> It hasn't reached a conclusion yet. This page follows the run as it goes.</p>
     {{else if eq .Kind "queued"}}
@@ -303,6 +305,8 @@
             </summary>
             <div class="tool-body"><pre class="transcript-pre">{{prettyJSON .Entry.Content}}</pre></div>
           </details>
+        {{else if eq .Kind "stop"}}
+          <div class="banner banner--info" role="note"><svg class="icon icon-md" aria-hidden="true"><use href="#i-info"/></svg><div>{{.Entry.Content}}</div></div>
         {{else if eq .Kind "error"}}
           <div class="banner banner--error"><svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div><b>It stopped here.</b> {{failureWords .Entry.Content}} <span class="t-meta">The engine recorded: <code>{{.Entry.Content}}</code></span></div></div>
         {{end}}

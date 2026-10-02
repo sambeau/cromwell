@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"subutai/internal/bus"
+	"subutai/internal/dispatch"
 	"subutai/internal/store"
 )
 
@@ -53,6 +54,10 @@ var uiFuncs = template.FuncMap{
 	"shortID":     func(id uuid.UUID) string { return id.String()[:8] },
 	"ago":         ago,
 	"agoWords":    func(t time.Time) string { return agoWords(t, time.Now()) },
+	"code":        codeSpans,
+	"closeForm": func(spike uuid.UUID, as, label, icon string, primary bool) spikeCloseForm {
+		return spikeCloseForm{Spike: spike, As: as, Label: label, Icon: icon, Primary: primary}
+	},
 	"signed": func(v int64) string {
 		if v >= 0 {
 			return fmt.Sprintf("+%d", v)
@@ -448,6 +453,8 @@ func verbLabel(v any) string {
 		return "Release it to an agent"
 	case "seen":
 		return "I've seen this"
+	case "dealt_with":
+		return "I've dealt with it"
 	default:
 		return stateLabel(v)
 	}
@@ -500,6 +507,8 @@ func verbConsequence(v any) string {
 		return "The claim ends, the work in the working copy is kept, and an agent takes the task."
 	case "seen":
 		return "Nothing changes: the commits stay on the branch and the merge isn't held."
+	case "dealt_with":
+		return "The question is cleared. Subutai doesn't delete the branch itself, so check it before you answer."
 	default:
 		return "The agent resumes with your answer."
 	}
@@ -719,6 +728,16 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	// triage it from the queue or its own page.
 	mux.HandleFunc("POST /ui/bugs", s.handleUIReportBug)
 	mux.HandleFunc("POST /ui/bugs/triage", s.handleUITriageDecide)
+	// Spikes (SPEC-021): the page, the list, the start screen and the three
+	// acts. Starting and closing are web UI only (SD-5, SD-10); no /api route
+	// does either.
+	mux.HandleFunc("GET /ui/s/{id}", s.handleUISpike)
+	mux.HandleFunc("GET /ui/spikes", s.handleUISpikes)
+	mux.HandleFunc("GET /ui/spikes/start", s.handleUISpikeStart)
+	mux.HandleFunc("POST /ui/spikes/start", s.handleUISpikeStartPost)
+	mux.HandleFunc("POST /ui/spikes", s.handleUISpikeCreate)
+	mux.HandleFunc("POST /ui/spikes/close", s.handleUISpikeClose)
+	mux.HandleFunc("GET /ui/frag/spikes-line", s.handleFragSpikesLine)
 	mux.HandleFunc("POST /ui/feature/new", s.handleEntityFeatureCreate)
 	mux.HandleFunc("POST /ui/initiative/new", s.handleEntityInitiativeCreate)
 	mux.HandleFunc("POST /ui/initiative/archive", s.handleEntityInitiativeArchive)
@@ -1150,24 +1169,7 @@ func humanTokens(n int64) string {
 
 // groupThousands puts separators into a plain integer ("1240" → "1,240"), so a
 // large figure stays readable without changing unit.
-func groupThousands(n int64) string {
-	s := fmt.Sprintf("%d", n)
-	if len(s) <= 3 {
-		return s
-	}
-	var b strings.Builder
-	lead := len(s) % 3
-	if lead > 0 {
-		b.WriteString(s[:lead])
-	}
-	for i := lead; i < len(s); i += 3 {
-		if b.Len() > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(s[i : i+3])
-	}
-	return b.String()
-}
+func groupThousands(n int64) string { return dispatch.Thousands(n) }
 
 // ago renders a compact relative age: "3h". Pages that follow it with " ago"
 // use it; agoWords is the full phrase for new text.

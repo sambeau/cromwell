@@ -178,6 +178,11 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// and verified by others, and a claim is released only by a person.
 		"claim_task",
 		"submit_task",
+		// SPEC-021 FR-9: writing down a spike's question is planning
+		// authoring; starting and closing one are a person's acts.
+		"create_spike",
+		"get_spike",
+		"list_spikes",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -212,6 +217,9 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"release_task", "approve_task", "review_task", "review_code",
 		"verify_feature", "submit_verification", "submit_implementation",
 		"claim_verification", "claim_review", "claim_estimate", "claim_feature",
+		// SPEC-021 NFR-3: only the web UI starts or closes a spike.
+		"start_spike", "run_spike", "close_spike", "answer_spike",
+		"merge_spike", "promote_spike", "save_findings", "finish_spike",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

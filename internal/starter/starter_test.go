@@ -3,10 +3,15 @@ package starter
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"subutai/internal/config"
+	"subutai/internal/lifecycle"
 )
 
 // repoWithHook makes a directory with .git/hooks, and writes body as the
@@ -213,5 +218,97 @@ func TestInitRefusesEitherFolder(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "already has a project folder") {
 			t.Errorf("%s: err %v", folder, err)
 		}
+	}
+}
+
+// packRoot lays the shipped pack and the generated config out as init does,
+// without needing a database.
+func packRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	err := fs.WalkDir(packFS, "pack", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel("pack", path)
+		data, err := packFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(dst, data, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(generatedConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := (&config.PackLock{PackVersion: PackVersion}).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pack.lock.yaml"), lock, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// SPEC-021 FR-10: a fresh init has the spike files and the assignment, and
+// the whole starter compartment loads.
+func TestStarterHasSpikePack(t *testing.T) {
+	root := packRoot(t)
+	for _, f := range []string{"templates/findings/manifest.yaml", "templates/findings/template.md",
+		"roles/spike-runner.yaml", "skills/run-spike/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(root, f)); err != nil {
+			t.Errorf("missing %s: %v", f, err)
+		}
+	}
+	c, err := config.Load(root, nil)
+	if err != nil {
+		t.Fatalf("starter compartment should load: %v", err)
+	}
+	if c.Config.Assignments["run-spike"] != "spike-runner" {
+		t.Errorf("assignment: %v", c.Config.Assignments)
+	}
+	if c.Config.SpikeDefaultTokenBudget() != config.DefaultSpikeTokenBudget {
+		t.Errorf("budget %d", c.Config.SpikeDefaultTokenBudget())
+	}
+	// FR-10.1: the generated config includes the section, not as a comment.
+	if p := c.Config.Spikes.DefaultTokenBudget; p == nil || *p != config.DefaultSpikeTokenBudget {
+		t.Errorf("the generated config's spikes section = %v, want default_token_budget written out", p)
+	}
+	r := c.Roles["spike-runner"]
+	if r.Skill != "run-spike" || r.Limits == nil || r.Limits.TurnCap != 40 || !slices.Contains(r.Tools, "save_findings") {
+		t.Errorf("role: %+v", r)
+	}
+	m := c.Manifests["findings"]
+	if m == nil || m.ApprovedBy != "human" || m.ReviewerRole != "" {
+		t.Fatalf("findings manifest: %+v", m)
+	}
+}
+
+// SPEC-021 FR-2.1: a findings document with only the required sections, and
+// one with every section, validate against the shipped manifest; a missing
+// Answer does not.
+func TestFindingsTemplateValidates(t *testing.T) {
+	c, err := config.Load(packRoot(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := c.Manifests["findings"]
+	head := "---\ntitle: \"SPK-001: Can it work?\"\ntype: findings\nowner: SPK-001\n---\n\n# SPK-001: Can it work?\n\n## Question\n\nCan it work?\n\n"
+	min := head + "## Answer\n\nYes.\n\n## What we found\n\nIt did.\n"
+	full := min + "\n## How we found out\n\nWe ran it.\n\n## What to do next\n\nBuild it.\n\n## How this spike ended\n\nThe agent reached a conclusion.\n"
+	for name, doc := range map[string]string{"minimum": min, "full": full} {
+		if rep := lifecycle.Validate(m, doc, nil); !rep.Valid {
+			t.Errorf("%s: %+v", name, rep)
+		}
+	}
+	if rep := lifecycle.Validate(m, head+"## What we found\n\nIt did.\n", nil); rep.Valid {
+		t.Error("a missing Answer should be invalid")
 	}
 }

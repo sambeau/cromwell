@@ -162,6 +162,11 @@ type entityPage struct {
 	Bugs         []bugRow
 	CanReportBug bool
 
+	// Spikes (SPEC-021 FR-8.2): the spikes hanging off this initiative or
+	// feature, and whether a new one can be written down here.
+	Spikes         []spikeRow
+	CanCreateSpike bool
+
 	Notice string
 	Error  string
 }
@@ -585,6 +590,9 @@ func (s *Server) initiativePage(ctx context.Context, in *store.Initiative, notic
 	if page.Activity, err = s.Store.AuditTail(ctx, "initiative", &in.ID, 10); err != nil {
 		return nil, err
 	}
+	if err := s.spikePageParts(ctx, page); err != nil {
+		return nil, err
+	}
 	if err := s.bugPageParts(ctx, page); err != nil {
 		return nil, err
 	}
@@ -645,6 +653,9 @@ func (s *Server) featurePage(ctx context.Context, f *store.Feature, notice, errM
 		return nil, err
 	}
 	if page.Tasks, page.ClaimWaiting, err = s.featureTaskRows(ctx, f.ID); err != nil {
+		return nil, err
+	}
+	if err := s.spikePageParts(ctx, page); err != nil {
 		return nil, err
 	}
 	if err := s.bugPageParts(ctx, page); err != nil {

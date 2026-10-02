@@ -116,6 +116,10 @@ func (s *Server) resolveOwner(ctx context.Context, ownerType, ownerRef string) (
 			return nil, fmt.Errorf("owner initiative %q: %w", ownerRef, err)
 		}
 		return &in.ID, nil
+	case "spike":
+		// A spike's findings are written by its run, never attached
+		// (SPEC-021 Appendix A).
+		return nil, errors.New(spikeOwnsDocumentsRefusal)
 	}
 	return nil, fmt.Errorf("unknown owner type %q", ownerType)
 }

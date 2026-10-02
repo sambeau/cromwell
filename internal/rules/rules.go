@@ -393,6 +393,11 @@ func Decide(ev bus.Event, snap Snapshot) []Action {
 	case bus.DispatchSucceeded:
 		return decideDispatchSucceeded(e, snap)
 	case bus.DispatchExhausted:
+		// A spike's run ends its spike, with no question about retrying it
+		// (SPEC-021 FR-6.1).
+		if e.Purpose == "run-spike" {
+			return decideSpikeExhausted(e)
+		}
 		return []Action{RaiseCheckpoint{
 			CPKind:   "dispatch-failure",
 			RefType:  e.RefType,
@@ -527,6 +532,9 @@ func decideDocumentTransition(e bus.DocumentTransitioned, snap Snapshot) []Actio
 }
 
 func decideDispatchSucceeded(e bus.DispatchSucceeded, snap Snapshot) []Action {
+	if e.Purpose == "run-spike" {
+		return decideSpikeSucceeded(e)
+	}
 	// Phase-2 execution purposes (implement-task, review-code, verify-feature)
 	// route first; a document review falls through to the phase-1 path.
 	if actions, handled := decideDispatchSucceededPhase2(e.Purpose, e.DispatchID, e.Role, e.Outcome, snap); handled {
