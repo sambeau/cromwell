@@ -89,6 +89,15 @@ spec_review:
   agent: true
   hold: false
 
+# Work a person or the chat agent claims instead of an agent (DEC-007). A
+# claim with no activity for expiry_hours asks a person whether anyone is
+# still working on it. The chat agent's work is reviewed with
+# chat_review_model: by default the most expensive model below; name a
+# model, or say "same" to use each reviewer's usual model.
+claims:
+  expiry_hours: 24
+  # chat_review_model: same
+
 # Tool-host command whitelist (DESIGN-006 §4.6). Edit these to your project's
 # build and test commands; implementers and the verifier may run only these.
 commands:

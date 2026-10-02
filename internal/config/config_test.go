@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"subutai/internal/compat"
 )
@@ -476,6 +477,61 @@ func TestSurfacingConfig(t *testing.T) {
 	write(t, root, "config.yaml", string(cfg)+"surfacing:\n  max_tokens: 900\n  max_decisions: 4\n")
 	if c, err = LoadConfig(root); err != nil || c.SurfacingMaxTokens() != 900 || c.SurfacingMaxDecisions() != 4 {
 		t.Errorf("explicit caps not kept: %v %+v", err, c)
+	}
+}
+
+// SPEC-020 FR-5.5, FR-8.1, FR-8.2: the claims section is optional; expiry
+// defaults to 24 hours and must be at least 1; the chat review model must be
+// "same" or a configured model, and by default is the priciest, ties by name.
+func TestClaimsConfig(t *testing.T) {
+	root := validCompartment(t)
+	c, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if c.ClaimExpiry() != 24*time.Hour {
+		t.Errorf("default expiry = %v", c.ClaimExpiry())
+	}
+	if got := c.ChatReviewModel("usual"); got != "claude-sonnet-5" {
+		t.Errorf("one model: got %q", got)
+	}
+
+	cfg, _ := os.ReadFile(filepath.Join(root, "config.yaml"))
+	for _, bad := range []struct{ yaml, want string }{
+		{"claims:\n  expiry_hours: 0\n", "claims.expiry_hours"},
+		{"claims:\n  expiry_hours: -3\n", "claims.expiry_hours"},
+		{"claims:\n  chat_review_model: nonesuch\n", "claims.chat_review_model"},
+	} {
+		write(t, root, "config.yaml", string(cfg)+bad.yaml)
+		if _, err := LoadConfig(root); err == nil || !strings.Contains(err.Error(), bad.want) {
+			t.Errorf("%q should be refused, naming %s: %v", bad.yaml, bad.want, err)
+		}
+	}
+
+	write(t, root, "config.yaml", string(cfg)+"claims:\n  expiry_hours: 6\n  chat_review_model: same\n")
+	if c, err = LoadConfig(root); err != nil || c.ClaimExpiry() != 6*time.Hour || c.ChatReviewModel("usual") != "usual" {
+		t.Errorf("same: %v %v", err, c)
+	}
+	write(t, root, "config.yaml", string(cfg)+"claims:\n  chat_review_model: claude-sonnet-5\n")
+	if c, err = LoadConfig(root); err != nil || c.ChatReviewModel("usual") != "claude-sonnet-5" {
+		t.Errorf("named: %v %v", err, c)
+	}
+
+	// The priciest by output price, ties by name ascending; none, the usual.
+	c = &Config{Models: map[string]Model{
+		"b": {PricePerMTok: PricePerMTok{Output: 15}},
+		"a": {PricePerMTok: PricePerMTok{Output: 15}},
+		"c": {PricePerMTok: PricePerMTok{Output: 5}},
+	}}
+	if got := c.ChatReviewModel("usual"); got != "a" {
+		t.Errorf("tie: got %q, want a", got)
+	}
+	c.Models["d"] = Model{PricePerMTok: PricePerMTok{Output: 75}}
+	if got := c.ChatReviewModel("usual"); got != "d" {
+		t.Errorf("priciest: got %q, want d", got)
+	}
+	if got := (&Config{}).ChatReviewModel("usual"); got != "usual" {
+		t.Errorf("no models: got %q", got)
 	}
 }
 
