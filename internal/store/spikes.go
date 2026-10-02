@@ -481,23 +481,6 @@ func SpikesWithLiveWorktree(ctx context.Context, q Querier) ([]Spike, error) {
 		AND s.worktree_removed_at IS NULL`, `s.created_at, s.id`)
 }
 
-// OpenSpikesUnderInitiative counts the spikes not yet closed across the
-// initiative's whole subtree: the input G5 adds to its count of unfinished
-// features.
-func OpenSpikesUnderInitiative(ctx context.Context, q Querier, initiativeID uuid.UUID) (int, error) {
-	var n int
-	err := q.QueryRow(ctx, `
-		WITH RECURSIVE subtree AS (
-			SELECT id FROM initiatives WHERE id = $1
-			UNION ALL
-			SELECT i.id FROM initiatives i JOIN subtree s ON i.parent_id = s.id
-		)
-		SELECT count(*) FROM spikes sp
-		JOIN subtree s ON sp.initiative_id = s.id
-		WHERE sp.state <> 'closed'`, initiativeID).Scan(&n)
-	return n, err
-}
-
 // EndedSpikesCount is how many spikes wait for a person to read them, for the
 // Inbox (FR-8).
 func EndedSpikesCount(ctx context.Context, q Querier) (int, error) {

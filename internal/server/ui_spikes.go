@@ -14,12 +14,14 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"subutai/internal/dispatch"
 	"subutai/internal/store"
 )
 
@@ -98,26 +100,28 @@ func codeSpans(s string) template.HTML {
 func spikeWhen(t time.Time) string { return t.Format("2 January at 15:04") }
 
 // spikeOwnerInfo is the entity a spike hangs on. Path is empty when it can't be
-// found, and every field is empty when the owner itself can't be read.
+// found, and every field is empty when the owner itself can't be read. URL is
+// the owner's page, "" when Path is.
 type spikeOwnerInfo struct {
-	ID, Name, Type, Path string
+	ID, Name, Type, Path, URL string
 }
 
 func (s *Server) spikeOwnerRef(ctx context.Context, sp *store.Spike) spikeOwnerInfo {
-	if sp.FeatureID != nil {
-		f, err := store.GetFeature(ctx, s.Store.Pool, *sp.FeatureID)
+	typ, id := sp.Owner()
+	if typ == "feature" {
+		f, err := store.GetFeature(ctx, s.Store.Pool, id)
 		if err != nil {
 			return spikeOwnerInfo{}
 		}
 		path, _ := s.featurePath(ctx, f)
-		return spikeOwnerInfo{ID: f.PublicID, Name: f.Name, Type: "feature", Path: path}
+		return spikeOwnerInfo{ID: f.PublicID, Name: f.Name, Type: typ, Path: path, URL: "/ui/f/" + path}
 	}
-	in, err := store.GetInitiative(ctx, s.Store.Pool, sp.InitiativeID)
+	in, err := store.GetInitiative(ctx, s.Store.Pool, id)
 	if err != nil {
 		return spikeOwnerInfo{}
 	}
 	path, _ := s.initiativePath(ctx, in.ID)
-	return spikeOwnerInfo{ID: in.PublicID, Name: in.Name, Type: "initiative", Path: path}
+	return spikeOwnerInfo{ID: in.PublicID, Name: in.Name, Type: typ, Path: path, URL: "/ui/i/" + path}
 }
 
 // spikeOwnerOf names the entity a spike hangs on and links to it.
@@ -126,7 +130,7 @@ func (s *Server) spikeOwnerOf(ctx context.Context, sp *store.Spike) (name, url s
 	if o.Path == "" {
 		return "", ""
 	}
-	return o.ID + " " + o.Name, "/ui/" + o.Type[:1] + "/" + o.Path
+	return o.ID + " " + o.Name, o.URL
 }
 
 func (s *Server) spikeRows(ctx context.Context, spikes []store.Spike, withOwner bool) []spikeRow {
@@ -299,7 +303,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 		p.TokensNote = "These tokens count every model call the run made, including attempts that failed and were tried again."
 	} else if cfg, err := s.freshConfig(); err == nil {
 		b, src := spikeBudgetFor(cfg, sp)
-		if src == "override" {
+		if src == store.BudgetFromOverride {
 			p.BudgetLine = fmt.Sprintf("It will have a budget of %s tokens, set when it was written down, unless you change it when you start it.", groupThousands(b))
 		} else {
 			p.BudgetLine = fmt.Sprintf("It will have the project's default budget of %s tokens, unless you change it when you start it.", groupThousands(b))
@@ -456,11 +460,11 @@ const (
 
 func spikeNoticeFor(sp *store.Spike, did string) string {
 	switch {
-	case did == spikeDidStart && sp.TokenBudget != nil:
+	case did == spikeDidStart && sp.StartedAt != nil && sp.TokenBudget != nil:
 		return sp.PublicID + " has started, with a budget of " + groupThousands(*sp.TokenBudget) + " tokens."
-	case did == spikeDidAnswered && sp.State == store.SpikeClosed:
+	case did == spikeDidAnswered && sp.State == store.SpikeClosed && sp.ClosedAs == store.SpikeAnswered:
 		return sp.PublicID + " is closed: the question is answered."
-	case did == spikeDidUnanswered && sp.State == store.SpikeClosed:
+	case did == spikeDidUnanswered && sp.State == store.SpikeClosed && sp.ClosedAs == store.SpikeUnanswered:
 		return sp.PublicID + " is closed without an answer."
 	}
 	return ""
@@ -580,19 +584,15 @@ func (s *Server) startScreenFor(ctx context.Context, sp *store.Spike, errMsg str
 			p.Tools = append(p.Tools, r.Tools...)
 		}
 	}
-	for _, t := range []string{"save_findings", "finish_spike"} {
-		have := false
-		for _, x := range p.Tools {
-			have = have || x == t
-		}
-		if !have && p.Refusal == "" {
+	for _, t := range []string{dispatch.SaveFindingsTool().Name, dispatch.FinishSpikeTool().Name} {
+		if !slices.Contains(p.Tools, t) && p.Refusal == "" {
 			p.Tools = append(p.Tools, t)
 		}
 	}
 
 	b, src := spikeBudgetFor(cfg, sp)
 	p.Budget = b
-	if src == "default" {
+	if src == store.BudgetFromDefault {
 		p.BudgetNote = "This is the project's default budget, from `spikes.default_token_budget`."
 	}
 

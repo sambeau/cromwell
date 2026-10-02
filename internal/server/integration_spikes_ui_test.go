@@ -562,3 +562,52 @@ func TestSpikeBadIDsAnswerAlike(t *testing.T) {
 		}
 	}
 }
+
+// The notice after a start or a close says only what the spike's state bears
+// out; a crafted ?did= for anything else shows nothing.
+func TestSpikeNoticeSaysOnlyWhatHappened(t *testing.T) {
+	budget := int64(2000)
+	started := time.Now()
+	idea := &store.Spike{PublicID: "SPK-001", State: store.SpikeIdea}
+	running := &store.Spike{PublicID: "SPK-002", State: store.SpikeRunning, TokenBudget: &budget, StartedAt: &started}
+	answered := &store.Spike{PublicID: "SPK-003", State: store.SpikeClosed, ClosedAs: store.SpikeAnswered, TokenBudget: &budget, StartedAt: &started}
+	unanswered := &store.Spike{PublicID: "SPK-004", State: store.SpikeClosed, ClosedAs: store.SpikeUnanswered}
+	for _, tc := range []struct {
+		name string
+		sp   *store.Spike
+		did  string
+		want string
+	}{
+		{"started, running", running, "started", "SPK-002 has started, with a budget of 2,000 tokens."},
+		{"started, still an idea", idea, "started", ""},
+		{"started, never run", unanswered, "started", ""},
+		{"answered, answered", answered, "answered", "SPK-003 is closed: the question is answered."},
+		{"answered, unanswered", unanswered, "answered", ""},
+		{"answered, running", running, "answered", ""},
+		{"unanswered, unanswered", unanswered, "unanswered", "SPK-004 is closed without an answer."},
+		{"unanswered, answered", answered, "unanswered", ""},
+		{"unknown", answered, "deleted", ""},
+		{"none", answered, "", ""},
+	} {
+		if got := spikeNoticeFor(tc.sp, tc.did); got != tc.want {
+			t.Errorf("%s: notice = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Starting and closing answer an unknown spike with 404 and a malformed id
+// with 400, as the page's GET does for an unknown one.
+func TestSpikePostsAnswerBadIDs(t *testing.T) {
+	h := newHarness(t)
+	for _, path := range []string{"/ui/spikes/start", "/ui/spikes/close"} {
+		if code, _ := h.postText(path, url.Values{"spike": {uuid.NewString()}}); code != 404 {
+			t.Errorf("POST %s with an unknown spike = %d, want 404", path, code)
+		}
+		if code, _ := h.postText(path, url.Values{"spike": {"SPK-nope"}}); code != 400 {
+			t.Errorf("POST %s with a malformed id = %d, want 400", path, code)
+		}
+	}
+	if resp, err := http.Get(h.api.URL + "/ui/s/SPK-999"); err != nil || resp.StatusCode != 404 {
+		t.Errorf("GET of an unknown spike: %v %v", resp, err)
+	}
+}

@@ -458,6 +458,19 @@ func TestSpikeWithATodoQuestionConcludes(t *testing.T) {
 	if !strings.Contains(text, "\n## Question\n\n"+question+"\n") {
 		t.Errorf("the findings' Question isn't the row's:\n%s", text)
 	}
+
+	// A question that begins with # stays text in its section, not a heading.
+	hash := h.newSpike(in, "# of workers we need for the import?", nil)
+	h.mock.RespondOutcome("finish_spike", findingsJSON(goodFindings), tiny)
+	h.startSpike(hash, 0)
+	hash = h.spikeSettled(hash)
+	_, text = h.findingsOf(hash)
+	if !strings.Contains(text, "\n## Question\n\n\\# of workers we need for the import?\n") {
+		t.Errorf("the findings' Question doesn't escape the leading #:\n%s", text)
+	}
+	if strings.Contains(text, "\n# of workers") {
+		t.Errorf("the question became a heading:\n%s", text)
+	}
 }
 
 // ---- FR-4: the prompt, the draft, the worktree ----

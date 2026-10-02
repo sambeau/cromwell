@@ -191,6 +191,13 @@ func (s *Server) mcpGetSpike(r *http.Request, args map[string]any) (any, error) 
 	return out, nil
 }
 
+// spikeBudgetSourceWords is where a budget came from, as the MCP tools say it.
+var spikeBudgetSourceWords = map[string]string{
+	store.BudgetFromOverride:    "set on the spike",
+	store.BudgetFromDefault:     "project default",
+	store.BudgetFromStartScreen: "given at the start",
+}
+
 // spikeResult is a spike as list_spikes shows it, and the start of get_spike's.
 func (s *Server) spikeResult(ctx context.Context, sp *store.Spike) map[string]any {
 	out := map[string]any{
@@ -206,10 +213,10 @@ func (s *Server) spikeResult(ctx context.Context, sp *store.Spike) map[string]an
 	}
 	out["owner"] = owner
 	if sp.TokenBudget != nil {
-		out["budget"], out["budget_source"] = *sp.TokenBudget, "given at the start"
+		out["budget"], out["budget_source"] = *sp.TokenBudget, spikeBudgetSourceWords[store.BudgetFromStartScreen]
 	} else if cfg, err := s.freshConfig(); err == nil {
 		budget, source := spikeBudgetFor(cfg, sp)
-		out["budget"], out["budget_source"] = budget, map[string]string{"override": "set on the spike", "default": "project default"}[source]
+		out["budget"], out["budget_source"] = budget, spikeBudgetSourceWords[source]
 	}
 	return out
 }
