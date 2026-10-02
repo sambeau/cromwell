@@ -625,9 +625,6 @@ func TestTheSweepEndsASpikeAtItsDeadline(t *testing.T) {
 	if h.pendingOf("claim-stale", "spike", sp.ID) != nil || h.pendingOf("claim-deadline", "spike", sp.ID) != nil {
 		t.Fatal("a spike past its deadline is ended, not asked about")
 	}
-	if checkSpikeHow(store.SpikeTimeBox) != nil {
-		t.Skip("needs T3's EndSpike(time_box); re-run once it is merged")
-	}
 	cur := h.getSpike(sp.ID)
 	if cur.State != store.SpikeEnded || cur.EndedHow != store.SpikeTimeBox {
 		t.Fatalf("spike = %+v", cur)
