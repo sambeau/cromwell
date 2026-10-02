@@ -27,8 +27,19 @@ const raceIterations = 20
 // lagFor staggers the dispatcher's side of a race: a claim does its git work
 // before it takes the feature's lock, so with no lag the dispatcher always
 // wins. Cycling the lag lets each side win in some iterations; the assertions
-// hold whichever does.
-func lagFor(i int) time.Duration { return time.Duration(i%5) * 12 * time.Millisecond }
+// hold whichever does. Coverage depends on timing and the invariants do not;
+// requireBothWon fails a test in which only one side ever won.
+func lagFor(i int) time.Duration { return time.Duration(i%5) * 30 * time.Millisecond }
+
+// requireBothWon fails the test if, over the iterations, one side never won:
+// the race was then not exercised.
+func requireBothWon(t *testing.T, aName string, a int, bName string, b int) {
+	t.Helper()
+	t.Logf("%s won %d, %s won %d of %d", aName, a, bName, b, raceIterations)
+	if a == 0 || b == 0 {
+		t.Fatalf("only one side ever won (%s %d, %s %d): the race was not exercised; widen lagFor", aName, a, bName, b)
+	}
+}
 
 // startDispatch is the dispatcher's start of an implement dispatch.
 func (h *harness) startDispatch(id uuid.UUID) (store.StartResult, error) {
@@ -135,7 +146,7 @@ func TestClaimRacingTheDispatcherHasOneWinner(t *testing.T) {
 				i, started, agentRows, openClaims, got.State, starts)
 		}
 	}
-	t.Logf("claim won %d, dispatcher won %d of %d", claimWins, startWins, raceIterations)
+	requireBothWon(t, "claim", claimWins, "dispatcher", startWins)
 }
 
 // TestClaimRacingDispatchReadyTasks is FR-2.7 and FR-6.5: dispatchReadyTasks
@@ -264,7 +275,7 @@ func TestClaimOnOneTaskWhileASiblingStarts(t *testing.T) {
 			t.Fatalf("iteration %d: the sibling started, but start = %+v, claims=%d running=%d", i, start, openClaims, running)
 		}
 	}
-	t.Logf("claim won %d, sibling won %d of %d", claimWins, startWins, raceIterations)
+	requireBothWon(t, "claim", claimWins, "sibling", startWins)
 }
 
 // TestSendBackWhileAnAgentRunsOnAnotherTask is FR-6.5: the reviewer sends a
@@ -379,12 +390,15 @@ func TestTransitionTaskStateGuard(t *testing.T) {
 		var errs [2]error
 		attempt := func(n int) func() {
 			return func() {
+				var once sync.Once
+				signal := func() { once.Do(read.Done) }
+				defer signal() // always signal, so a failed read cannot hang the other side
 				errs[n] = h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
 					cur, err := store.GetTask(ctx, tx, t1.ID)
 					if err != nil {
 						return err
 					}
-					read.Done()
+					signal()
 					read.Wait()
 					return store.TransitionTask(ctx, tx, cur, lifecycle.TaskImplemented, "test", nil)
 				})

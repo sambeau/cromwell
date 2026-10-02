@@ -400,6 +400,19 @@ func TestUIClaimRoutesRedirectAndRefuseCrossSitePosts(t *testing.T) {
 			t.Error("a refresh shows an error banner")
 		}
 	}
+	// Free text in the URL never reaches the notice (B17): the review's model
+	// is read from the database, not from ?model.
+	_, body = h.getUI(resp.Header.Get("Location") + "&model=zzINJECTEDzz&revised=zzINJECTEDzz")
+	mustContain(t, "submit notice with a crafted query", body, "You submitted "+t1.PublicID+" for code review.")
+	if strings.Contains(body, "zzINJECTEDzz") {
+		t.Error("the submit notice echoed text from the URL")
+	}
+	// A cross-site answer to a checkpoint is refused (B16).
+	for _, hd := range []map[string]string{{"Sec-Fetch-Site": "cross-site"}, {"Origin": "http://evil.example"}} {
+		if r := h.postNoFollow("/ui/respond", map[string]string{"id": "00000000-0000-0000-0000-000000000001", "verb": "approve"}, hd); r.StatusCode != http.StatusForbidden {
+			t.Errorf("/ui/respond with %v = %d, want 403", hd, r.StatusCode)
+		}
+	}
 	// A refusal still renders the banner.
 	refused := h.postNoFollow("/ui/task/release", form, same)
 	if refused.StatusCode != http.StatusOK {

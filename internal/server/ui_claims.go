@@ -280,7 +280,10 @@ func redirectToTask(w http.ResponseWriter, r *http.Request, t *store.Task, done 
 
 // taskDoneNotice is the sentence a task page opens with after a claim act
 // (?done), or "" when there is none.
-func taskDoneNotice(t *store.Task, q url.Values) string {
+//
+// Nothing free in the URL reaches the sentence: the review's model is read
+// from the task's latest review-code dispatch, not from the query.
+func (s *Server) taskDoneNotice(ctx context.Context, t *store.Task, q url.Values) string {
 	label := t.PublicID
 	switch q.Get("done") {
 	case "claimed":
@@ -291,7 +294,10 @@ func taskDoneNotice(t *store.Task, q url.Values) string {
 		return fmt.Sprintf("You are working on %s again. The reviewer's comments are below.", label)
 	case "submitted":
 		notice := fmt.Sprintf("You submitted %s for code review.", label)
-		if m := q.Get("model"); m != "" {
+		var m string
+		if err := s.Store.Pool.QueryRow(ctx, `
+			SELECT model FROM dispatches WHERE ref_type = 'task' AND ref_id = $1 AND purpose = 'review-code'
+			ORDER BY queued_at DESC, id DESC LIMIT 1`, t.ID).Scan(&m); err == nil && m != "" {
 			notice += fmt.Sprintf(" The review runs on %s.", m)
 		}
 		if q.Get("revised") != "" {
@@ -344,9 +350,6 @@ func (s *Server) handleUITaskSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	extra := url.Values{}
-	if res.ReviewModel != "" {
-		extra.Set("model", res.ReviewModel)
-	}
 	if res.Notice != "" {
 		extra.Set("revised", "1")
 	}

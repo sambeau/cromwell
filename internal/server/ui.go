@@ -918,6 +918,12 @@ func (s *Server) handleFragInboxBadge(w http.ResponseWriter, r *http.Request) {
 // configured operator (SD-4). On success it returns the refreshed inbox list so
 // the answered item clears without a reload.
 func (s *Server) handleUIRespond(w http.ResponseWriter, r *http.Request) {
+	// An answer approves, merges and spends, so it refuses a post from another
+	// site, as the claim routes and the editor do.
+	if !sameOrigin(r) {
+		http.Error(w, "Answers are only accepted from Subutai's own pages.", http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		s.uiError(w, err)
 		return
