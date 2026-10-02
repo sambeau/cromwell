@@ -1,6 +1,6 @@
 # DESIGN-004: The `.cromwell/` Configuration Compartment
 
-**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md))
+**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md)). *Dated notes, 2026-09-28:* §7 records the `max_words` and `one_line` rule kinds and the amendment check, from [SPEC-018](../specs/SPEC-018-decisions.md); and the `contains_text` rule kind and the fenced-code rule, from [SPEC-019](../specs/SPEC-019-bugs.md).
 **Date:** 2026-07-20
 **Parent:** [vision-v1](../vision/vision-v1.md) §7 (config compartment), §12 (Bootstrapping)
 **Depends on:** DEC-002 (connection config), DESIGN-002 (dispatch pipeline, tool host), DESIGN-003 (validation, reviewer binding)
@@ -218,10 +218,30 @@ Semantics:
   Manifests configure only check 2 (sections) and check 5 (type-specific
   rules). Every document type meets a minimum bar no matter how its manifest
   is edited.
+
+  > **Note, 2026-09-28 (Sam, accepted with
+  > [SPEC-019](../specs/SPEC-019-bugs.md) FR-1.4, choice 18).** Check 4
+  > ignores `{{…}}` and `TODO` inside fenced code, for every document type.
+  > Fenced code is quoted material, so a log line or a snippet of template
+  > braces isn't an unresolved placeholder.
 - **Rule kinds are a Go registry**, mirroring the gate catalogue pattern
   (DESIGN-003 §8): a manifest references a kind by name; an unknown kind is a
   config error. Phase 1 ships `min_list_items`; phase 2 adds `table_parses`
   (the dev-plan task table). New kinds are added in code and listed here.
+
+  > **Note, 2026-09-28 (Sam, accepted with
+  > [SPEC-018](../specs/SPEC-018-decisions.md) FR-1.2 and FR-3.3).** Two rule
+  > kinds join the registry: `max_words` (a field, a section or the body) and
+  > `one_line` (a field). A decision's amendment is held to the floor checks
+  > only in what it adds.
+
+  > **Note, 2026-09-28 (Sam, accepted with
+  > [SPEC-019](../specs/SPEC-019-bugs.md) SD-5, choice 5).** A third kind,
+  > `contains_text`, takes a `section:` and a `text:`. It passes when a list
+  > item in that section starts with the text, ignoring case and spacing; the
+  > item may run on. The text inside another item doesn't count. A bug
+  > report's manifest uses it to keep "The defect no longer reproduces" among
+  > its acceptance criteria.
 
 ## 8. Pack lock — `pack.lock.yaml`
 

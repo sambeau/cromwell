@@ -5,7 +5,9 @@ can't be the approval gate, and wasn't. **Amended the same day:**
 [Amendment 1](#amendment-1--reviews-and-relay-2026-09-28) replaces decisions 5,
 6 and 8. A dated note on its decision 8 (Sam, 2026-09-28) adds unticking a
 job to the relay list. A second (Sam, 2026-09-28, with SPEC-017) says
-submitting a draft the chat agent wrote is not a relay.
+submitting a draft the chat agent wrote is not a relay. A third (Sam,
+2026-09-28, with SPEC-019) adds `relay_triage` to the relay list, and records
+that a relayed rejection is final.
 **Date drafted:** 2026-09-28
 **Date accepted:** 2026-09-28
 **Decided by:** Sam
@@ -368,6 +370,20 @@ Sam's ruling also sets out the human's role more clearly than DEC-006 did.
 > agent does it with `submit_for_review`, which takes no quote and gives no
 > verdict. That tool refuses a revision of a feature being built, because
 > submitting one pauses the building until a person decides.
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-019](../specs/SPEC-019-bugs.md)
+> SD-11, choice 16).** `relay_triage` is a relay this amendment didn't list.
+> DESIGN-010 §17a item 6, accepted by Sam, is the decision that decision 8's last
+> bullet asks for. The chat agent carries a person's triage decision on a bug
+> report (accept, reject or mark a duplicate) with the person's words quoted.
+> Reporting a bug takes no quote, because it is planning (DEC-004).
+>
+> A relayed *accept* starts nothing, because Send stays a web UI act. A
+> relayed *reject* or *duplicate* is final, like any other, because triage
+> can't be undone. That knowingly departs from the "small and recoverable"
+> test in the rationale below. It was accepted because it spends nothing and
+> loses no work, and the quote makes a mistaken relay easy to spot. The
+> remedy for a mistaken one is a new report.
 
 ### Rationale
 

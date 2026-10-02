@@ -3,7 +3,9 @@
 **Status:** Accepted. **Amended 2026-09-28:**
 [Amendment 1](#amendment-1--milestones-and-roadmaps-2026-09-28) adds
 milestones and roadmaps to the planning layer. A dated note on it (Sam,
-2026-09-28) records that G4 now counts checklists as well as features.
+2026-09-28) records that G4 now counts checklists as well as features. A
+second (Sam, 2026-09-28, with SPEC-019) records that a done bug is a done
+item.
 **Date:** 2026-07-24
 **Decided by:** Sam
 **Refines:** [vision-v1](../vision/vision-v1.md) §7 (the MCP facet's "no direct
@@ -150,3 +152,10 @@ DEC-005 requires.
 > and marking as shipped still records every unfinished item as not shipped.
 > The chat agent's checklist tools are planning too (DESIGN-010 §5c, note of
 > the same date).
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-019](../specs/SPEC-019-bugs.md)
+> SD-13, choice 13).** A done bug is a done item. A bug joins a milestone once
+> it is accepted, and counts as one item, so a milestone whose only done
+> deliverable is a bug can be marked as shipped. G4 is the same
+> record-keeping check, and marking as shipped still records every unfinished
+> item as not shipped.

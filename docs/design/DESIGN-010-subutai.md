@@ -7,7 +7,9 @@ with M5:* dated notes in §5c, §6 and §17a item 4 record how checklists and
 jobs were built (SPEC-014). *And with M10:* a dated note in §5c records that
 the chat agent submits its own drafts without a quote (SPEC-017). *And with
 M9:* a dated note in §7 records how browser editing treats approved decisions
-and untemplated types (SPEC-016). This is Draft 2, consistency-
+and untemplated types (SPEC-016). *And with M11:* dated notes in §11 and §17b
+record how decisions were built (SPEC-018). *And with M12:* dated notes in §6,
+§7 and §9 record how bugs were built (SPEC-019). This is Draft 2, consistency-
 reviewed (§19). The seven proposals in §17a were accepted with it. Drafted by
 Claude; the author isn't the approval gate, and wasn't.
 **Date:** 2026-09-28 (Draft 1: 2026-07-31)
@@ -480,6 +482,14 @@ beta" or "Public launch". It contains any mix of:
 
 It may carry a target date.
 
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-019](../specs/SPEC-019-bugs.md)
+> SD-13, choice 13).** An initiative in a milestone brings in its features,
+> not its bugs. "Everything under them" is read as it was for checklists
+> (SPEC-014 SD-2), because otherwise a live milestone would grow with every
+> bug accepted under its initiatives. A bug joins a milestone as itself, and
+> only once it is accepted. It then counts as one item, with its tokens in the
+> bar.
+
 **A milestone shows progress two ways, because there are two honest
 questions.**
 - *How many deliverables are done?* A count, "3 of 4 done". This is what a
@@ -621,6 +631,11 @@ docs/work/INIT-014-auth/
 This is a default, not a rule. A document created elsewhere, or moved later, is
 just as much a Subutai document.
 
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-019](../specs/SPEC-019-bugs.md)
+> SD-4, choice 4).** A bug report's ID is `BUG-007-bug-report`: its owner's ID
+> plus its type, `bug_report`. The folder example's `BUG-031-report.md` is
+> illustrative, because `report` is already a document type of its own.
+
 ### Creating work creates its documents
 
 Creating an initiative or feature, in the UI or via chat, creates its starter
@@ -729,6 +744,19 @@ After that it is the normal pipeline: plan, plan review, Start building,
 implementation, code review and verification. There is no parallel machinery
 and no second-class pipeline.
 
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-019](../specs/SPEC-019-bugs.md)
+> SD-1, SD-2, SD-6 and SD-9, choices 1, 2, 6 and 9).** As built in M12:
+>
+> - **A bug is a feature row with `kind = 'bug'`**, and its own facts sit in a
+>   side table. Every step after acceptance is the feature code.
+> - **Triage is final.** A rejected bug, or one marked a duplicate, is
+>   abandoned, and nothing un-rejects it. A new report is the remedy.
+> - **Acceptance stands in for G0.**
+> - **Send submits the report**, and the spec reviewer reviews it as the spec.
+>   None of a bug's documents is reviewed before the bug is accepted.
+> - **Minor code-review findings become one bug per feature**, filed when the
+>   feature merges, not one per finding.
+
 ## 10. Spikes
 
 Sometimes you can't design properly because you don't yet know enough. Does
@@ -782,6 +810,10 @@ Decisions are how the project remembers *why*. Each one is a document, with its
 An accepted decision is never edited. If the project changes its mind, a new
 decision supersedes the old one, or a dated amendment is appended, as
 DEC-006's Amendment 1 was. Either way the trail stays honest.
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-018](../specs/SPEC-018-decisions.md)
+> SD-5).** An amendment is appended after the accepted text and changes
+> nothing above it. A dated note is written as an amendment.
 
 Decisions attach to the project or to an initiative, and they do their real
 work automatically. **Accepted decisions on the relevant branch of the tree are
@@ -960,6 +992,10 @@ the design, on 2026-09-28.**
 - **How big the decision surfacing cap is.** The proposal is about 150 words per
   decision and 1,500 tokens per dispatch, tuned against transcripts once M6
   exists. (M11)
+
+  > **Note, 2026-09-28 (Sam, accepted with [SPEC-018](../specs/SPEC-018-decisions.md)
+  > SD-8).** Settled: 75 and 25 words a decision, and ten decisions and 1,500
+  > estimated tokens a dispatch.
 - **Withdrawing a send** before its spec is written. (M3)
 - **How a human issue is marked addressed** in the review loop. (M3)
 - **What counts as activity on a claim**, and whether expiry differs for humans

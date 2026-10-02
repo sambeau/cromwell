@@ -1,11 +1,15 @@
 # SPEC-018: Decisions
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. The author
-can't be the approval gate, so the decision is Sam's. Sam has said they will
-approve the spec and the build together. An independent review is recorded in
+**Status:** **Approved — Sam, 2026-09-28** (recorded 2026-10-02), with the
+build, and with the recommendation accepted on each of its fifteen choices
+(DoD 9). The dated notes DoD 8 calls for are in DESIGN-003, SPEC-015,
+DESIGN-004 and DESIGN-010. It was drafted for Sam's approval as follows.
+Authored by Claude. The author can't be the approval gate, so the decision is
+Sam's. Sam said they would approve the spec and the build together. An
+independent review is recorded in
 [REVIEW-018](../reviews/REVIEW-018-decisions.md). It found eleven material and
 nine smaller problems in the first draft. All are dealt with in this revision,
-and §7 says how, finding by finding. Fifteen choices need Sam's explicit yes
+and §7 says how, finding by finding. Fifteen choices needed Sam's explicit yes
 (DoD 9).
 **Date:** 2026-09-28
 **Roadmap milestone:** M11 in the

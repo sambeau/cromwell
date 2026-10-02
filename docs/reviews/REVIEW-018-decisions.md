@@ -1,5 +1,9 @@
 # REVIEW-018: Decisions
 
+**Status:** Complete, and disposed of by the author in
+[SPEC-018](../specs/SPEC-018-decisions.md) §7. **Sam approved SPEC-018 and the
+build on 2026-09-28, with all fifteen choices.** The verdict below is of the
+first draft.
 **Reviewed:** [SPEC-018: Decisions](../specs/SPEC-018-decisions.md), draft of 2026-09-28 (commit `9e3b8f2`). I checked it against DESIGN-010 §4, §7, §11 and §17b; DESIGN-003; DESIGN-004; SPEC-015, SPEC-016 and SPEC-017; DEC-004 and DEC-006; the context, evidence-base and prefix-cache research; audit item C-6; the M8 handoff; and the code at `HEAD`.
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent

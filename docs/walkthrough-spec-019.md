@@ -1,7 +1,8 @@
 # Walkthrough — SPEC-019, bugs
 
 **Date:** 2026-09-28
-**Spec:** [SPEC-019](specs/SPEC-019-bugs.md), draft for Sam's approval
+**Spec:** [SPEC-019](specs/SPEC-019-bugs.md), **approved by Sam,
+2026-09-28** (recorded 2026-10-02)
 **Review:** [REVIEW-019](reviews/REVIEW-019-bugs.md)
 **Handoff:** [M12 handoff](notes/handoff-M12-2026-09-28.md)
 

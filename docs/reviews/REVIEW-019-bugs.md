@@ -1,7 +1,8 @@
 # REVIEW-019: Consistency review of SPEC-019 (Bugs)
 
 **Status:** Complete. The author's disposition of each finding is in §6, and
-in [SPEC-019](../specs/SPEC-019-bugs.md) §7. The approval is Sam's.
+in [SPEC-019](../specs/SPEC-019-bugs.md) §7. **Sam approved SPEC-019 and the
+build on 2026-09-28, with all nineteen choices.** The approval is Sam's.
 **Date:** 2026-09-28
 **Reviewer:** an independent Claude subagent, not the spec's author.
 **Scope:** [SPEC-019](../specs/SPEC-019-bugs.md) (first draft, commit `fb62157`), checked against:

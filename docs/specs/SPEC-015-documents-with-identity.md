@@ -1,6 +1,6 @@
 # SPEC-015: Documents with identity
 
-**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its fifteen choices (DoD 8). It was drafted for Sam's approval as follows. Authored by Claude. The author
+**Status:** **Approved — Sam, 2026-09-28**, with the build, and with the recommendation accepted on each of its fifteen choices (DoD 8). A dated note on SD-11 (Sam, 2026-09-28, with [SPEC-018](SPEC-018-decisions.md)) records that adopting a decision or the conventions as approved checks the surfaced fields' caps. It was drafted for Sam's approval as follows. Authored by Claude. The author
 can't be the approval gate, so the decision is Sam's. Sam has said they will
 approve the spec and the build together. An independent review is recorded in
 [REVIEW-015](../reviews/REVIEW-015-documents-with-identity.md). It found eight
@@ -283,6 +283,11 @@ file is a record of something already decided, and a brownfield design won't
 have the template's headings. Approving a design by adoption has an
 approval's consequences, through the same event: for a sent feature it can
 release spec writing.
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-018](SPEC-018-decisions.md)
+> SD-3).** Adopting a decision or the conventions as approved, and *This was
+> already approved*, check the surfaced fields' caps. Nothing else is
+> validated.
 
 **Over MCP, adopt registers drafts only** (choice 2), because the chat agent
 may relay a verdict but never give one (DEC-006 Amendment 1, DEC-007). A

@@ -1,6 +1,8 @@
 # DESIGN-003: Document Lifecycle and Gates
 
-**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md)). *Dated note, 2026-09-28:* who may `withdraw` (§2), from SPEC-016.
+**Status:** Approved — 2026-07-20 ([REVIEW-001](../reviews/REVIEW-001-phase-1-package.md)). *Dated notes, 2026-09-28:* who may `withdraw` (§2), from SPEC-016; and how a
+decision is superseded (§2) and where its file stays (§5), from
+[SPEC-018](../specs/SPEC-018-decisions.md).
 **Date:** 2026-07-02
 **Parent:** [vision-v1](../vision/vision-v1.md) §3, §4, §6, §9
 **Depends on:** DESIGN-001 (schema), DESIGN-002 (orchestrator)
@@ -44,6 +46,11 @@ events, not states.**
 > SD-9, choice 7).** A person who saves an edit to a reviewing document in the
 > browser editor withdraws it, whoever wrote it. The queued review is
 > cancelled, any hold cleared, and the document submitted again when ready.
+
+> **Note, 2026-09-28 (Sam, accepted with [SPEC-018](../specs/SPEC-018-decisions.md)
+> SD-6).** A decision is also superseded by the engine when a *different*
+> decision that names it in `supersedes:` is accepted, as a plan is superseded
+> with its spec (SPEC-011 FR-6.6). A person never fires `supersede` directly.
 
 Terminal states: `superseded`. `approved` documents are immutable — the git
 watcher flags any file change to an approved document's path as an **integrity
@@ -104,6 +111,12 @@ Approved documents are never edited. To change one:
    `docs/_superseded/` — in a single server-authored commit, which the git
    watcher re-indexes like any other. The states and the files change
    together; no human file shuffling.
+
+   > **Note, 2026-09-28 (Sam, accepted with
+   > [SPEC-018](../specs/SPEC-018-decisions.md) SD-6).** A decision superseded
+   > by another decision keeps its file where it is, as a record. Only an
+   > earlier revision of the same decision is archived.
+
 3. **Impact on in-flight work:** if the revised document is a spec or dev-plan
    of a feature in `active` or `review`, the successor's *submission* (not
    approval) immediately:

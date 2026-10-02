@@ -1,12 +1,15 @@
 # SPEC-019: Bugs
 
-**Status:** **Draft — for Sam's approval.** Authored by Claude. The author
-can't be the approval gate, so the decision is Sam's. Sam has said they will
-approve the spec and the build together. An independent consistency review is
-recorded in [REVIEW-019](../reviews/REVIEW-019-bugs.md). It found five
-material and fifteen smaller problems in the first draft; all are dealt with
-in this revision, and §7 says how, finding by finding. Nineteen choices need
-Sam's explicit yes (§5, DoD 8).
+**Status:** **Approved — Sam, 2026-09-28** (recorded 2026-10-02), with the
+build, and with the recommendation accepted on each of its nineteen choices
+(DoD 8). The dated notes DoD 9 calls for are in DEC-004, DEC-006, DESIGN-004
+and DESIGN-010. It was drafted for Sam's approval as follows. Authored by
+Claude. The author can't be the approval gate, so the decision is Sam's. Sam
+said they would approve the spec and the build together. An independent
+consistency review is recorded in [REVIEW-019](../reviews/REVIEW-019-bugs.md).
+It found five material and fifteen smaller problems in the first draft; all
+are dealt with in this revision, and §7 says how, finding by finding.
+Nineteen choices needed Sam's explicit yes (§5, DoD 8).
 **Date:** 2026-09-28
 **Roadmap milestone:** M12 in the
 [status report and roadmap](../notes/subutai-status-and-roadmap-2026-09-28.md)

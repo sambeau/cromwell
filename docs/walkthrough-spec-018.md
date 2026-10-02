@@ -1,7 +1,8 @@
 # Walkthrough — SPEC-018, decisions
 
 **Date:** 2026-09-28
-**Spec:** [SPEC-018](specs/SPEC-018-decisions.md), draft for Sam's approval
+**Spec:** [SPEC-018](specs/SPEC-018-decisions.md), **approved by Sam,
+2026-09-28** (recorded 2026-10-02)
 **Review:** [REVIEW-018](reviews/REVIEW-018-decisions.md)
 **Handoff:** [M11 handoff](notes/handoff-M11-2026-09-28.md)
 
