@@ -31,7 +31,7 @@ const mcp = (name, args) => {
   mcp('create_initiative', { slug: 'imports', name: 'Imports', description: 'Bring a customer\'s existing records into the product.' });
   mcp('create_feature', { initiative_path: 'imports', slug: 'bulk-import', name: 'Bulk import', description: 'Import a whole customer list in one go.', design_document: false });
   const chat = mcp('create_spike', { on: 'imports/bulk-import', question: 'Can the import screen show a progress bar that updates every second?' });
-  mcp('start_spike', { id: chat.id || 'SPK-001' });
+  mcp('start_spike', { spike: chat.id || 'SPK-001' });
 
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-proxy-server'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -115,7 +115,7 @@ const mcp = (name, args) => {
   await shot('12-second-spike-start-screen.png', 'text=What the agent will be given');
   await page.locator('form[action="/ui/spikes/start"] button[type=submit]').click();
   await expectText('has started, with a budget of 60,000 tokens');
-  await reloadUntil('the agent reached a conclusion');
+  await reloadUntil('it reached a conclusion');
   await shot('13-second-spike-concluded.png');
   await page.locator('a[href^="/ui/d/"]').first().click();
   await expectText('well inside the two-second target');
@@ -135,7 +135,7 @@ const mcp = (name, args) => {
   await shot('17-spikes-list.png');
 
   // 10. The chat agent reads what happened.
-  mcp('get_spike', { id: 'SPK-003' });
+  mcp('get_spike', { spike: 'SPK-003' });
 
   fs.writeFileSync(`${out}/mcp-output.txt`, log.join('\n') + '\n');
   await browser.close();
