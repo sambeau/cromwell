@@ -40,6 +40,22 @@ integration tests run.
 | T5 | Web UI and timeline | T4 | `spike.html`, the spike page, owner sections, the New spike dialog, the start screen and its `POST`, the close forms, the Inbox line, `/ui/spikes`, the run page's purpose and crumbs, the feature timeline's spike moments (`internal/timeline`), the milestone refusal. One include in `entity.html`. FR-3, FR-7.1, FR-8. |
 | T6 | MCP | T4 | `internal/server/mcp_spike_tools.go`, the registry line and instructions sentence in `mcp.go`, the tool-set test's want and forbidden lists, `add_milestone_member`'s refusal. FR-9. |
 
+## Status
+
+Every task is done and merged into `claude/subutai-m14-spikes`, and every
+implementer's worktree is removed. Three rounds of fixes from the code reviews
+(F1 and F2 after round 1, F3 after round 2) followed the same way. See the
+[M14 handoff](handoff-M14-2026-10-02.md).
+
+| id | Status | Merged as |
+|----|--------|-----------|
+| T1 | done | `6178a4e` |
+| T2 | done | `8ad5f31` |
+| T3 | done | `65989ae` |
+| T4 | done | `f0b4e13`, `a7461d2`, `aee1616` |
+| T5 | done | `4ee4495`, `c380550`, `15a308d` |
+| T6 | done | `724dabe` |
+
 ## Risks
 
 - **Enum values in a migration.** Postgres refuses to use a value added by

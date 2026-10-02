@@ -1197,6 +1197,18 @@ How each [REVIEW-021](../reviews/REVIEW-021-spikes.md) finding was dealt with.
 | R21-18 | NFR-6 lists every shared file and the likely overlaps with M13. §6 has the orchestration note's checks, including the development plan. |
 | R21-19 | The sentences are rewritten; FR-8.5 defines `/ui/spikes` and links there; FR-7.3 redirects. |
 
+**After the code reviews** (REVIEW-021 §5), two requirements were amended,
+each marked where it stands:
+- **FR-6.3, the leak check**, twice. Round 1 found it saw only the newest
+  commit and failed open, so it now records the refs at the start, reads the
+  worktree's own reflog, counts only commits made there, and fails closed.
+  Round 2 found a vanished working copy hid its reflog, so the check now fails
+  closed then too, runs before a retry remakes a damaged copy, and names the
+  limits it accepts.
+- **FR-10.3, the loader**. Round 1 found the first wording refused a copied
+  `spike-runner.yaml` before its assignment, which broke FR-10.4's upgrade
+  path.
+
 ## Appendix A: where an owner or reference type is switched on
 
 Each place that knows only the project, initiatives and features, and what it

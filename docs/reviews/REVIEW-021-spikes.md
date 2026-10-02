@@ -602,3 +602,29 @@ List these sites as an appendix, as REVIEW-019 R19-1 recommended for bugs.
 - Surfacing takes an initiative scope (`surfaceScope`, `internal/server/decisions.go:381-394`), so FR-4.1's decisions block needs no new mechanism.
 - `mergeFeature` takes a feature id and reads `LiveWorktreeForFeature` (`internal/server/actions_phase2.go:448-457`). A spike's id can't reach a merge through it.
 - The MCP tool-set test checks for method-not-found on forbidden names (`internal/server/integration_mcp_test.go:199-208`), so FR-3's acceptance is testable as written.
+
+## 5. The code reviews
+
+The orchestration note asks for at least one round of two code reviews on the
+whole diff: bugs and spec conformance (an Opus subagent) and code quality (a
+Sonnet subagent). Three rounds ran. Each report is kept in
+[REVIEW-021-spikes/](REVIEW-021-spikes/).
+
+| Round | Bugs and spec conformance | Code quality | What followed |
+|---|---|---|---|
+| 1 | [3 major, 8 minor](REVIEW-021-spikes/code-round-1-bugs.md) | [18 major, 22 minor](REVIEW-021-spikes/code-round-1-quality.md) | Every major fixed, with the cheap minors. FR-6.3 (the leak check) and FR-10.3 (the loader) were amended in the spec. |
+| 2 | [1 major, 9 minor](REVIEW-021-spikes/code-round-2-bugs.md) | [0 major, 11 minor](REVIEW-021-spikes/code-round-2-quality.md) | The major fixed: the leak check fails closed when a used working copy has gone. FR-6.3 names the check's accepted limits. |
+| 3 | [0 major, 3 minor](REVIEW-021-spikes/code-round-3-bugs.md) | [0 major, 9 minor](REVIEW-021-spikes/code-round-3-quality.md) | None. The cycle ended with no major open. |
+
+The round-1 majors, in short:
+- a question containing "TODO" or `{{…}}` could never conclude, because the
+  server-owned Question was validated with the agent's text;
+- a spike's moments took over its feature's timeline, as the current moment;
+- the leak check saw only the newest commit, and failed open on any git
+  error.
+
+Round 2's major: an agent that deleted its own working copy, followed by any
+`git worktree prune`, left the leak check reporting nothing.
+
+The minor findings still open are listed in the
+[M14 handoff](../notes/handoff-M14-2026-10-02.md) as bug-report candidates.
