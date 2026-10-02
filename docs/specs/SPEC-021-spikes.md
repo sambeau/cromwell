@@ -391,6 +391,7 @@ Four supporting claims:
 | `closed_as` | `answered` or `unanswered`, set when closed |
 | `follows_id` | the spike this one asks again for, or null |
 | `base_commit` | the commit the worktree was made from |
+| `refs_at_start` | every ref and its commit when the spike started (FR-6.3) |
 | `worktree_path` | the worktree's path relative to the repository, set at the start |
 | `worktree_removed_at` | when the worktree was discarded |
 | `created_by`, `created_via` | who created it, and `ui` or `mcp` |
@@ -711,16 +712,38 @@ republishing it (R21-2).
    git no longer knows it), then sets `worktree_removed_at` and writes
    `spike.worktree_discarded`.
 
-**FR-6.3 — The leak check.** If the worktree's `HEAD` differs from
-`base_commit`, `EndSpike` lists the commits made there (`git rev-list HEAD
---not <base_commit>`) and, for the newest, the refs that contain it (`git
-for-each-ref --contains`). Every ref it finds is a leak:
-- it is named in How this spike ended (FR-2.3);
-- `spike.code_kept` is audited, with the refs;
-- a `spike-code-kept` checkpoint on the spike asks: "Code from SPK-003 was
-  kept on `keep-this`, outside its working copy. A spike's code is never
-  merged. Delete the branch, or keep it knowing it won't be built from."
-  The answer is "I've dealt with it", and it changes nothing in Subutai.
+**FR-6.3 — The leak check.** *(Amended after the first code review: the
+first wording checked only the newest commit, and failed open.)* When the
+spike starts, `StartSpike` records every ref and its commit
+(`refs_at_start`). Before the discard, `EndSpike` finds:
+- **the commits made in the worktree**: every commit named in the worktree's
+  own `HEAD` reflog, read from the repository's administrative copy
+  (`.git/worktrees/<name>/logs/HEAD`, so a damaged `.git` file in the
+  worktree doesn't hide it), less everything reachable from `base_commit`;
+- **the refs that changed during the spike**: new, or moved, since
+  `refs_at_start`.
+
+A changed ref is a leak when it contains one of the worktree's commits, or
+when it is `refs/stash` or a tag. If the check can't run, because git fails or
+the reflog can't be read, it **fails closed**: it is treated as a leak whose
+ref is unknown.
+
+Every leak:
+- is named in How this spike ended (FR-2.3), or, when the check failed, the
+  section says "Subutai couldn't check whether code from this spike was kept:
+  <the reason>.";
+- is audited as `spike.code_kept`, with the refs;
+- raises a `spike-code-kept` checkpoint on the spike, which asks: "Code from
+  SPK-003 was kept on `keep-this`, outside its working copy. A spike's code is
+  never merged. Delete the branch, or keep it knowing it won't be built
+  from." The answer is "I've dealt with it", and it changes nothing in
+  Subutai.
+
+A ref that moved for another reason, such as a feature merging into `main`
+during the spike, isn't a leak, because it holds none of the worktree's
+commits. Code the agent's scripts commit somewhere other than the worktree is
+outside what this check can see; DEC-007's "honest costs" accept the same
+limit for chat work.
 
 **FR-6.4 — Reconciliation.** At boot, and on every heartbeat:
 - a `running` spike whose run is `succeeded`, `cancelled`, or `failed` with
@@ -1012,10 +1035,12 @@ findings or close it.
   - after the run, the main checkout's history holds only the findings
     commit;
   - **the leak check**: the test's config whitelists a script as a command.
-    The agent runs it, and it commits in the worktree and creates a branch
-    there. After the end, the worktree's commit is reachable from no ref but
-    that branch, the findings name it, and the `spike-code-kept` checkpoint
-    exists.
+    The agent runs it, and it keeps code in each of the ways FR-6.3 names: a
+    branch at the newest commit; a branch at an earlier commit, followed by
+    another commit; a branch, then a checkout of `base_commit`; a tag; and a
+    stash. Each is reported, and the `spike-code-kept` checkpoint exists. A
+    `main` that moved during the spike without the worktree's commits isn't
+    reported, and a broken reflog is reported as a check that couldn't run.
 - **NFR-5 — Contained templates.** New markup lives in `spike.html`: the
   page, the owner section, the dialog, the start screen and the list.
   `entity.html` gains one include, `inbox.html` one line, and the timeline's
