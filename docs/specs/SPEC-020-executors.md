@@ -878,8 +878,9 @@ are working at once.
 - Question (the task's `staleQuestion`): "FEAT-023-T03, *title*, was claimed
   by the chat agent 26 hours ago, and nothing has changed in its working copy
   for 24 hours. This feature's agents are waiting. Is someone still working
-  on it?" (For a `returned` claim: "… was sent back by its code reviewer 26
-  hours ago, and nobody has resumed it. …")
+  on it?" (For a `returned` claim: "… was sent back by its code reviewer,
+  and nothing has happened to it for 24 hours. The task is waiting. …",
+  which stays true after a *Keep the claim*.)
 - Answers: **Keep the claim** (activity `kept`; the clock restarts) and
   **Release it to an agent** (FR-2.9, released by the person who answered).
 - Context: the claim, its executor, the last activity and when, and the
@@ -1141,7 +1142,7 @@ claimed and submitted over MCP.
     `server/mcp.go` (one `append`, `initialize`), `server/mcp_tools.go`
     (`get_feature`), `server/ui.go` (routes), `server/ui_views.go`
     (`responseFor`), `server/ui_entity_pages.go`, `ui/templates/entity.html`
-    (two includes) and the feature and plan task lists, `server/observe.go`
+    (three includes: the feature page's task list is new, FR-1.6), `server/observe.go`
     and `timeline/timeline.go`, `store/corpus.go`, `store/sends.go`,
     `store/ui_reads.go`, `server/http_phase3.go`, `cmd/subutai/main.go`,
     `config/config.go` and `starter/starter.go`, and the tool-set test.
