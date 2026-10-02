@@ -153,6 +153,7 @@ func MilestonesWithProgress(ctx context.Context, q Querier) ([]MilestoneProgress
 // actual — the dashboard's "calibration health: recent estimate-vs-actual
 // deltas" (FR-2.1). Ordered by estimate recency, which is the honest floor for
 // "recent"; the delta itself is estimate vs actual, computed at render.
+// Unmeasured entities are left out in SQL, before the limit (SPEC-020 FR-7.2).
 func RecentCalibration(ctx context.Context, q Querier, limit int) ([]CorpusRow, error) {
 	if limit <= 0 {
 		limit = 5
@@ -173,8 +174,8 @@ func RecentCalibration(ctx context.Context, q Querier, limit int) ([]CorpusRow, 
 		FROM current c
 		LEFT JOIN features f ON c.ref_type='feature' AND f.id=c.ref_id AND f.state='done'
 		LEFT JOIN tasks    t ON c.ref_type='task'    AND t.id=c.ref_id AND t.state='done'
-		WHERE (c.ref_type='feature' AND f.id IS NOT NULL)
-		   OR (c.ref_type='task'    AND t.id IS NOT NULL)
+		WHERE (c.ref_type='feature' AND f.id IS NOT NULL AND NOT `+unmeasuredFeatureSQL("f.id", "f.kind")+`)
+		   OR (c.ref_type='task'    AND t.id IS NOT NULL AND NOT `+unmeasuredTaskSQL("t.id")+`)
 		ORDER BY c.created_at DESC
 		LIMIT $1`, limit)
 	if err != nil {
@@ -193,7 +194,7 @@ func RecentCalibration(ctx context.Context, q Querier, limit int) ([]CorpusRow, 
 		return nil, err
 	}
 	for i := range out {
-		actual, err := ActualTokens(ctx, q, out[i].RefType, out[i].RefID)
+		actual, err := dispatchTokens(ctx, q, out[i].RefType, out[i].RefID)
 		if err != nil {
 			return nil, err
 		}

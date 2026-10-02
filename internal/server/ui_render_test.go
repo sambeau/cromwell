@@ -198,6 +198,34 @@ func TestGatedActionShowsPlainReason(t *testing.T) {
 	}
 }
 
+// TestUnmeasuredActualReadsAsAtLeast is SPEC-020 FR-7.3: an unmeasured
+// entity's actual reads as a sentence, not a bare number.
+func TestUnmeasuredActualReadsAsAtLeast(t *testing.T) {
+	tmpl, err := loadUITemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	render := func(unmeasured bool) string {
+		page := &entityPage{
+			Kind: "feature", RefType: "feature", ID: uuid.New(), Title: "Login form",
+			Breadcrumbs: []crumb{{Label: "Project", URL: "/ui/project"}},
+			State:       "building", Done: 12400, DoneUnmeasured: unmeasured,
+		}
+		var buf bytes.Buffer
+		if err := tmpl.t.ExecuteTemplate(&buf, "page-entity", pageData{Active: "browse", Actor: "op", Data: page}); err != nil {
+			t.Fatal(err)
+		}
+		return buf.String()
+	}
+	const want = "Not measured: at least 12,400 tokens, plus work done in chat or by a person."
+	if !strings.Contains(render(true), want) {
+		t.Errorf("an unmeasured actual should read %q", want)
+	}
+	if strings.Contains(render(false), "Not measured") {
+		t.Error("a measured actual should not carry the sentence")
+	}
+}
+
 // TestRenderedTemplatesCarryNoCurrency is the money check of DoD 3 (D-4, SD-5):
 // no rendered page shows a currency figure or a money field. The engine's money
 // machinery stays dormant underneath — this asserts it never reaches the human

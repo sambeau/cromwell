@@ -150,11 +150,19 @@ func CountRunningDispatches(ctx context.Context, q Querier) (int, error) {
 
 // PurposeTokenSamples returns the total tokens (input + output) of the most
 // recent successful dispatches of a purpose, newest first — the send screen's
-// forecast input (SD-12).
+// forecast input (SD-12). An implement-task dispatch is sampled only if every
+// execution in its task's round is measured: a round that includes chat or
+// human work is a biased low sample (SPEC-020 FR-7.4). A dispatch with no
+// execution row counts as measured.
 func PurposeTokenSamples(ctx context.Context, q Querier, purpose string, limit int) ([]int64, error) {
 	rows, err := q.Query(ctx, `
 		SELECT COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) FROM dispatches
 		WHERE purpose = $1 AND state = 'succeeded' AND input_tokens IS NOT NULL
+		  AND NOT (purpose = 'implement-task' AND EXISTS (
+			SELECT 1 FROM executions own
+			JOIN executions peer ON peer.ref_type = own.ref_type AND peer.ref_id = own.ref_id
+			                    AND peer.round = own.round
+			WHERE own.dispatch_id = dispatches.id AND NOT peer.measured))
 		ORDER BY finished_at DESC LIMIT $2`, purpose, limit)
 	if err != nil {
 		return nil, err

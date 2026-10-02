@@ -43,12 +43,12 @@ func TestActualTokensByOwnership(t *testing.T) {
 	seedDispatch(t, s, "task", tasks[0].ID, 1500, 0.002, "d:t0")
 	seedDispatch(t, s, "feature", fA, 500, 0.001, "d:fA")
 
-	got, err := ActualTokens(ctx, s.Pool, "feature", fA)
+	got, _, err := ActualTokens(ctx, s.Pool, "feature", fA)
 	if err != nil || got != 2000 {
 		t.Fatalf("feature actual = %d, %v; want 2000 (task 1500 + feature 500)", got, err)
 	}
 	// The initiative sees the same 2000 transitively.
-	initActual, err := ActualTokens(ctx, s.Pool, "initiative", init)
+	initActual, _, err := ActualTokens(ctx, s.Pool, "initiative", init)
 	if err != nil || initActual != 2000 {
 		t.Fatalf("initiative actual = %d, %v; want 2000", initActual, err)
 	}
