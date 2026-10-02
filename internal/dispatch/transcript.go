@@ -46,7 +46,7 @@ func (r *recorder) entry(e store.TranscriptEntry, limit int) store.TranscriptEnt
 		e.Content, e.Truncated = content, true
 	}
 	switch e.Kind {
-	case store.EntrySystem, store.EntryPrompt, store.EntryOutcome, store.EntryError:
+	case store.EntrySystem, store.EntryPrompt, store.EntryOutcome, store.EntryError, "stop":
 		// What the agent was told and what it concluded are always kept
 		// whole, within their own limit; the budget bounds what it did.
 	default:
@@ -115,4 +115,9 @@ func (r *recorder) outcome(ctx context.Context, n int, tu *provider.Block, pendi
 		Kind: store.EntryOutcome, Turn: n, ToolName: tu.ToolName, ToolUseID: tu.ToolUseID,
 		Content: string(tu.ToolInput)}, r.limits.MaxEntryBytes))
 	r.write(ctx, pending...)
+}
+
+// stop records that a budgeted run ended at a limit rather than concluding.
+func (r *recorder) stop(ctx context.Context, n int, text string) {
+	r.write(ctx, r.entry(store.TranscriptEntry{Kind: "stop", Turn: n, Content: text}, r.limits.MaxEntryBytes))
 }
