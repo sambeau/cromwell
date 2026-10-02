@@ -106,12 +106,15 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 	wants(t, "the start screen with an override", screen, `value="40000"`)
 	lacks(t, "the start screen with an override", screen, "This is the project's default budget")
 
-	// With nobody assigned to run spikes: the sentence, and the button disabled.
+	// With nobody assigned to run spikes: the sentence, and the agent choice
+	// disabled (the chat agent and a person can still start it).
 	h.editConfig("  run-spike: spike-runner\n", "  # run-spike: spike-runner\n")
 	screen = h.uiText(startURL(plain))
 	wants(t, "the start screen with no runner", screen,
-		"Nobody is assigned to run spikes, so this spike can't start. Assign <code>run-spike</code> to a role in <code>config.yaml</code>.",
-		"disabled")
+		"Nobody is assigned to run spikes, so this spike can't start. Assign <code>run-spike</code> to a role in <code>config.yaml</code>.")
+	if e := radioTag(t, screen, "agent"); !strings.Contains(e, " disabled") {
+		t.Errorf("the spike runner's radio isn't disabled with nobody assigned: %s", e)
+	}
 	if code, body := h.postText("/ui/spikes/start", url.Values{"spike": {plain.ID.String()}}); code != 200 {
 		t.Errorf("starting with no runner = %d", code)
 	} else {

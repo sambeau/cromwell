@@ -52,18 +52,27 @@ const spikeNextSentence = "Work on the question in the working copy, save findin
 // time box's ending says (FR-13.7 step 4).
 const spikeTimeBoxEndedBeforeSubmit = "The time box ended before this arrived, so the spike ended with the findings saved before it."
 
+// spikeBoxSentence is the one sentence about when a time box ends, in UTC:
+// "The time box ends at 17:04 UTC, in 3 hours 12 minutes." before the deadline
+// and "The time box ended at 17:04 UTC." after it.
+func spikeBoxSentence(deadline, now time.Time) string {
+	left := deadline.Sub(now)
+	if left <= 0 {
+		return "The time box ended at " + spikeClock(deadline) + "."
+	}
+	return "The time box ends at " + spikeClock(deadline) + ", in " + spikeSpanWords(left) + "."
+}
+
 // spikeTimeLeft is FR-13.4's sentence: when the time box ends, in UTC, and how
 // long is left.
 func spikeTimeLeft(sp *store.Spike, now time.Time) string {
 	if sp.DeadlineAt == nil {
 		return ""
 	}
-	left := sp.DeadlineAt.Sub(now)
-	if left <= 0 {
-		return fmt.Sprintf("The time box ended at %s. The spike ends with whatever findings were saved.", spikeClock(*sp.DeadlineAt))
+	if !sp.DeadlineAt.After(now) {
+		return spikeBoxSentence(*sp.DeadlineAt, now) + " The spike ends with whatever findings were saved."
 	}
-	return fmt.Sprintf("The time box ends at %s, in %s. Then the spike ends with whatever findings you have saved.",
-		spikeClock(*sp.DeadlineAt), spikeSpanWords(left))
+	return spikeBoxSentence(*sp.DeadlineAt, now) + " Then the spike ends with whatever findings you have saved."
 }
 
 // ---- The claimable ----
@@ -125,13 +134,6 @@ func spikeDeadlineRefusal(sp *store.Spike, now time.Time) string {
 	return ""
 }
 
-// spikeSubmitted says whether a claim of the spike ended done, which makes the
-// spike's ending final: it is ending as concluded, and nothing may claim it
-// again (SPEC-021 FR-13.7). It reads every claim, not only the latest.
-func spikeSubmitted(ctx context.Context, q store.Querier, sp *store.Spike) (bool, error) {
-	return store.ClaimEndedDoneFor(ctx, q, "spike", sp.ID)
-}
-
 // spikeBarredRefusal is FR-13.1's refusals that no remake can mend, in its
 // order: the state and the executor, a submit that has ended the claim for
 // good, and the deadline. It is "" when none stands. A claim and a renewal are
@@ -140,7 +142,9 @@ func spikeBarredRefusal(ctx context.Context, q store.Querier, sp *store.Spike, w
 	if r := spikeStateRefusal(sp, who); r != "" {
 		return r
 	}
-	done, err := spikeSubmitted(ctx, q, sp)
+	// Any claim that ended done, not only the latest, makes the ending final
+	// (SPEC-021 FR-13.7).
+	done, err := store.ClaimEndedDoneFor(ctx, q, "spike", sp.ID)
 	if err != nil {
 		return fmt.Sprintf("%s can't be claimed just now: %v.", sp.PublicID, err)
 	}
@@ -328,6 +332,13 @@ func (s *Server) resolveSpikeRef(ctx context.Context, ref string) (*store.Spike,
 	return sp, err
 }
 
+// spikeActionWords are what a refusal says of the two things a claimant does
+// with a draft: there is nothing to do, and what is done to.
+var spikeActionWords = map[string]struct{ nothing, object string }{
+	"save":   {"there are no findings to save", "its findings"},
+	"submit": {"there is nothing to submit", "it"},
+}
+
 // spikeHolderRefusal says why a save or a submit isn't the claimant's to make
 // (FR-13.6, FR-13.7 step 1), or "". action is "save" or "submit". The deadline
 // is left to the caller: a submit that has passed it once is honoured
@@ -336,17 +347,13 @@ func spikeHolderRefusal(sp *store.Spike, cur *store.Claim, who Claimant, action 
 	if r := spikeStateWords(sp, "there is nothing to "+action); r != "" {
 		return r
 	}
+	words := spikeActionWords[action]
 	if cur == nil {
-		if action == "save" {
-			return fmt.Sprintf("You haven't claimed %s, so there are no findings to save. Claim it first.", sp.PublicID)
-		}
-		return fmt.Sprintf("You haven't claimed %s, so there is nothing to submit. Claim it first.", sp.PublicID)
+		return fmt.Sprintf("You haven't claimed %s, so %s. Claim it first.", sp.PublicID, words.nothing)
 	}
 	if !who.holds(cur) {
-		if action == "save" {
-			return fmt.Sprintf("%s is claimed by %s, not by you, so you can't save its findings.", sp.PublicID, whoWords(cur.Kind, cur.Actor, ""))
-		}
-		return fmt.Sprintf("%s is claimed by %s, not by you, so you can't submit it.", sp.PublicID, whoWords(cur.Kind, cur.Actor, ""))
+		return fmt.Sprintf("%s is claimed by %s, not by you, so you can't %s %s.",
+			sp.PublicID, whoWords(cur.Kind, cur.Actor, ""), action, words.object)
 	}
 	if cur.State != lifecycle.ClaimOpen {
 		return fmt.Sprintf("Your claim on %s isn't open, so there is nothing to %s.", sp.PublicID, action)
@@ -384,6 +391,21 @@ func currentSpikeClaim(ctx context.Context, q store.Querier, id uuid.UUID, lock 
 
 // ---- Claiming (FR-13.3, FR-13.4) ----
 
+// The points a test can ask to be told about (Server.spikeHook).
+const (
+	spikeHookClaimRead     = "claim-read"     // ClaimSpike has read the spike, before its lock
+	spikeHookClaimLocked   = "claim-locked"   // ClaimSpike holds the worktree's lock
+	spikeHookSubmitChecked = "submit-checked" // SubmitSpike has passed its first looks, before its locks
+)
+
+// atSpikePoint tells the test hook, when there is one, that a claim or a
+// submit has reached point.
+func (s *Server) atSpikePoint(point string) {
+	if s.spikeHook != nil {
+		s.spikeHook(point)
+	}
+}
+
 // SpikeClaimResult is what claiming a spike returns (FR-13.4).
 type SpikeClaimResult struct {
 	Spike       *store.Spike
@@ -417,13 +439,16 @@ func (s *Server) ClaimSpike(ctx context.Context, ref string, who Claimant) (*Spi
 		return nil, err
 	}
 	sc := spikeClaims{s: s}
-	lockPath := ""
-	if sp.WorktreePath != "" {
-		lockPath = s.worktreeAbs(sp.WorktreePath)
-	}
+	s.atSpikePoint(spikeHookClaimRead)
+	// The worktree's path is a function of the spike's ID, so it is locked
+	// whatever the first read saw: an idea has no path yet, and a start that
+	// commits before the lock is taken makes the worktree under this same
+	// lock.
+	lockPath := s.worktreeAbs(s.spikeWorktreeRel(sp.ID))
 	var t *claimTarget
 	var res *ClaimResult
 	err = s.withWorkingCopy(lockPath, func() error {
+		s.atSpikePoint(spikeHookClaimLocked)
 		// An ending may have held the lock first: what is read now is what
 		// the ending left, and nothing is made for a spike that is over.
 		var err error
@@ -540,6 +565,8 @@ func (s *Server) SubmitSpike(ctx context.Context, ref string, who Claimant, find
 	if err := s.validateFinishSpike(sp, s.spikeOwnerPath(ctx, sp))(raw); err != nil {
 		return nil, refuse("The findings can't be submitted yet: %v. Nothing was changed.", err)
 	}
+
+	s.atSpikePoint(spikeHookSubmitChecked)
 
 	// Steps 3 to 5: the worktree's lock, then spikeEndMu, held until the spike
 	// has ended, so no ending can fall between the claim's and the spike's.

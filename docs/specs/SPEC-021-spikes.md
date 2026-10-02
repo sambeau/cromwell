@@ -1179,8 +1179,8 @@ else with a sentence. The starter config documents it, commented, beside
 **FR-12.4 — Reconciliation knows a chat or person spike has no run.**
 `ReconcileSpikes` doesn't end a running chat or person spike for having no
 dispatch, and keeps its directory. It ends one in two cases only, checked in
-this order (FR-15.2): its latest claim ended `done` (a submit that stopped
-before its ending), which ends it `concluded`; then its deadline has passed
+this order (FR-15.2): a claim of it ended `done` (any claim, not only the
+latest; a submit that stopped before its ending), which ends it `concluded`; then its deadline has passed
 (FR-15.1), which ends it `time_box`. The claim sweep ends one too, at the
 deadline (FR-14.4).
 
@@ -1459,8 +1459,9 @@ can't both write findings.
 and only for a `chat` or `person` spike. Every ending of a chat or person
 spike takes the worktree's lock before `spikeEndMu` (SD-27). In the
 transaction that moves the spike to `ended`, after locking the spike, it
-reads the latest claim: if that claim ended `done`, the spike ends as
-`concluded`, never `time_box` (a submit got there first); otherwise any claim
+looks at its claims: if any claim of it ended `done` (not only the latest),
+the spike ends as `concluded`, never `time_box` (a submit got there first);
+otherwise any claim
 on it that hasn't ended is ended with the claim machine's `expire` (SD-21),
 audited, and its pending `claim-stale` withdrawn. Everything else is FR-6:
 the leak check first, the findings from the draft, the commit, the discard.
@@ -1827,7 +1828,7 @@ rather than `default_time_box`. Then the review's fourteen findings:
 
 | Finding | What changed |
 |---|---|
-| R21-S2-1 (material) | FR-13.7: the submit holds the worktree's lock and `spikeEndMu` through its ending, and a submit that passed its check is honoured; FR-15.2: an ending whose latest claim ended `done` is `concluded`; FR-12.4: reconciliation's cases, in order. |
+| R21-S2-1 (material) | FR-13.7: the submit holds the worktree's lock and `spikeEndMu` through its ending, and a submit that passed its check is honoured; FR-15.2: an ending of a spike any of whose claims ended `done` is `concluded`; FR-12.4: reconciliation's cases, in order. |
 | R21-S2-2 (material) | FR-13.2 says exactly what a spike shares with the task's claim: `lock` and `rules` on the interface, `claimResult` without a task; the spike's own submit and release. |
 | R21-S2-3 (material) | FR-13.3: one predicate, `spikeHadWorkingCopy`, replaces `TokensUsed > 0` in the remake and the leak check. |
 | R21-S2-4 (material) | FR-14.2: the Inbox reads `release_label` and a new `release_consequence` from the checkpoint; the timeline's spike moment; NFR-12. |

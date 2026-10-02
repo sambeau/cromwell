@@ -284,7 +284,12 @@ func spikeStateSentence(sp *store.Spike) string {
 	case store.SpikeRunning:
 		return "This spike is running."
 	case store.SpikeEnded:
-		return "This spike's run has ended: " + store.SpikeEndingOf(sp.EndedHow).Phrase + ". It's waiting for you to read the findings."
+		// A chat or person spike had no run, only a time box.
+		subject := "This spike's run"
+		if unmeasuredExecutor(sp.Executor) {
+			subject = "This spike"
+		}
+		return subject + " has ended: " + store.SpikeEndingOf(sp.EndedHow).Phrase + ". It's waiting for you to read the findings."
 	case store.SpikeClosed:
 		if sp.ClosedAs == store.SpikeAnswered {
 			return "This spike is closed: the question is answered."
@@ -342,7 +347,7 @@ func (s *Server) spikeClaimPanelFor(sp *store.Spike, facts spikeRunFacts) *spike
 			p.Path = s.worktreeAbs(sp.WorktreePath)
 		}
 		if sp.DeadlineAt != nil {
-			p.TimeLeft = "The time box ends at " + spikeClock(*sp.DeadlineAt) + ": " + spikeLeftWords(sp.DeadlineAt.Sub(now)) + "."
+			p.TimeLeft = spikeBoxSentence(*sp.DeadlineAt, now)
 		}
 		p.Draft = sp.Draft
 	}
@@ -445,7 +450,7 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 	case sp.State == store.SpikeRunning:
 		p.WorktreeLine = "Its working copy is live."
 	case sp.WorktreePath != "":
-		p.WorktreeLine = "Its working copy hasn't been discarded yet; it is removed as soon as the run's ending is recorded."
+		p.WorktreeLine = "Its working copy hasn't been discarded yet; it is removed as soon as the spike's ending is recorded."
 	}
 
 	// What a person can do.
@@ -686,10 +691,12 @@ type startScreen struct {
 	Runner  string // "The spike runner runs it, on model."
 	Model   string
 	Refusal string // why the spike runner can't run it, when it can't
-	// CanStart is false when the chosen runner is refused: the Start button is
-	// then disabled and says why. The chat agent and a person need no runner,
-	// so a refused spike runner is never the only choice offered.
-	CanStart bool
+	// CanStart is false only when nothing can start: the findings template or
+	// its manifest is missing, and TemplateRefusal says so. A refused spike
+	// runner doesn't disable Start, because the chat agent and a person need
+	// no runner, and the form never offers the refused one.
+	CanStart        bool
+	TemplateRefusal string
 
 	// Executor is the radio that is chosen: agent, chat or person. TimeBox is
 	// what the time box field holds.
@@ -759,7 +766,8 @@ func (s *Server) startScreenFor(ctx context.Context, sp *store.Spike, errMsg str
 	if form.Executor == store.ExecutorChat || form.Executor == store.ExecutorPerson || (form.Executor == store.ExecutorAgent && p.Refusal == "") {
 		p.Executor = form.Executor
 	}
-	p.CanStart = !p.Started && (p.Executor != store.ExecutorAgent || p.Refusal == "")
+	p.TemplateRefusal = s.findingsTemplateRefusal()
+	p.CanStart = !p.Started && p.TemplateRefusal == ""
 	if form.TimeBox != "" {
 		p.TimeBox = form.TimeBox
 	}

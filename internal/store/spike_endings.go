@@ -40,7 +40,7 @@ var spikeEndings = map[string]SpikeEnding{
 		Commit:      "stopped at the turn limit",
 	},
 	SpikeTimeBox: {
-		Phrase:      "Reached its time box",
+		Phrase:      "it reached its time box",
 		Lead:        "The spike reached the end of its time box",
 		NotAnswered: "Not answered: the spike reached the end of its time box before it reached an answer.",
 		Run:         "The spike reached the end of its time box.",

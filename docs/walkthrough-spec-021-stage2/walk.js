@@ -173,7 +173,7 @@ Write the design for the import screen on the assumption that polling once a sec
   sql("UPDATE spikes SET deadline_at = now() - interval '1 minute' WHERE public_id = 'SPK-003'; UPDATE work_claims SET deadline_at = now() - interval '1 minute' WHERE ref_id = (SELECT id FROM spikes WHERE public_id = 'SPK-003')");
   log.push('# SPK-003: spikes.deadline_at and work_claims.deadline_at backdated by SQL; waiting for the heartbeat\n');
   await reloadUntil('Ended, waiting to be read');
-  await expectText('Reached its time box');
+  await expectText('This spike has ended: it reached its time box');
   await shot('16-time-box-ended.png');
   await page.locator('a[href^="/ui/d/"]').first().click();
   await expectText('How this spike ended');
