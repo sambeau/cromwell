@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jackc/pgx/v5"
 	"subutai/internal/store"
 )
 
@@ -610,4 +611,35 @@ func TestSpikePostsAnswerBadIDs(t *testing.T) {
 	if resp, err := http.Get(h.api.URL + "/ui/s/SPK-999"); err != nil || resp.StatusCode != 404 {
 		t.Errorf("GET of an unknown spike: %v %v", resp, err)
 	}
+}
+
+// The "Code kept" moment on the spike page: a ref is shown as code, never with
+// literal backticks, and a check that couldn't run says so rather than naming
+// no refs.
+func TestSpikePageCodeKeptMoment(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	record := func(sp *store.Spike, k store.SpikeKept) {
+		t.Helper()
+		if err := h.srv.Store.WithTx(ctx, func(tx pgx.Tx) error {
+			return store.RecordSpikeCodeKept(ctx, tx, sp.ID, k)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	named := h.endedSpike(in, "Was a ref kept?", nil)
+	record(named, store.SpikeKept{Refs: []string{"keep-this"}})
+	page := h.uiText("/ui/s/" + named.PublicID)
+	wants(t, "the page of a spike with a kept ref", page,
+		"Code was kept on <code>keep-this</code>, outside its working copy. A person decides what to do with it.")
+	lacks(t, "the page of a spike with a kept ref", page, "`keep-this`", "Code was kept on , ")
+
+	unchecked := h.endedSpike(in, "Could the check run?", nil)
+	record(unchecked, store.SpikeKept{Refs: []string{}, CouldntCheck: "the check said no"})
+	page = h.uiText("/ui/s/" + unchecked.PublicID)
+	wants(t, "the page of a spike whose check couldn't run", page,
+		"Subutai couldn't check whether code from this spike was kept: the check said no.")
+	lacks(t, "the page of a spike whose check couldn't run", page, "Code was kept on")
 }

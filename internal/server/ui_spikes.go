@@ -400,7 +400,12 @@ func (s *Server) spikePageData(ctx context.Context, sp *store.Spike, notice, err
 					}
 				}
 			}
-			m.Label, m.Icon = "Code was kept on "+joinWords(refs)+", outside its working copy. A person decides what to do with it.", "alert"
+			m.Icon = "alert"
+			if why := strField(pl, "couldnt_check"); why != "" && len(refs) == 0 {
+				m.Label = "Subutai couldn't check whether code from this spike was kept: " + why + "."
+			} else {
+				m.Label = "Code was kept on " + joinWords(refs) + ", outside its working copy. A person decides what to do with it."
+			}
 		case "spike.closed":
 			if strField(pl, "as") == store.SpikeAnswered {
 				m.Label = "Closed as answered, by " + e.Actor + "."
