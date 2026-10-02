@@ -2316,6 +2316,7 @@ button.check-box:focus-visible { outline: var(--bw-thick) solid var(--c-accent);
 .triage-actions .answer-conseq { display: block; }
 .triage-with-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2) var(--sp-3); align-items: end; }
 .triage-with-field .field-label { grid-column: 1 / -1; }
+.triage-no-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
 .bug-summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-1) var(--sp-4); margin: 0; }
 .bug-summary dd { margin: 0; }
 @media (max-width: 640px) {

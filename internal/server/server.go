@@ -61,6 +61,12 @@ type Server struct {
 	// heartbeat's reconciliation can't both write a spike's findings
 	// (SPEC-021 FR-6.2).
 	spikeEndMu sync.Mutex
+
+	// spikeHook is nil in production. A test sets it before the server is
+	// used, to be told when a claim or a submit has reached a named point
+	// (spikeHookClaimRead and the others), so that it can order a race by
+	// what has happened and not by the clock.
+	spikeHook func(point string)
 }
 
 // lockedCopy is one working copy's lock.

@@ -61,7 +61,7 @@ func (h *harness) getSpike(id uuid.UUID) *store.Spike {
 // spike's own or the default budget. The mock must already be scripted.
 func (h *harness) startSpike(sp *store.Spike, budget int64) *store.Spike {
 	h.t.Helper()
-	started, err := h.srv.StartSpike(context.Background(), sp.ID, budget, "sam")
+	started, err := h.srv.StartSpike(context.Background(), sp.ID, SpikeStartRequest{Executor: store.ExecutorAgent, Budget: budget}, "sam")
 	if err != nil {
 		h.t.Fatalf("start spike: %v", err)
 	}
@@ -74,7 +74,7 @@ func (h *harness) startSpike(sp *store.Spike, budget int64) *store.Spike {
 func (h *harness) startSpikeQuiet(sp *store.Spike, budget int64) (*store.Spike, *store.Dispatch) {
 	h.t.Helper()
 	ctx := context.Background()
-	started, err := h.srv.startSpike(ctx, sp.ID, budget, "sam", false)
+	started, err := h.srv.startSpike(ctx, sp.ID, SpikeStartRequest{Executor: store.ExecutorAgent, Budget: budget}, "sam", false)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -1378,7 +1378,7 @@ func TestPersonClosesASpike(t *testing.T) {
 		t.Errorf("closing an idea unanswered: %v", err)
 	}
 	// Starting a closed spike is refused, in a sentence.
-	if _, err := h.srv.StartSpike(ctx, a.ID, 0, "sam"); err == nil || err.Error() != "This spike has already been started." {
+	if _, err := h.srv.StartSpike(ctx, a.ID, SpikeStartRequest{Executor: store.ExecutorAgent}, "sam"); err == nil || err.Error() != "This spike has already been started." {
 		t.Errorf("starting a closed spike: %v", err)
 	}
 }

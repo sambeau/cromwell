@@ -477,10 +477,10 @@ func TestExecutions(t *testing.T) {
 			return err
 		}
 		disp1 = d.ID
-		if err := RecordAgentExecution(ctx, tx, task.ID, d.ID, "implementer", "m1", "abc123"); err != nil {
+		if err := RecordAgentExecution(ctx, tx, "task", task.ID, d.ID, "implementer", "m1", "abc123"); err != nil {
 			return err
 		}
-		return RecordAgentExecution(ctx, tx, task.ID, d.ID, "implementer", "m1", "abc123")
+		return RecordAgentExecution(ctx, tx, "task", task.ID, d.ID, "implementer", "m1", "abc123")
 	})
 	execs, err := ExecutionsFor(ctx, s.Pool, "task", task.ID)
 	if err != nil || len(execs) != 1 {

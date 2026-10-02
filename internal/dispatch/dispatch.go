@@ -394,7 +394,13 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 		err = dp.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			var err error
 			claimed, err = store.MarkDispatchRunning(ctx, tx, d.ID, model.PricePerMTok)
-			return err
+			if err != nil || !claimed || d.Purpose != "run-spike" {
+				return err
+			}
+			// The spike runner's part is an agent execution, written when the
+			// run starts, as an implementer's is (SPEC-021 FR-12.2). A retried
+			// attempt writes nothing new.
+			return store.RecordAgentExecution(ctx, tx, "spike", d.RefID, d.ID, d.Role, d.Model, "")
 		})
 	}
 	if err != nil || !claimed {

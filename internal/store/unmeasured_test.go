@@ -249,7 +249,7 @@ func TestPurposeTokenSamplesSkipsUnmeasuredRound(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := s.WithTx(ctx, func(tx pgx.Tx) error {
-			return RecordAgentExecution(ctx, tx, taskID, did, "implementer", "m", "head")
+			return RecordAgentExecution(ctx, tx, "task", taskID, did, "implementer", "m", "head")
 		}); err != nil {
 			t.Fatal(err)
 		}

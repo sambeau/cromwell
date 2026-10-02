@@ -4,7 +4,11 @@ package server
 // question is planning authoring under DEC-004: it creates an idea and
 // dispatches nothing, so create_spike takes no quote. Starting and closing a
 // spike are a person's acts in the web UI (SD-5, SD-10), so no tool here
-// starts, runs, closes or answers one.
+// starts, closes or answers one. Running a spike a person started for the chat
+// agent is doing, as DEC-007 decision 3 has it for a task: claim_spike,
+// save_spike_findings and submit_spike (SPEC-021 FR-13.5 to FR-13.7). Judging
+// its findings stays a person's (SD-25), so there is no tool to release,
+// extend, end or approve one (FR-17.2).
 
 import (
 	"context"
@@ -13,6 +17,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -40,6 +45,45 @@ func (s *Server) mcpSpikeTools() []mcpTool {
 				"budget":   map[string]any{"type": "integer", "description": "Optional. A token budget for this spike, a positive whole number. Leave it out to use the project's default."},
 			}, "on", "question"),
 			Handler: s.mcpCreateSpike,
+		},
+		{
+			Name: "claim_spike",
+			Description: "Claim a spike that a person started for the chat agent to run, so that you and the person " +
+				"investigate its question in a throwaway working copy. The person gave it a time box: when the time box " +
+				"ends, the spike ends, whether you have finished or not, with whatever findings you have saved. " +
+				"Work only inside the working copy this returns, and don't commit, branch, tag or stash there: a spike " +
+				"keeps no code. Save your findings with save_spike_findings early and often, and call submit_spike when " +
+				"you have an answer or know the question can't be answered. A person reads the findings and decides " +
+				"whether the question is answered: you can't close the spike, release your claim or move its time box, " +
+				"and you can't approve its findings. Calling this again on a spike you hold renews the claim. " +
+				"Use list_spikes to find a spike that is running.",
+			Schema: objectSchema(map[string]any{
+				"spike": stringProp("The spike's ID, such as \"SPK-003\"."),
+			}, "spike"),
+			Handler: s.mcpClaimSpike,
+		},
+		{
+			Name: "save_spike_findings",
+			Description: "Save your findings so far on the spike you claimed, in the findings template's sections. It replaces " +
+				"what was saved before, so send the whole text each time. When the spike's time box ends, whatever you " +
+				"have saved is what is kept, so save early and often.",
+			Schema: objectSchema(map[string]any{
+				"spike":    stringProp("The ID of the spike you claimed, such as \"SPK-003\"."),
+				"findings": stringProp("Your findings so far, as sections, starting with Answer and What we found."),
+			}, "spike", "findings"),
+			Handler: s.mcpSaveSpikeFindings,
+		},
+		{
+			Name: "submit_spike",
+			Description: "Hand in your findings on the spike you claimed, and end the spike as concluded. Give the findings " +
+				"here, or leave them out to submit what you last saved with save_spike_findings. They must have the " +
+				"template's required sections, or the submit is refused and nothing changes. A person then reads them " +
+				"and decides whether the question is answered: you can't close the spike or approve its findings.",
+			Schema: objectSchema(map[string]any{
+				"spike":    stringProp("The ID of the spike you claimed, such as \"SPK-003\"."),
+				"findings": stringProp("Optional. Your findings, as sections. Leave it out to submit the saved draft."),
+			}, "spike"),
+			Handler: s.mcpSubmitSpike,
 		},
 		{
 			Name: "list_spikes",
@@ -191,6 +235,84 @@ func (s *Server) mcpGetSpike(r *http.Request, args map[string]any) (any, error) 
 	return out, nil
 }
 
+// mcpClaimSpike claims, or renews a claim on, a spike for the chat agent
+// (SPEC-021 FR-13.4).
+func (s *Server) mcpClaimSpike(r *http.Request, args map[string]any) (any, error) {
+	ctx := r.Context()
+	ref, ok := argString(args, "spike")
+	if !ok {
+		return nil, errors.New("say which spike to claim, with \"spike\": its ID, such as \"SPK-003\"")
+	}
+	res, err := s.ClaimSpike(ctx, ref, s.ChatClaimant())
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{
+		"spike": s.spikeResult(ctx, res.Spike),
+		"working_copy": map[string]any{
+			"path": res.WorkingCopy.Path, "base_commit": res.WorkingCopy.BaseCommit, "detached": true,
+		},
+		"contract":  res.Contract,
+		"time_left": res.TimeLeft,
+		"rules":     res.Rules,
+		"next":      spikeNextSentence,
+	}
+	if res.Spike.DeadlineAt != nil {
+		out["deadline"] = res.Spike.DeadlineAt.UTC().Format(time.RFC3339)
+	}
+	if res.Renewed {
+		out["renewed"] = true
+	}
+	return out, nil
+}
+
+// mcpSaveSpikeFindings replaces the claimed spike's draft (FR-13.6).
+func (s *Server) mcpSaveSpikeFindings(r *http.Request, args map[string]any) (any, error) {
+	ctx := r.Context()
+	ref, ok := argString(args, "spike")
+	if !ok {
+		return nil, errors.New("say which spike to save findings on, with \"spike\": its ID, such as \"SPK-003\"")
+	}
+	text, _ := args["findings"].(string)
+	sp, err := s.SaveSpikeFindings(ctx, ref, s.ChatClaimant(), text)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{
+		"saved":     "Saved. If the time box ends now, this is what is kept.",
+		"time_left": spikeTimeLeft(sp, time.Now()),
+	}
+	if sp.DeadlineAt != nil {
+		out["deadline"] = sp.DeadlineAt.UTC().Format(time.RFC3339)
+	}
+	return out, nil
+}
+
+// mcpSubmitSpike hands the claimed spike's findings in, which ends it as
+// concluded (FR-13.7).
+func (s *Server) mcpSubmitSpike(r *http.Request, args map[string]any) (any, error) {
+	ctx := r.Context()
+	ref, ok := argString(args, "spike")
+	if !ok {
+		return nil, errors.New("say which spike to submit, with \"spike\": its ID, such as \"SPK-003\"")
+	}
+	findings, _ := args["findings"].(string)
+	sp, err := s.SubmitSpike(ctx, ref, s.ChatClaimant(), findings)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{
+		"spike":    s.spikeResult(ctx, sp),
+		"findings": nil,
+		"next": "A person reads the findings on the spike's page and decides whether the question is answered. " +
+			"You can't close the spike or approve its findings.",
+	}
+	if d, err := store.CurrentDocForOwner(ctx, s.Store.Pool, "findings", "spike", sp.ID); err == nil {
+		out["findings"] = map[string]any{"id": d.PublicID, "path": d.Path}
+	}
+	return out, nil
+}
+
 // spikeBudgetSourceWords is where a budget came from, as the MCP tools say it.
 var spikeBudgetSourceWords = map[string]string{
 	store.BudgetFromOverride:    "set on the spike",
@@ -203,6 +325,41 @@ func (s *Server) spikeResult(ctx context.Context, sp *store.Spike) map[string]an
 	out := map[string]any{
 		"id": sp.PublicID, "question": sp.Question, "state": sp.State,
 		"tokens_used": sp.TokensUsed, "created_via": sp.CreatedVia,
+	}
+	// Who runs it, and what limit it has (FR-16.2). A chat or person spike's
+	// tokens aren't measured, so its count is null rather than 0.
+	// Read once: the executor's sentence and the claim object are both made
+	// from it. A read that fails leaves a spike with no run to describe.
+	facts, err := readSpikeRunFacts(ctx, s.Store.Pool, sp)
+	if err != nil {
+		s.Log.Warn("a spike's run facts couldn't be read", "spike", sp.PublicID, "err", err)
+		facts = spikeRunFacts{}
+	}
+	exec := spikeExecutorSentence(sp, facts, time.Now())
+	executor := map[string]any{"sentence": exec.Sentence}
+	if exec.Kind != "" {
+		executor["kind"], executor["who"], executor["model"], executor["run_id"] = exec.Kind, exec.Who, exec.Model, exec.RunID
+	}
+	out["executor"], out["measured"] = executor, exec.Measured
+	if unmeasuredExecutor(sp.Executor) {
+		out["tokens_used"] = nil
+		out["time_box_hours"] = nil
+		if sp.TimeBoxHours != nil {
+			out["time_box_hours"] = *sp.TimeBoxHours
+		}
+		out["deadline"] = nil
+		if sp.DeadlineAt != nil {
+			out["deadline"] = sp.DeadlineAt.UTC().Format(time.RFC3339)
+		}
+		out["claim"] = nil
+		if c := facts.Claim; c != nil {
+			out["claim"] = map[string]any{
+				"kind": c.Kind, "who": whoWords(c.Kind, c.Actor, ""), "state": string(c.State),
+				"since":            c.ClaimedAt.UTC().Format(time.RFC3339),
+				"last_activity":    claimActivityWords(c.LastActivity),
+				"last_activity_at": c.LastActivityAt.UTC().Format(time.RFC3339),
+			}
+		}
 	}
 	owner := map[string]any{}
 	if o := s.spikeOwnerRef(ctx, sp); o.ID != "" {

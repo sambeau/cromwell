@@ -183,6 +183,14 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		"create_spike",
 		"get_spike",
 		"list_spikes",
+		// SPEC-021 FR-17.1: running a spike a person started for the chat
+		// agent is doing, not judging. DEC-007 decision 3 (the chat agent may
+		// claim and submit work) and DESIGN-010 §10 allow exactly these three;
+		// a person reads the findings and closes the spike, and a claim is
+		// released only in the web UI.
+		"claim_spike",
+		"save_spike_findings",
+		"submit_spike",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
@@ -220,6 +228,11 @@ func TestMCPAdvertisedToolSetIsExactlyTheAuthoringSet(t *testing.T) {
 		// SPEC-021 NFR-3: only the web UI starts or closes a spike.
 		"start_spike", "run_spike", "close_spike", "answer_spike",
 		"merge_spike", "promote_spike", "save_findings", "finish_spike",
+		// SPEC-021 FR-17.2: releasing a spike's claim, moving its time box,
+		// ending it and judging its findings are a person's acts (SD-25), and
+		// a spike has no reviewer to claim.
+		"release_spike", "extend_spike", "set_time_box", "end_spike",
+		"stop_spike", "approve_findings", "claim_spike_review",
 	} {
 		resp := h.rpc("tools/call", map[string]any{"name": forbidden, "arguments": map[string]any{}})
 		if resp.Error == nil {

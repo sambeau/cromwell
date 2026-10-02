@@ -319,7 +319,9 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				"decision to accept or reject one (relay_triage), quoting them — whether a bug is fixed is theirs; " +
 				"you hold no verdict of your own. You may claim a task of a feature that is being built, work it with the " +
 				"person, and submit it (claim_task, submit_task); its work is reviewed and verified by others, never by you, " +
-				"and the work-a-task skill says how. You cannot send work to development, start " +
+				"and the work-a-task skill says how. A person may start a spike for you to run: you claim it with " +
+				"claim_spike, save findings with save_spike_findings and submit them with submit_spike, and a person " +
+				"reads and closes it, and the run-a-spike skill says how. You cannot send work to development, start " +
 				"building, override a gate or answer the Inbox — a person does " +
 				"those from the command centre. You may write down a spike's question with " +
 				"create_spike; only a person can start or close one.",

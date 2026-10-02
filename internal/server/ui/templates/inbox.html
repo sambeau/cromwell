@@ -106,12 +106,13 @@
   <form class="checkpoint-answers" hx-post="/ui/respond" hx-target="#inbox-list" hx-swap="innerHTML">
     <input type="hidden" name="id" value="{{.ID}}">
     <div class="checkpoint-answer-list">
+      {{$item := .}}
       {{range .Options}}
       <button class="answer" type="submit" name="verb" value="{{.}}">
         <span class="answer-mark"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{verbIcon .}}"/></svg></span>
         <span>
-          <span class="answer-title">{{verbLabel .}}</span>
-          <span class="answer-conseq">{{verbConsequence .}}</span>
+          <span class="answer-title">{{$item.AnswerLabel .}}</span>
+          <span class="answer-conseq">{{$item.AnswerConsequence .}}</span>
         </span>
       </button>
       {{end}}

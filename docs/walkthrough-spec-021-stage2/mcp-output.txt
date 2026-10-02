@@ -1,0 +1,534 @@
+» create_initiative {"slug":"imports","name":"Imports","description":"Bring a customer's existing records into the product."}
+  {
+  "description": "Bring a customer's existing records into the product.",
+  "design_document": {
+    "id": "INIT-001-design",
+    "is_primary": false,
+    "path": "docs/work/INIT-001-imports/INIT-001-design.md",
+    "revision": 1,
+    "row_id": "01a0fd36-4bb5-7551-a591-592a6415eadc",
+    "state": "draft",
+    "title": "Imports",
+    "type": "design",
+    "url": "/ui/id/INIT-001-design",
+    "written_by": {
+      "act": "started",
+      "kind": "chat",
+      "recorded": true,
+      "sentence": "Started from the template by the chat agent.",
+      "who": "the chat agent"
+    }
+  },
+  "id": "INIT-001",
+  "name": "Imports",
+  "path": "imports",
+  "url": "/ui/i/imports"
+}
+
+» create_feature {"initiative_path":"imports","slug":"bulk-import","name":"Bulk import","description":"Import a whole customer list in one go.","design_document":false}
+  {
+  "description": "Import a whole customer list in one go.",
+  "id": "FEAT-001",
+  "name": "Bulk import",
+  "path": "imports/bulk-import",
+  "state": "idea",
+  "url": "/ui/f/imports/bulk-import"
+}
+
+» create_spike {"on":"imports/bulk-import","question":"Can the import screen show a progress bar that updates every second?"}
+  {
+  "budget": 1000000,
+  "budget_source": "project default",
+  "created_via": "mcp",
+  "executor": {
+    "sentence": "Not started yet."
+  },
+  "id": "SPK-001",
+  "measured": true,
+  "next": "A person can start it from its page in the web UI.",
+  "owner": {
+    "id": "FEAT-001",
+    "name": "Bulk import",
+    "path": "imports/bulk-import",
+    "type": "feature"
+  },
+  "question": "Can the import screen show a progress bar that updates every second?",
+  "state": "idea",
+  "tokens_used": 0
+}
+
+» create_spike {"on":"imports/bulk-import","question":"Can the importer resume after a dropped connection?"}
+  {
+  "budget": 1000000,
+  "budget_source": "project default",
+  "created_via": "mcp",
+  "executor": {
+    "sentence": "Not started yet."
+  },
+  "id": "SPK-003",
+  "measured": true,
+  "next": "A person can start it from its page in the web UI.",
+  "owner": {
+    "id": "FEAT-001",
+    "name": "Bulk import",
+    "path": "imports/bulk-import",
+    "type": "feature"
+  },
+  "question": "Can the importer resume after a dropped connection?",
+  "state": "idea",
+  "tokens_used": 0
+}
+
+» create_spike {"on":"imports/bulk-import","question":"Can an import be cancelled half way without leaving rows behind?"}
+  {
+  "budget": 1000000,
+  "budget_source": "project default",
+  "created_via": "mcp",
+  "executor": {
+    "sentence": "Not started yet."
+  },
+  "id": "SPK-004",
+  "measured": true,
+  "next": "A person can start it from its page in the web UI.",
+  "owner": {
+    "id": "FEAT-001",
+    "name": "Bulk import",
+    "path": "imports/bulk-import",
+    "type": "feature"
+  },
+  "question": "Can an import be cancelled half way without leaving rows behind?",
+  "state": "idea",
+  "tokens_used": 0
+}
+
+» start_spike {"spike":"SPK-001"}
+  JSON-RPC error -32601: there is no tool called "start_spike" on this server
+
+» close_spike {"spike":"SPK-001"}
+  JSON-RPC error -32601: there is no tool called "close_spike" on this server
+
+» claim_task {"task":"SPK-001"}
+  refused: SPK-001 is a spike, not a task. Use claim_spike to run it.
+
+» claim_spike {"spike":"SPK-001"}
+  {
+  "contract": {
+    "findings_template": [
+      {
+        "for": "Written by Subutai from the spike's question; leave it out.",
+        "heading": "Question",
+        "required": true
+      },
+      {
+        "for": "The answer, in a sentence or two, or why the question can't be answered.",
+        "heading": "Answer",
+        "required": true
+      },
+      {
+        "for": "What you found out: the evidence and what it means.",
+        "heading": "What we found",
+        "required": true
+      },
+      {
+        "for": "How you found out: what you read, ran or measured, so a person can check it.",
+        "heading": "How we found out",
+        "required": false
+      },
+      {
+        "for": "What to do next: the feature to build, the question to ask again, or nothing.",
+        "heading": "What to do next",
+        "required": false
+      },
+      {
+        "for": "Written by Subutai when the spike ends; leave it out.",
+        "heading": "How this spike ended",
+        "required": false
+      }
+    ],
+    "question": "Can the import screen show a progress bar that updates every second?",
+    "where_it_came_from": "This spike was written down on the feature FEAT-001, Bulk import.\n\nImport a whole customer list in one go."
+  },
+  "deadline": "2026-10-02T19:23:12Z",
+  "next": "Work on the question in the working copy, save findings as you go with save_spike_findings, and call submit_spike when you are done.",
+  "rules": [
+    "Work only inside the working copy named in this result. It is a throwaway copy: it is discarded when the spike ends, and nothing in it is kept or merged.",
+    "Don't commit, branch, tag or stash there: a spike keeps no code, and Subutai reports any it finds kept.",
+    "Save your findings with save_spike_findings early and often. When the time box ends, whatever you have saved is what is kept.",
+    "When you have an answer, or know the question can't be answered, call submit_spike with your findings in the template's sections.",
+    "A person reads the findings and decides whether the question is answered. You can't close the spike, release your claim or move its time box, and you can't approve its findings on your own judgement: only a person's verdict, in their words, approves them.",
+    "The project allows the command build, which runs: true.",
+    "The project allows the command run_tests, which runs: true."
+  ],
+  "spike": {
+    "budget": 1000000,
+    "budget_source": "project default",
+    "claim": {
+      "kind": "chat",
+      "last_activity": "claimed",
+      "last_activity_at": "2026-10-02T15:23:13Z",
+      "since": "2026-10-02T15:23:13Z",
+      "state": "open",
+      "who": "the chat agent"
+    },
+    "created_via": "mcp",
+    "deadline": "2026-10-02T19:23:12Z",
+    "executor": {
+      "kind": "chat",
+      "model": "",
+      "run_id": "",
+      "sentence": "Being run in chat by the chat agent, who claimed it just now.",
+      "who": "the chat agent"
+    },
+    "id": "SPK-001",
+    "measured": false,
+    "owner": {
+      "id": "FEAT-001",
+      "name": "Bulk import",
+      "path": "imports/bulk-import",
+      "type": "feature"
+    },
+    "question": "Can the import screen show a progress bar that updates every second?",
+    "state": "running",
+    "time_box_hours": 4,
+    "tokens_used": null
+  },
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
+  "working_copy": {
+    "base_commit": "5fa12398c5a13874df6685aea5833a60eca5f350",
+    "detached": true,
+    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-c64c87"
+  }
+}
+
+# claim_spike returned: working_copy {"base_commit":"5fa12398c5a13874df6685aea5833a60eca5f350","detached":true,"path":"/var/tmp/m14s2demo/.subutai/worktrees/spk-c64c87"}; contract keys findings_template, question, where_it_came_from; deadline 2026-10-02T19:23:12Z; time_left "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."; 7 rules
+
+» save_spike_findings {"spike":"SPK-001","findings":"## Answer\n\nNot yet: the server reports progress, but how often has not been measured.\n\n## What we found\n\n- The import reports its progress after every 100 rows.\n"}
+  {
+  "deadline": "2026-10-02T19:23:12Z",
+  "saved": "Saved. If the time box ends now, this is what is kept.",
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."
+}
+
+» submit_spike {"spike":"SPK-001","findings":"## Answer\n\nYes.\n"}
+  refused: The findings can't be submitted yet: the findings need a What we found section with something in it. Nothing was changed.
+
+» submit_spike {"spike":"SPK-001","findings":"## Answer\n\nYes. The import screen can show a progress bar that updates every second: the server reports progress in 100-row steps, and a ten-thousand-row import takes about fourteen seconds, so the bar moves about every second.\n\n## What we found\n\n- The import reports its progress after every 100 rows.\n- A poll once a second is enough to keep the bar moving smoothly.\n\n## How we found out\n\nA throwaway script in the working copy ran a ten-thousand-row import and logged the progress calls with their times.\n\n## What to do next\n\nWrite the design for the import screen on the assumption that polling once a second is enough.\n"}
+  {
+  "findings": {
+    "id": "SPK-001-findings",
+    "path": "docs/work/INIT-001-imports/SPK-001-findings.md"
+  },
+  "next": "A person reads the findings on the spike's page and decides whether the question is answered. You can't close the spike or approve its findings.",
+  "spike": {
+    "budget": 1000000,
+    "budget_source": "project default",
+    "claim": {
+      "kind": "chat",
+      "last_activity": "submitted",
+      "last_activity_at": "2026-10-02T15:23:13Z",
+      "since": "2026-10-02T15:23:13Z",
+      "state": "ended",
+      "who": "the chat agent"
+    },
+    "created_via": "mcp",
+    "deadline": "2026-10-02T19:23:12Z",
+    "executor": {
+      "kind": "chat",
+      "model": "",
+      "run_id": "",
+      "sentence": "Run in chat by the chat agent.",
+      "who": "the chat agent"
+    },
+    "id": "SPK-001",
+    "measured": false,
+    "owner": {
+      "id": "FEAT-001",
+      "name": "Bulk import",
+      "path": "imports/bulk-import",
+      "type": "feature"
+    },
+    "question": "Can the import screen show a progress bar that updates every second?",
+    "state": "ended",
+    "time_box_hours": 4,
+    "tokens_used": null
+  }
+}
+
+» claim_spike {"spike":"SPK-003"}
+  {
+  "contract": {
+    "findings_template": [
+      {
+        "for": "Written by Subutai from the spike's question; leave it out.",
+        "heading": "Question",
+        "required": true
+      },
+      {
+        "for": "The answer, in a sentence or two, or why the question can't be answered.",
+        "heading": "Answer",
+        "required": true
+      },
+      {
+        "for": "What you found out: the evidence and what it means.",
+        "heading": "What we found",
+        "required": true
+      },
+      {
+        "for": "How you found out: what you read, ran or measured, so a person can check it.",
+        "heading": "How we found out",
+        "required": false
+      },
+      {
+        "for": "What to do next: the feature to build, the question to ask again, or nothing.",
+        "heading": "What to do next",
+        "required": false
+      },
+      {
+        "for": "Written by Subutai when the spike ends; leave it out.",
+        "heading": "How this spike ended",
+        "required": false
+      }
+    ],
+    "question": "Can the importer resume after a dropped connection?",
+    "where_it_came_from": "This spike was written down on the feature FEAT-001, Bulk import.\n\nImport a whole customer list in one go."
+  },
+  "deadline": "2026-10-02T19:23:20Z",
+  "next": "Work on the question in the working copy, save findings as you go with save_spike_findings, and call submit_spike when you are done.",
+  "rules": [
+    "Work only inside the working copy named in this result. It is a throwaway copy: it is discarded when the spike ends, and nothing in it is kept or merged.",
+    "Don't commit, branch, tag or stash there: a spike keeps no code, and Subutai reports any it finds kept.",
+    "Save your findings with save_spike_findings early and often. When the time box ends, whatever you have saved is what is kept.",
+    "When you have an answer, or know the question can't be answered, call submit_spike with your findings in the template's sections.",
+    "A person reads the findings and decides whether the question is answered. You can't close the spike, release your claim or move its time box, and you can't approve its findings on your own judgement: only a person's verdict, in their words, approves them.",
+    "The project allows the command build, which runs: true.",
+    "The project allows the command run_tests, which runs: true."
+  ],
+  "spike": {
+    "budget": 1000000,
+    "budget_source": "project default",
+    "claim": {
+      "kind": "chat",
+      "last_activity": "claimed",
+      "last_activity_at": "2026-10-02T15:23:20Z",
+      "since": "2026-10-02T15:23:20Z",
+      "state": "open",
+      "who": "the chat agent"
+    },
+    "created_via": "mcp",
+    "deadline": "2026-10-02T19:23:20Z",
+    "executor": {
+      "kind": "chat",
+      "model": "",
+      "run_id": "",
+      "sentence": "Being run in chat by the chat agent, who claimed it just now.",
+      "who": "the chat agent"
+    },
+    "id": "SPK-003",
+    "measured": false,
+    "owner": {
+      "id": "FEAT-001",
+      "name": "Bulk import",
+      "path": "imports/bulk-import",
+      "type": "feature"
+    },
+    "question": "Can the importer resume after a dropped connection?",
+    "state": "running",
+    "time_box_hours": 4,
+    "tokens_used": null
+  },
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
+  "working_copy": {
+    "base_commit": "aa84aa3f9e9b2db1957be0015aaa2aeef5472edf",
+    "detached": true,
+    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-e6de30"
+  }
+}
+
+» save_spike_findings {"spike":"SPK-003","findings":"## Answer\n\nNot yet: only the first half of the question has been looked at.\n\n## What we found\n\n- A dropped connection leaves the import at the last 100-row step.\n"}
+  {
+  "deadline": "2026-10-02T19:23:20Z",
+  "saved": "Saved. If the time box ends now, this is what is kept.",
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved."
+}
+
+# SPK-003: spikes.deadline_at and work_claims.deadline_at backdated by SQL; waiting for the heartbeat
+
+» get_spike {"spike":"SPK-003"}
+  {
+  "budget": 1000000,
+  "budget_source": "project default",
+  "claim": {
+    "kind": "chat",
+    "last_activity": "findings saved",
+    "last_activity_at": "2026-10-02T15:23:21Z",
+    "since": "2026-10-02T15:23:20Z",
+    "state": "ended",
+    "who": "the chat agent"
+  },
+  "created_via": "mcp",
+  "deadline": "2026-10-02T15:22:21Z",
+  "end_note": "",
+  "ended_how": "time_box",
+  "executor": {
+    "kind": "chat",
+    "model": "",
+    "run_id": "",
+    "sentence": "Run in chat by the chat agent.",
+    "who": "the chat agent"
+  },
+  "findings": {
+    "id": "SPK-003-findings",
+    "path": "docs/work/INIT-001-imports/SPK-003-findings.md",
+    "state": "draft"
+  },
+  "followed_by": [],
+  "follows": null,
+  "id": "SPK-003",
+  "measured": false,
+  "owner": {
+    "id": "FEAT-001",
+    "name": "Bulk import",
+    "path": "imports/bulk-import",
+    "type": "feature"
+  },
+  "question": "Can the importer resume after a dropped connection?",
+  "run_id": null,
+  "state": "ended",
+  "time_box_hours": 4,
+  "tokens_used": null
+}
+
+» claim_spike {"spike":"SPK-003"}
+  refused: SPK-003 has ended. A person reads its findings on its page.
+
+» claim_spike {"spike":"SPK-004"}
+  {
+  "contract": {
+    "findings_template": [
+      {
+        "for": "Written by Subutai from the spike's question; leave it out.",
+        "heading": "Question",
+        "required": true
+      },
+      {
+        "for": "The answer, in a sentence or two, or why the question can't be answered.",
+        "heading": "Answer",
+        "required": true
+      },
+      {
+        "for": "What you found out: the evidence and what it means.",
+        "heading": "What we found",
+        "required": true
+      },
+      {
+        "for": "How you found out: what you read, ran or measured, so a person can check it.",
+        "heading": "How we found out",
+        "required": false
+      },
+      {
+        "for": "What to do next: the feature to build, the question to ask again, or nothing.",
+        "heading": "What to do next",
+        "required": false
+      },
+      {
+        "for": "Written by Subutai when the spike ends; leave it out.",
+        "heading": "How this spike ended",
+        "required": false
+      }
+    ],
+    "question": "Can an import be cancelled half way without leaving rows behind?",
+    "where_it_came_from": "This spike was written down on the feature FEAT-001, Bulk import.\n\nImport a whole customer list in one go."
+  },
+  "deadline": "2026-10-02T19:23:27Z",
+  "next": "Work on the question in the working copy, save findings as you go with save_spike_findings, and call submit_spike when you are done.",
+  "rules": [
+    "Work only inside the working copy named in this result. It is a throwaway copy: it is discarded when the spike ends, and nothing in it is kept or merged.",
+    "Don't commit, branch, tag or stash there: a spike keeps no code, and Subutai reports any it finds kept.",
+    "Save your findings with save_spike_findings early and often. When the time box ends, whatever you have saved is what is kept.",
+    "When you have an answer, or know the question can't be answered, call submit_spike with your findings in the template's sections.",
+    "A person reads the findings and decides whether the question is answered. You can't close the spike, release your claim or move its time box, and you can't approve its findings on your own judgement: only a person's verdict, in their words, approves them.",
+    "The project allows the command build, which runs: true.",
+    "The project allows the command run_tests, which runs: true."
+  ],
+  "spike": {
+    "budget": 1000000,
+    "budget_source": "project default",
+    "claim": {
+      "kind": "chat",
+      "last_activity": "claimed",
+      "last_activity_at": "2026-10-02T15:23:27Z",
+      "since": "2026-10-02T15:23:27Z",
+      "state": "open",
+      "who": "the chat agent"
+    },
+    "created_via": "mcp",
+    "deadline": "2026-10-02T19:23:27Z",
+    "executor": {
+      "kind": "chat",
+      "model": "",
+      "run_id": "",
+      "sentence": "Being run in chat by the chat agent, who claimed it just now.",
+      "who": "the chat agent"
+    },
+    "id": "SPK-004",
+    "measured": false,
+    "owner": {
+      "id": "FEAT-001",
+      "name": "Bulk import",
+      "path": "imports/bulk-import",
+      "type": "feature"
+    },
+    "question": "Can an import be cancelled half way without leaving rows behind?",
+    "state": "running",
+    "time_box_hours": 4,
+    "tokens_used": null
+  },
+  "time_left": "The time box ends at 19:23 UTC, in 3 hours 59 minutes. Then the spike ends with whatever findings you have saved.",
+  "working_copy": {
+    "base_commit": "0256e2df05c11460f73300cae64f3831f701edea",
+    "detached": true,
+    "path": "/var/tmp/m14s2demo/.subutai/worktrees/spk-ec66ef"
+  }
+}
+
+# SPK-004: work_claims.last_activity_at backdated 26 hours by SQL; waiting for the heartbeat
+
+» get_spike {"spike":"SPK-004"}
+  {
+  "budget": 1000000,
+  "budget_source": "project default",
+  "claim": {
+    "kind": "chat",
+    "last_activity": "claimed",
+    "last_activity_at": "2026-10-01T13:23:27Z",
+    "since": "2026-10-01T13:23:27Z",
+    "state": "open",
+    "who": "the chat agent"
+  },
+  "created_via": "mcp",
+  "deadline": "2026-10-02T19:23:27Z",
+  "executor": {
+    "kind": "chat",
+    "model": "",
+    "run_id": "",
+    "sentence": "Being run in chat by the chat agent, who claimed it 1 day ago.",
+    "who": "the chat agent"
+  },
+  "findings": null,
+  "followed_by": [],
+  "follows": null,
+  "id": "SPK-004",
+  "measured": false,
+  "owner": {
+    "id": "FEAT-001",
+    "name": "Bulk import",
+    "path": "imports/bulk-import",
+    "type": "feature"
+  },
+  "question": "Can an import be cancelled half way without leaving rows behind?",
+  "run_id": null,
+  "state": "running",
+  "time_box_hours": 4,
+  "tokens_used": null
+}
+

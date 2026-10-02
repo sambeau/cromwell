@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -251,5 +253,176 @@ func TestSpikeMCPInstructions(t *testing.T) {
 	text, _ := resp.Result.(map[string]any)["instructions"].(string)
 	if want := "You may write down a spike's question with create_spike; only a person can start or close one."; !strings.Contains(text, want) {
 		t.Errorf("the instructions lack %q:\n%s", want, text)
+	}
+	// FR-13.8.
+	if want := "A person may start a spike for you to run: you claim it with claim_spike, save findings with save_spike_findings and submit them with submit_spike, and a person reads and closes it, and the run-a-spike skill says how."; !strings.Contains(text, want) {
+		t.Errorf("the instructions lack %q:\n%s", want, text)
+	}
+}
+
+// FR-13.4: claim_spike's result has the documented keys, and claiming again
+// renews.
+func TestClaimSpikeOverMCP(t *testing.T) {
+	h := newHarness(t)
+	sp := h.chatSpike()
+	out := h.toolOK("claim_spike", map[string]any{"spike": sp.PublicID})
+	for _, k := range []string{"spike", "working_copy", "contract", "deadline", "time_left", "rules", "next"} {
+		if out[k] == nil {
+			t.Errorf("claim_spike lacks %q: %v", k, out)
+		}
+	}
+	wc := asMap(t, out["working_copy"])
+	path, _ := wc["path"].(string)
+	if !filepath.IsAbs(path) || wc["base_commit"] == "" || wc["detached"] != true {
+		t.Errorf("working_copy = %v", wc)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the working copy isn't there: %v", err)
+	}
+	if got := asMap(t, out["contract"])["question"]; got != sp.Question {
+		t.Errorf("contract question = %v", got)
+	}
+	if got, _ := out["time_left"].(string); !strings.HasPrefix(got, "The time box ends at ") {
+		t.Errorf("time_left = %q", got)
+	}
+	if rules := asList(t, out["rules"]); len(rules) < len(spikeClaimRuleSentences) || rules[0] != spikeClaimRuleSentences[0] {
+		t.Errorf("rules = %v", rules)
+	}
+	if out["next"] != spikeNextSentence {
+		t.Errorf("next = %v", out["next"])
+	}
+	if again := h.toolOK("claim_spike", map[string]any{"spike": sp.PublicID}); again["renewed"] != true {
+		t.Errorf("claiming again should renew: %v", again)
+	}
+}
+
+// FR-13.6 and FR-13.7 over MCP: save, then submit with the draft, ends the
+// spike concluded and names the findings document.
+func TestSaveAndSubmitSpikeOverMCP(t *testing.T) {
+	h := newHarness(t)
+	sp := h.chatSpike()
+	h.toolOK("claim_spike", map[string]any{"spike": sp.PublicID})
+
+	saved := h.toolOK("save_spike_findings", map[string]any{"spike": sp.PublicID, "findings": goodFindings})
+	if saved["saved"] != "Saved. If the time box ends now, this is what is kept." || !strings.Contains(saved["time_left"].(string), "The time box ends at ") {
+		t.Errorf("save = %v", saved)
+	}
+	if got := strings.TrimSpace(h.getSpike(sp.ID).Draft); got != strings.TrimSpace(goodFindings) {
+		t.Errorf("draft = %q", got)
+	}
+
+	sub := h.toolOK("submit_spike", map[string]any{"spike": sp.PublicID})
+	if entry := asMap(t, sub["spike"]); entry["state"] != store.SpikeEnded {
+		t.Errorf("spike = %v", entry)
+	}
+	if got := h.getSpike(sp.ID); got.State != store.SpikeEnded || got.EndedHow != store.SpikeConcluded {
+		t.Errorf("spike after submit = %+v", got)
+	}
+	doc, _ := h.findingsOf(sp)
+	f := asMap(t, sub["findings"])
+	if f["id"] != doc.PublicID || f["path"] != doc.Path {
+		t.Errorf("findings = %v, want %s at %s", f, doc.PublicID, doc.Path)
+	}
+	if got, _ := sub["next"].(string); !strings.Contains(got, "You can't close the spike or approve its findings.") {
+		t.Errorf("next = %q", got)
+	}
+}
+
+// Findings with a required section missing are refused as a tool error, and
+// nothing changes.
+func TestSubmitSpikeRefusesIncompleteFindings(t *testing.T) {
+	h := newHarness(t)
+	sp := h.chatSpike()
+	h.toolOK("claim_spike", map[string]any{"spike": sp.PublicID})
+	got := h.refusalOf("submit_spike", map[string]any{"spike": sp.PublicID, "findings": "## Answer\n\nYes.\n"})
+	if !strings.HasPrefix(got, "The findings can't be submitted yet: ") || !strings.HasSuffix(got, "Nothing was changed.") {
+		t.Errorf("refusal = %q", got)
+	}
+	if h.getSpike(sp.ID).State != store.SpikeRunning {
+		t.Error("a refused submit ended the spike")
+	}
+	if got := h.refusalOf("save_spike_findings", map[string]any{"spike": sp.PublicID, "findings": "  "}); !strings.Contains(got, "There are no findings to save.") {
+		t.Errorf("blank save = %q", got)
+	}
+}
+
+// FR-16.2: get_spike and list_spikes say who runs a spike and what limits it.
+func TestSpikeExecutorFieldsOverMCP(t *testing.T) {
+	h := newHarness(t)
+	in := h.spikeInitiative("pf")
+
+	chat := h.chatSpike()
+	h.toolOK("claim_spike", map[string]any{"spike": chat.PublicID})
+	got := h.toolOK("get_spike", map[string]any{"spike": chat.PublicID})
+	ex := asMap(t, got["executor"])
+	if ex["kind"] != store.ExecutorChat || ex["who"] != "the chat agent" || !strings.HasPrefix(ex["sentence"].(string), "Being run in chat by the chat agent") {
+		t.Errorf("executor = %v", ex)
+	}
+	if v, ok := got["measured"]; !ok || v != false {
+		t.Errorf("measured = %v", v)
+	}
+	if v, ok := got["tokens_used"]; !ok || v != nil {
+		t.Errorf("tokens_used = %v, want null", v)
+	}
+	if got["time_box_hours"] != float64(4) || got["deadline"] == nil {
+		t.Errorf("time box = %v, deadline = %v", got["time_box_hours"], got["deadline"])
+	}
+	claim := asMap(t, got["claim"])
+	if claim["kind"] != store.ExecutorChat || claim["who"] != "the chat agent" || claim["state"] != "open" ||
+		claim["last_activity"] != "claimed" || claim["since"] == nil {
+		t.Errorf("claim = %v", claim)
+	}
+	// list_spikes carries the same fields.
+	found := false
+	for _, e := range asList(t, h.toolOK("list_spikes", map[string]any{"state": "running"})["spikes"]) {
+		if m := asMap(t, e); m["id"] == chat.PublicID {
+			found = true
+			if m["measured"] != false || m["claim"] == nil {
+				t.Errorf("list entry = %v", m)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("list_spikes lacks %s", chat.PublicID)
+	}
+
+	agent, _ := h.startSpikeQuiet(h.newSpike(in, "Does the agent run it?", nil), 0)
+	a := h.toolOK("get_spike", map[string]any{"spike": agent.PublicID})
+	if ex := asMap(t, a["executor"]); ex["kind"] != store.ExecutorAgent {
+		t.Errorf("agent executor = %v", ex)
+	}
+	if a["measured"] != true {
+		t.Errorf("agent measured = %v", a["measured"])
+	}
+	if _, has := a["claim"]; has {
+		t.Errorf("an agent spike has no claim entry: %v", a["claim"])
+	}
+	if a["tokens_used"] == nil {
+		t.Error("an agent spike's tokens_used is a number")
+	}
+}
+
+// FR-13.8: the run-a-spike skill subutai init installs carries every rule
+// claim_spike returns, as work-a-task's does for claim_task.
+func TestRunASpikeSkillSaysWhatTheRulesSay(t *testing.T) {
+	h := newHarness(t)
+	data, err := os.ReadFile(filepath.Join(h.root, ".subutai/chat-skills/run-a-spike/SKILL.md"))
+	if err != nil {
+		t.Fatalf("subutai init should install the run-a-spike skill: %v", err)
+	}
+	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	skill := norm(string(data))
+	if !strings.HasPrefix(string(data), "---\ndescription: ") {
+		t.Errorf("the skill needs front-matter with a description")
+	}
+	for _, rule := range spikeClaimRuleSentences {
+		if !strings.Contains(skill, norm(rule)) {
+			t.Errorf("the skill lacks the rule %q", rule)
+		}
+	}
+	for _, want := range []string{"list_spikes", "claim_spike", "save_spike_findings", "submit_spike", "time box", "web UI", "Your tokens aren't measured"} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("the skill should mention %q", want)
+		}
 	}
 }

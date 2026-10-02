@@ -558,7 +558,7 @@ func StartImplementDispatch(ctx context.Context, tx pgx.Tx, id uuid.UUID, priceS
 	if !started {
 		return StartResult{Outcome: StartLost}, nil
 	}
-	if err := RecordAgentExecution(ctx, tx, d.RefID, id, d.Role, d.Model, startHead); err != nil {
+	if err := RecordAgentExecution(ctx, tx, "task", d.RefID, id, d.Role, d.Model, startHead); err != nil {
 		return StartResult{}, err
 	}
 	return StartResult{Outcome: StartStarted}, nil

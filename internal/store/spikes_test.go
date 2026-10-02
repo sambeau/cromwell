@@ -63,7 +63,7 @@ func (fx *spikeFixture) start(t *testing.T, id uuid.UUID, budget int64) *Spike {
 	var sp *Spike
 	err := fx.s.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		sp, err = StartSpike(ctx, tx, id, SpikeStart{Budget: budget, BudgetSource: BudgetFromDefault,
+		sp, err = StartSpike(ctx, tx, id, SpikeStart{Executor: ExecutorAgent, Budget: budget, BudgetSource: BudgetFromDefault,
 			BaseCommit: "abc123", WorktreePath: "worktrees/spk-001",
 			RefsAtStart: map[string]string{"refs/heads/main": "abc123"}, Actor: "sam"})
 		return err
@@ -93,7 +93,7 @@ func (fx *spikeFixture) close(t *testing.T, id uuid.UUID, as string) error {
 	t.Helper()
 	ctx := context.Background()
 	return fx.s.WithTx(ctx, func(tx pgx.Tx) error {
-		_, err := CloseSpike(ctx, tx, id, as, "sam")
+		_, err := CloseSpike(ctx, tx, id, as, "sam", false)
 		return err
 	})
 }
@@ -180,7 +180,7 @@ func TestSpikeChecksRefuseBadRows(t *testing.T) {
 		_, err := fx.s.Pool.Exec(ctx, `UPDATE spikes SET `+set+` WHERE id = $1`, fresh.ID)
 		return err
 	}
-	started := `token_budget = 100, started_at = now()`
+	started := `executor = 'agent', token_budget = 100, started_at = now()`
 	ended := `state = 'ended', ` + started + `, ended_how = 'budget'`
 
 	_, badVia := fx.s.Pool.Exec(ctx, `INSERT INTO spikes (id, initiative_id, question, created_by, created_via)
@@ -201,7 +201,7 @@ func TestSpikeChecksRefuseBadRows(t *testing.T) {
 		{"ended without ended_how", "spikes_ended_how", update(`state = 'ended', ` + started)},
 		{"ended_how while idea", "spikes_ended_how", update(`ended_how = 'budget'`)},
 		{"running without a budget", "spikes_started", update(`state = 'running', started_at = now()`)},
-		{"running without a start", "spikes_started", update(`state = 'running', token_budget = 100`)},
+		{"running without a start", "spikes_started", update(`state = 'running', executor = 'agent', token_budget = 100`)},
 		{"closed unrun as answered", "spikes_closed_unrun_unanswered", update(`state = 'closed', closed_as = 'answered'`)},
 		{"zero override", "spikes_budget_positive", update(`budget_override = 0`)},
 		{"negative budget", "spikes_budget_positive", update(`token_budget = -5`)},
@@ -238,7 +238,7 @@ func TestStartSpikeIsConditional(t *testing.T) {
 	}
 
 	err := fx.s.WithTx(ctx, func(tx pgx.Tx) error {
-		_, err := StartSpike(ctx, tx, sp.ID, SpikeStart{Budget: 5, BudgetSource: BudgetFromStartScreen,
+		_, err := StartSpike(ctx, tx, sp.ID, SpikeStart{Executor: ExecutorAgent, Budget: 5, BudgetSource: BudgetFromStartScreen,
 			BaseCommit: "def", WorktreePath: "x", RefsAtStart: map[string]string{}, Actor: "sam"})
 		return err
 	})
