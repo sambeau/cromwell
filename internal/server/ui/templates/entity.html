@@ -248,7 +248,7 @@
         <p class="t-meta">Nothing here has been sized yet. Work is measured in tokens — the unit of computation an agent spends.</p>
         {{end}}
       </div>
-      {{if .Done}}
+      {{if or .Done .DoneUnmeasured}}
       <div class="rail-divider"></div>
       <div class="rail-field">
         <span class="rail-field-label">Spent so far</span>
@@ -258,7 +258,9 @@
             <span class="tokens-num">{{tokens .Done}}</span><span class="visually-hidden">tokens</span>
           </span>
         </span>
-        {{if .Size.Estimated}}
+        {{if .DoneUnmeasured}}
+        <span class="t-meta">Not measured: at least {{tokensExact .Done}} tokens, plus work done in chat or by a person.</span>
+        {{else if .Size.Estimated}}
         <div class="bar"><div class="bar-fill bar-fill--running" style="width:{{spentPct .Done .Size.Tokens}}%"></div></div>
         <span class="t-meta">{{spentPct .Done .Size.Tokens}}% of the estimate</span>
         {{end}}

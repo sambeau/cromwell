@@ -46,17 +46,21 @@ type unestimatedRef struct {
 // estimateResponse is the roll-up for one entity plus, for a leaf, its estimate
 // vs actual and re-estimation history (FR-2.2, FR-3.1).
 type estimateResponse struct {
-	Ref          string           `json:"ref"`
-	RefType      string           `json:"ref_type"`
-	Tokens       int64            `json:"tokens"`
-	Tier         string           `json:"tier"`
-	Estimated    bool             `json:"estimated"`
-	Decomposed   bool             `json:"decomposed"`
-	Complete     bool             `json:"complete"`
-	Unestimated  []unestimatedRef `json:"unestimated"`
-	ActualTokens int64            `json:"actual_tokens"`
-	Delta        int64            `json:"delta"` // actual - tokens, when both known
-	History      []estimateRow    `json:"history"`
+	Ref         string           `json:"ref"`
+	RefType     string           `json:"ref_type"`
+	Tokens      int64            `json:"tokens"`
+	Tier        string           `json:"tier"`
+	Estimated   bool             `json:"estimated"`
+	Decomposed  bool             `json:"decomposed"`
+	Complete    bool             `json:"complete"`
+	Unestimated []unestimatedRef `json:"unestimated"`
+	// ActualTokens and Delta are null for an unmeasured entity, which has
+	// MeasuredPart instead (SPEC-020 FR-7.2).
+	ActualTokens *int64        `json:"actual_tokens"`
+	Delta        *int64        `json:"delta"` // actual - tokens, when both known
+	Unmeasured   bool          `json:"unmeasured"`
+	MeasuredPart *int64        `json:"measured_part,omitempty"`
+	History      []estimateRow `json:"history"`
 }
 
 type estimateRow struct {
@@ -96,10 +100,15 @@ func (s *Server) handleEstimate(w http.ResponseWriter, r *http.Request) {
 
 	// Actuals and history are meaningful for the estimated entities.
 	if refType == "feature" || refType == "task" || refType == "initiative" {
-		if actual, aerr := store.ActualTokens(ctx, s.Store.Pool, refType, refID); aerr == nil {
-			resp.ActualTokens = actual
-			if roll.Estimated && actual > 0 {
-				resp.Delta = actual - roll.Tokens
+		if actual, unmeasured, aerr := store.ActualTokens(ctx, s.Store.Pool, refType, refID); aerr == nil {
+			if unmeasured {
+				resp.Unmeasured, resp.MeasuredPart = true, &actual
+			} else {
+				var d int64
+				if roll.Estimated && actual > 0 {
+					d = actual - roll.Tokens
+				}
+				resp.ActualTokens, resp.Delta = &actual, &d
 			}
 		}
 	}
@@ -513,7 +522,14 @@ func (s *Server) handleCostRollup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ref": ref, "kind": refType, "cost_usd": cost})
+	out := map[string]any{"ref": ref, "kind": refType, "cost_usd": cost}
+	// Cost sums real dispatches and is unchanged; an unmeasured entity says
+	// what the figure leaves out (SPEC-020 FR-7.5).
+	if un, uerr := store.Unmeasured(ctx, s.Store.Pool, refType, refID); uerr == nil && un {
+		out["unmeasured"] = true
+		out["note"] = store.UnmeasuredCostNote
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) handleCostMonths(w http.ResponseWriter, r *http.Request) {

@@ -46,10 +46,11 @@ type uiTemplates struct {
 var uiFuncs = template.FuncMap{
 	// idFor is the ID label for a name, or "" when the name already starts
 	// with it, as a decision's heading does ("DEC-005: …", SPEC-015 SD-17).
-	"idFor":   idFor,
-	"tokens":  humanTokens,
-	"shortID": func(id uuid.UUID) string { return id.String()[:8] },
-	"ago":     ago,
+	"idFor":       idFor,
+	"tokens":      humanTokens,
+	"tokensExact": groupThousands, // SPEC-020 FR-7.3 quotes the exact figure
+	"shortID":     func(id uuid.UUID) string { return id.String()[:8] },
+	"ago":         ago,
 	"signed": func(v int64) string {
 		if v >= 0 {
 			return fmt.Sprintf("+%d", v)
