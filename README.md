@@ -123,6 +123,7 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
 | [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |
 | [Subutai status and roadmap](docs/notes/subutai-status-and-roadmap-2026-09-28.md) | Where the Subutai revision stands (2026-09-28), and the milestone plan to finish it |
+| [How M13 and M14 are built](docs/notes/orchestration-M13-M14.md) | The stages, the agent classes, the review cycle and the definition of done |
 | [research](docs/research/README.md) | The research behind the design, and the writing guide |
 
 ## Phase plan
