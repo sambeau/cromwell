@@ -2319,3 +2319,14 @@ button.check-box:focus-visible { outline: var(--bw-thick) solid var(--c-accent);
 @media (max-width: 640px) {
   .triage-with-field, .bug-summary { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Executors and claims (SPEC-020): who did a task, and the claim panel. The
+   facts and the reviewer's comments are short lists inside the panel's own
+   padding, with no bullets hanging outside it. */
+.claim-facts, .claim-comments { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm); }
+.claim-facts li, .claim-comments li { overflow-wrap: anywhere; }
+.claim-comments li { padding-left: var(--sp-3); border-left: var(--bw) solid var(--c-line); }
+.claim-comments .t-meta { margin-right: var(--sp-1); text-transform: capitalize; }
+.task-executor { flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
+.task-executor .t-meta { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.task-executor-mark { gap: var(--sp-2); white-space: nowrap; }

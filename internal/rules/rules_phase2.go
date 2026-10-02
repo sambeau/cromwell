@@ -224,8 +224,13 @@ func ImplementIdempotencyKey(taskID uuid.UUID, redispatch int) string {
 	return fmt.Sprintf("implement:%s:%d", taskID, redispatch)
 }
 
-func CodeReviewIdempotencyKey(taskID uuid.UUID, commit string) string {
-	return fmt.Sprintf("review-code:%s:%s", taskID, commit)
+// CodeReviewIdempotencyKey is one submission's review: the task, the commit
+// and the round the work was submitted in. The round matters because the same
+// commit can be submitted again in a later round (a claimant who resets to an
+// earlier commit, an implementer who changes nothing), and that submission
+// must still be reviewed.
+func CodeReviewIdempotencyKey(taskID uuid.UUID, commit string, round int) string {
+	return fmt.Sprintf("review-code:%s:%s:r%d", taskID, commit, round)
 }
 
 func VerifyIdempotencyKey(featureID uuid.UUID, branchHead string) string {

@@ -22,6 +22,7 @@ import (
 	"subutai/internal/store"
 )
 
+// taskClaims is the claimable for a task.
 type taskClaims struct{ s *Server }
 
 // taskSuffix is the task's own part of its ID: "T03" of "FEAT-023-T03".
@@ -124,6 +125,11 @@ func (tc taskClaims) refusal(ctx context.Context, tx pgx.Tx, t *claimTarget, who
 	if running, err := tc.runningTask(ctx, tx, f.ID); err == nil && running != "" {
 		return fmt.Sprintf("An agent is implementing %s in this feature's working copy. Claim a task when it has finished; get_feature shows when.", running)
 	}
+	// An implementer that has succeeded but whose work isn't committed yet
+	// still holds the working copy.
+	if pending, err := store.ImplementPendingCompletion(ctx, tx, f.ID); err == nil && pending != "" {
+		return fmt.Sprintf("An agent is implementing %s in this feature's working copy. Claim a task when it has finished; get_feature shows when.", pending)
+	}
 	if !resume {
 		// An attempt the stall sweep gave up on may still be running tools.
 		if cfg, err := s.freshConfig(); err == nil {
@@ -225,11 +231,11 @@ func (tc taskClaims) prepareSubmit(ctx context.Context, t *claimTarget, c *store
 	if !ok {
 		return submitted{}, errors.New("config.yaml assignments has no review-code role")
 	}
-	model, err := s.codeReviewModel(ctx, s.Store.Pool, cfg, t.RefID, role)
+	model, chatReviewer, err := s.codeReviewModel(ctx, s.Store.Pool, cfg, t.RefID, role)
 	if err != nil {
 		return submitted{}, err
 	}
-	sub := submitted{Summary: summary, Model: model, Role: role}
+	sub := submitted{Summary: summary, Model: model, Role: role, ChatReviewer: chatReviewer}
 
 	msg := fmt.Sprintf("subutai: %s — %s\n\n%s\n\nSubutai-Executor: %s\nSubutai-Claim: %s",
 		taskNumber(t.Task), t.Title, summary, c.Kind, c.ID)
@@ -258,10 +264,19 @@ func (tc taskClaims) onSubmit(ctx context.Context, tx pgx.Tx, t *claimTarget, c 
 		map[string]any{"summary": sub.Summary, "claim_id": c.ID.String()}); err != nil {
 		return "", err
 	}
-	key := rules.CodeReviewIdempotencyKey(t.RefID, sub.Commit)
-	d, err := store.EnqueueDispatch(ctx, tx, "review-code", sub.Role, sub.Model, "task", t.RefID, key)
-	if err != nil || d == nil {
+	round, err := store.CurrentTaskRound(ctx, tx, t.RefID)
+	if err != nil {
 		return "", err
+	}
+	key := rules.CodeReviewIdempotencyKey(t.RefID, sub.Commit, round)
+	d, err := store.EnqueueDispatch(ctx, tx, "review-code", sub.Role, sub.Model, "task", t.RefID, key)
+	if err != nil {
+		return "", err
+	}
+	if d == nil {
+		// Never leave a task in review with no review coming: the transaction
+		// rolls back and the claim stays open.
+		return "", refuse("%s's code review could not be queued, because an identical one already exists. Nothing was submitted; try once more, or ask a person to look at the task.", t.Label)
 	}
 	return d.ID.String(), nil
 }
@@ -312,8 +327,8 @@ func (tc taskClaims) staleQuestion(t *claimTarget, c *store.Claim, idle time.Dur
 	who := whoWords(c.Kind, c.Actor, "")
 	hours := int(idle.Hours())
 	if c.State == lifecycle.ClaimReturned {
-		return fmt.Sprintf("%s, %s, was sent back by its code reviewer %s, and nobody has resumed it. The task is waiting. Is someone still working on it?",
-			t.Label, t.Title, agoWords(c.LastActivityAt, time.Now())), "Release it to an agent"
+		return fmt.Sprintf("%s, %s, was sent back by its code reviewer, and nothing has happened to it for %d hours. The task is waiting. Is someone still working on it?",
+			t.Label, t.Title, hours), "Release it to an agent"
 	}
 	return fmt.Sprintf("%s, %s, was claimed by %s %s, and nothing has changed in its working copy for %d hours. This feature's agents are waiting. Is someone still working on it?",
 		t.Label, t.Title, who, agoWords(c.ClaimedAt, time.Now()), hours), "Release it to an agent"
@@ -373,11 +388,7 @@ func (s *Server) branchHeadForTask(ctx context.Context, taskID uuid.UUID) string
 	if err != nil {
 		return ""
 	}
-	wt, err := store.LiveWorktreeForFeature(ctx, s.Store.Pool, task.FeatureID)
-	if err != nil {
-		return ""
-	}
-	return headOf(s.worktreeAbs(wt.Path))
+	return s.featureHead(ctx, task.FeatureID)
 }
 
 // contractDoc is the feature's current approved document of the type, its
@@ -422,17 +433,21 @@ func (s *Server) latestWriterIsChat(ctx context.Context, docID uuid.UUID) (bool,
 // codeReviewModel is the model for a task's code review: the reviewer's usual
 // one, or, when the latest execution of the latest round is the chat agent's,
 // the project's reviewer for the chat agent's work (SPEC-020 FR-8.2, FR-8.3).
-func (s *Server) codeReviewModel(ctx context.Context, q store.Querier, cfg *config.Config, taskID uuid.UUID, reviewerRole string) (string, error) {
+// chatReviewer is true only when that rule chose a model other than the usual
+// one, so the task page can say so without reading today's configuration
+// (FR-8.4).
+func (s *Server) codeReviewModel(ctx context.Context, q store.Querier, cfg *config.Config, taskID uuid.UUID, reviewerRole string) (model string, chatReviewer bool, err error) {
 	usual, err := s.modelForPurpose(cfg, "review-code", reviewerRole)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	execs, err := store.ExecutionsFor(ctx, q, "task", taskID)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if n := len(execs); n > 0 && execs[n-1].Kind == store.WriterChat {
-		return cfg.ChatReviewModel(usual), nil
+		chat := cfg.ChatReviewModel(usual)
+		return chat, chat != usual, nil
 	}
-	return usual, nil
+	return usual, false, nil
 }

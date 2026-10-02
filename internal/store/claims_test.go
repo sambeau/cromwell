@@ -91,8 +91,11 @@ func TestClaimLifecycle(t *testing.T) {
 	stale := *c
 
 	// Renew, with activity.
-	time.Sleep(5 * time.Millisecond)
-	before := c.LastActivityAt
+	before := time.Now().Add(-time.Hour)
+	if _, err := s.Pool.Exec(ctx, `UPDATE work_claims SET last_activity_at = $2 WHERE id = $1`, c.ID, before); err != nil {
+		t.Fatal(err)
+	}
+	c.LastActivityAt = before
 	inTx(t, s, func(tx pgx.Tx) error {
 		return TransitionClaim(ctx, tx, c, lifecycle.ClaimEventRenew, "chat-agent", "renewed", map[string]any{"note": "still here"})
 	})
@@ -488,11 +491,11 @@ func TestExecutions(t *testing.T) {
 		e.ClaimID != nil || e.Inferred || e.SubmittedAt != nil {
 		t.Errorf("agent row: %+v", e)
 	}
-	if un, err := TaskUnmeasured(ctx, s.Pool, task.ID); err != nil || un {
+	if un, err := Unmeasured(ctx, s.Pool, "task", task.ID); err != nil || un {
 		t.Errorf("an agent-only task is measured: %v %v", un, err)
 	}
 	inTx(t, s, func(tx pgx.Tx) error {
-		return MarkExecutionSubmitted(ctx, tx, struct{ DispatchID, ClaimID *uuid.UUID }{DispatchID: &disp1})
+		return MarkDispatchExecutionSubmitted(ctx, tx, disp1)
 	})
 	if execs, _ := ExecutionsFor(ctx, s.Pool, "task", task.ID); execs[0].SubmittedAt == nil {
 		t.Error("the agent's row should be submitted")
@@ -522,7 +525,7 @@ func TestExecutions(t *testing.T) {
 		ex.ClaimID == nil || *ex.ClaimID != c.ID || ex.DispatchID != nil || ex.StartHead != "def456" {
 		t.Errorf("claim row: %+v", ex)
 	}
-	if un, _ := TaskUnmeasured(ctx, s.Pool, task.ID); !un {
+	if un, _ := Unmeasured(ctx, s.Pool, "task", task.ID); !un {
 		t.Error("a task with a chat execution is unmeasured")
 	}
 
@@ -539,7 +542,7 @@ func TestExecutions(t *testing.T) {
 		if err := TransitionClaim(ctx, tx, c, lifecycle.ClaimEventSubmit, "chat-agent", "submitted", nil); err != nil {
 			return err
 		}
-		if err := MarkExecutionSubmitted(ctx, tx, struct{ DispatchID, ClaimID *uuid.UUID }{ClaimID: &c.ID}); err != nil {
+		if err := MarkClaimExecutionSubmitted(ctx, tx, c.ID); err != nil {
 			return err
 		}
 		if err := TransitionTask(ctx, tx, task, lifecycle.TaskImplemented, "orchestrator", nil); err != nil {
@@ -579,31 +582,6 @@ func TestExecutions(t *testing.T) {
 		VALUES (gen_random_uuid(), 'task', $1, 5, 'person', 'r', $2, 'ui', true)`, task.ID, c.ID)
 	bad("a second row for one dispatch", `INSERT INTO executions (id, ref_type, ref_id, round, kind, actor, dispatch_id, via, measured)
 		VALUES (gen_random_uuid(), 'task', $1, 9, 'agent', 'r', $2, 'agent', true)`, task.ID, disp1)
-
-	// Deleting an item's executions leaves other items' alone.
-	other := seedActiveTask(t, s, fid, 1)
-	inTx(t, s, func(tx pgx.Tx) error {
-		d, err := EnqueueDispatch(ctx, tx, "implement-task", "implementer", "m1", "task", other.ID, "impl:other")
-		if err != nil {
-			return err
-		}
-		return RecordAgentExecution(ctx, tx, other.ID, d.ID, "implementer", "m1", "")
-	})
-	inTx(t, s, func(tx pgx.Tx) error { return DeleteExecutionsFor(ctx, tx, "task", task.ID) })
-	if execs, _ := ExecutionsFor(ctx, s.Pool, "task", task.ID); len(execs) != 0 {
-		t.Errorf("not deleted: %+v", execs)
-	}
-	if execs, _ := ExecutionsFor(ctx, s.Pool, "task", other.ID); len(execs) != 1 {
-		t.Errorf("another task's rows were touched: %+v", execs)
-	}
-
-	// Submitting needs a run or a claim.
-	err = s.WithTx(ctx, func(tx pgx.Tx) error {
-		return MarkExecutionSubmitted(ctx, tx, struct{ DispatchID, ClaimID *uuid.UUID }{})
-	})
-	if err == nil {
-		t.Error("MarkExecutionSubmitted with neither should be an error")
-	}
 }
 
 // SPEC-020 FR-5.6: watched_head and the commits Subutai made.

@@ -55,6 +55,10 @@ func TestPersonClaimsATaskInTheUI(t *testing.T) {
 		t.Fatalf("claim: %d %s", code, truncate(body, 400))
 	}
 	mustContain(t, "claim notice", body, "You claimed "+t1.PublicID+".")
+	mustContain(t, "just now", body, "just now")
+	if strings.Contains(body, "0s ago") {
+		t.Error("a claim made a moment ago reads 0s ago")
+	}
 	mustContain(t, "person's panel", body, "Submit for code review")
 	mustContain(t, "executor line", body, "Being implemented by "+h.srv.uiActor()+", who claimed it")
 	mustContain(t, "unmeasured", body, "This work was done in chat or by a person, so its tokens aren&#39;t measured.")

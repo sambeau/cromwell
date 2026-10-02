@@ -169,11 +169,7 @@ func (s *Server) dispatchReadyTasks(ctx context.Context, featureID uuid.UUID) er
 	}
 	// The branch HEAD now becomes the base for any task starting its work, so
 	// code review later diffs the task's whole contribution (DESIGN-006 §5).
-	var head string
-	if wt, werr := store.LiveWorktreeForFeature(ctx, s.Store.Pool, featureID); werr == nil {
-		head, _ = gitIn(s.worktreeAbs(wt.Path), "rev-parse", "HEAD")
-		head = strings.TrimSpace(head)
-	}
+	head := s.featureHead(ctx, featureID)
 	for i := range tasks {
 		task := tasks[i]
 		err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
@@ -252,6 +248,15 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 	// Git, then the transaction, holding the working copy's lock (SPEC-020
 	// FR-2.8, FR-5.7).
 	err = s.withWorkingCopy(root, func() error {
+		// A claim that took the task since its implementer finished owns what is
+		// in the working copy now: nothing is committed on the agent's behalf.
+		if _, err := store.CurrentClaimFor(ctx, s.Store.Pool, "task", taskID); err == nil {
+			return nil
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		// Everything that can fail on configuration is settled before the
+		// commit, so a config error leaves no commit of Subutai's own behind.
 		cfg, err := s.freshConfig()
 		if err != nil {
 			return err
@@ -259,6 +264,13 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 		reviewerRole, ok := cfg.Assignments["review-code"]
 		if !ok {
 			return s.configErrorCheckpoint(ctx, "task", taskID, fmt.Errorf("config.yaml assignments has no review-code role"))
+		}
+		// The model is the reviewer's usual one, or the project's reviewer for
+		// the chat agent's work when the task's latest execution is the chat
+		// agent's (SPEC-020 FR-8.3).
+		model, _, err := s.codeReviewModel(ctx, s.Store.Pool, cfg, taskID, reviewerRole)
+		if err != nil {
+			return s.configErrorCheckpoint(ctx, "task", taskID, err)
 		}
 
 		// Commit the changes (server-authored, message names the task). If
@@ -270,10 +282,9 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 		if err := s.commitWorktree(root, commitMsg); err != nil {
 			return fmt.Errorf("committing task work: %w", err)
 		}
-		head := strings.TrimSpace(headOf(root))
-		key := rules.CodeReviewIdempotencyKey(taskID, head)
+		head := headOf(root)
 
-		return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+		err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 			if err := store.LockFeatureAndTask(ctx, tx, task.FeatureID, taskID); err != nil {
 				return err
 			}
@@ -281,26 +292,36 @@ func (s *Server) completeImplementation(ctx context.Context, taskID, dispatchID 
 			if err != nil {
 				return err
 			}
-			// The model is the reviewer's usual one, or the project's reviewer
-			// for the chat agent's work when the task's latest execution is the
-			// chat agent's (SPEC-020 FR-8.3).
-			model, err := s.codeReviewModel(ctx, tx, cfg, taskID, reviewerRole)
-			if err != nil {
-				return s.configErrorCheckpoint(ctx, "task", taskID, err)
+			if err := store.RecordWorktreeCommit(ctx, tx, wt.ID, head, "implementation"); err != nil {
+				return err
 			}
 			if err := store.TransitionTask(ctx, tx, fresh, lifecycle.TaskImplemented, "orchestrator",
 				map[string]any{"summary": summary}); err != nil {
 				return err
 			}
-			if err := store.RecordWorktreeCommit(ctx, tx, wt.ID, head, "implementation"); err != nil {
+			if err := store.MarkDispatchExecutionSubmitted(ctx, tx, dispatchID); err != nil {
 				return err
 			}
-			if err := store.MarkExecutionSubmitted(ctx, tx, struct{ DispatchID, ClaimID *uuid.UUID }{DispatchID: &dispatchID}); err != nil {
+			round, err := store.CurrentTaskRound(ctx, tx, taskID)
+			if err != nil {
 				return err
 			}
+			key := rules.CodeReviewIdempotencyKey(taskID, head, round)
 			_, err = store.EnqueueDispatch(ctx, tx, "review-code", reviewerRole, model, "task", taskID, key)
 			return err
 		})
+		if err != nil {
+			// The commit stands whatever became of the transaction, so it is
+			// recorded on its own: the branch watch must not call Subutai's own
+			// commit work nobody claimed.
+			rerr := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
+				return store.RecordWorktreeCommit(ctx, tx, wt.ID, head, "implementation")
+			})
+			if rerr != nil {
+				s.Log.Warn("recording the implementation commit", "task", taskID, "err", rerr)
+			}
+		}
+		return err
 	})
 	if err == nil {
 		s.Dispatcher.Kick()
@@ -451,8 +472,7 @@ func (s *Server) queueVerification(ctx context.Context, featureID uuid.UUID) err
 	if err != nil {
 		return err
 	}
-	head, _ := gitIn(s.worktreeAbs(wt.Path), "rev-parse", "HEAD")
-	key := rules.VerifyIdempotencyKey(featureID, strings.TrimSpace(head))
+	key := rules.VerifyIdempotencyKey(featureID, headOf(s.worktreeAbs(wt.Path)))
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		_, err := store.EnqueueDispatch(ctx, tx, "verify-feature", role, model, "feature", featureID, key)
 		return err

@@ -93,19 +93,21 @@ func RecordClaimExecution(ctx context.Context, tx pgx.Tx, refType string, refID 
 		NewID(), refType, refID, round, c.Kind, c.Actor, c.ID, c.Via, startHead))
 }
 
-// MarkExecutionSubmitted stamps submitted_at on the latest row of the run or
-// the claim being handed in (FR-1.2). Exactly one of the two is given.
-func MarkExecutionSubmitted(ctx context.Context, tx pgx.Tx, by struct{ DispatchID, ClaimID *uuid.UUID }) error {
-	var col string
-	var id uuid.UUID
-	switch {
-	case by.DispatchID != nil:
-		col, id = "dispatch_id", *by.DispatchID
-	case by.ClaimID != nil:
-		col, id = "claim_id", *by.ClaimID
-	default:
-		return errors.New("an execution is submitted by its dispatch or its claim")
-	}
+// MarkDispatchExecutionSubmitted stamps submitted_at on the latest row of an
+// implement dispatch: the agent has handed its work in (FR-1.2).
+func MarkDispatchExecutionSubmitted(ctx context.Context, tx pgx.Tx, dispatchID uuid.UUID) error {
+	return markExecutionSubmitted(ctx, tx, "dispatch_id", dispatchID)
+}
+
+// MarkClaimExecutionSubmitted stamps submitted_at on the latest row of a
+// claim: the chat agent or the person has handed its work in (FR-1.2).
+func MarkClaimExecutionSubmitted(ctx context.Context, tx pgx.Tx, claimID uuid.UUID) error {
+	return markExecutionSubmitted(ctx, tx, "claim_id", claimID)
+}
+
+// markExecutionSubmitted stamps the latest execution whose column (one of
+// this package's own two) holds id.
+func markExecutionSubmitted(ctx context.Context, tx pgx.Tx, col string, id uuid.UUID) error {
 	_, err := tx.Exec(ctx, `
 		UPDATE executions SET submitted_at = now()
 		WHERE id = (SELECT id FROM executions WHERE `+col+` = $1 ORDER BY started_at DESC, id DESC LIMIT 1)`, id)
@@ -129,21 +131,4 @@ func ExecutionsFor(ctx context.Context, q Querier, refType string, refID uuid.UU
 		out = append(out, *e)
 	}
 	return out, rows.Err()
-}
-
-// TaskUnmeasured reports whether any of the task's executions is unmeasured:
-// work done in chat or by a person (SPEC-020 FR-7.1).
-func TaskUnmeasured(ctx context.Context, q Querier, taskID uuid.UUID) (bool, error) {
-	var b bool
-	err := q.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM executions WHERE ref_type = 'task' AND ref_id = $1 AND NOT measured)`,
-		taskID).Scan(&b)
-	return b, err
-}
-
-// DeleteExecutionsFor removes an item's executions when the service deletes
-// the item, since ref_id has no foreign key (FR-1.1).
-func DeleteExecutionsFor(ctx context.Context, tx pgx.Tx, refType string, refID uuid.UUID) error {
-	_, err := tx.Exec(ctx, `DELETE FROM executions WHERE ref_type = $1 AND ref_id = $2`, refType, refID)
-	return err
 }

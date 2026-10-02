@@ -180,7 +180,7 @@ func (s *Server) raiseClaimCheckpoint(ctx context.Context, kind string, t *claim
 // that isn't the claim it asked about, is left alone (FR-5.4).
 func (s *Server) KeepClaimAnswered(ctx context.Context, a rules.KeepClaim) error {
 	return s.Store.WithTx(ctx, func(tx pgx.Tx) error {
-		cur, err := store.LockClaim(ctx, tx, claimIDOr(a.ClaimID))
+		cur, err := store.LockClaim(ctx, tx, parseClaimID(a.ClaimID))
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}
@@ -199,7 +199,7 @@ func (s *Server) KeepClaimAnswered(ctx context.Context, a rules.KeepClaim) error
 // with the person who answered as the one who released it. A claim that has
 // moved on is left alone.
 func (s *Server) ReleaseClaimAnswered(ctx context.Context, a rules.ReleaseClaim) error {
-	cur, err := store.GetClaim(ctx, s.Store.Pool, claimIDOr(a.ClaimID))
+	cur, err := store.GetClaim(ctx, s.Store.Pool, parseClaimID(a.ClaimID))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil
 	}
@@ -227,7 +227,9 @@ func (s *Server) ReleaseClaimAnswered(ctx context.Context, a rules.ReleaseClaim)
 	return nil
 }
 
-func claimIDOr(id string) uuid.UUID {
+// parseClaimID reads a claim's ID from a checkpoint's context; a malformed one
+// is uuid.Nil, which no claim has, so the answer finds nothing to act on.
+func parseClaimID(id string) uuid.UUID {
 	u, err := uuid.Parse(id)
 	if err != nil {
 		return uuid.Nil

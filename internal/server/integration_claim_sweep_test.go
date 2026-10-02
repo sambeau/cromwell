@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"subutai/internal/lifecycle"
+	"subutai/internal/rules"
 	"subutai/internal/store"
 )
 
@@ -212,6 +213,8 @@ func TestKeepTheClaimRestartsTheClock(t *testing.T) {
 	for _, w := range []string{"Keep the claim", "Release it to an agent", "Last activity: claimed, 1 day ago."} {
 		mustContain(t, "inbox", page, w)
 	}
+	// A claim question isn't about what an agent was doing.
+	mustContain(t, "inbox label", page, `<span class="t-label">Details</span>`)
 
 	if code, out := h.respond(cp, "keep"); code != 200 {
 		t.Fatalf("respond: %d %s", code, out)
@@ -308,7 +311,12 @@ func TestAnAnswerAfterTheClaimWasSubmittedChangesNothing(t *testing.T) {
 	if code, out := h.respond(cp, "release"); code != 200 {
 		t.Fatalf("respond: %d %s", code, out)
 	}
-	time.Sleep(200 * time.Millisecond)
+	// The rule engine handles the answer in the background; run its action
+	// here too, so the claim is judged after the answer has certainly been
+	// acted on, with no waiting.
+	if err := h.srv.ReleaseClaimAnswered(ctx, rules.ReleaseClaim{RefType: "task", RefID: t1.ID, ClaimID: res.Claim.ID.String(), Actor: "sam"}); err != nil {
+		t.Fatal(err)
+	}
 	if c := h.latestClaim(t1.ID); c.State != lifecycle.ClaimSubmitted {
 		t.Fatalf("the submitted claim is untouched: %+v", c)
 	}
@@ -326,7 +334,7 @@ func TestAReturnedClaimExpiresToo(t *testing.T) {
 	if cp == nil {
 		t.Fatal("a returned claim holds the task, so it expires")
 	}
-	want := t1.PublicID + ", Greeting helper, was sent back by its code reviewer 1 day ago, and nobody has resumed it. The task is waiting. Is someone still working on it?"
+	want := t1.PublicID + ", Greeting helper, was sent back by its code reviewer, and nothing has happened to it for 26 hours. The task is waiting. Is someone still working on it?"
 	if cp.Question != want {
 		t.Fatalf("question = %q", cp.Question)
 	}

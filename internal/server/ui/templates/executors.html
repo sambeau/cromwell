@@ -53,6 +53,10 @@
     {{template "claim-facts" .}}
 
     {{if eq .State "chat"}}
+    {{if eq .Claim.State "returned"}}
+    {{template "claim-comments" .Comments}}
+    <p class="u-mt-4 t-meta">The code reviewer sent this back to the chat agent, which can resume it by claiming the task again.</p>
+    {{end}}
     <p class="u-mt-4">The chat agent is working on this. Releasing it gives the task to an agent, and keeps what is in the working copy.</p>
     <form class="u-mt-4" method="post" action="/ui/task/release">
       <input type="hidden" name="task" value="{{.TaskID}}">
@@ -114,11 +118,14 @@
 {{end}}
 {{end}}
 
+{{/* A time as "3 hours ago", with the date in its title. */}}
+{{define "time-tag"}}<time datetime="{{.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.Format "2 Jan 2006, 15:04:05"}}">{{agoWords .}}</time>{{end}}
+
 {{/* Who holds the claim and where the work is. */}}
 {{define "claim-facts"}}
 <ul class="claim-facts">
-  <li>Claimed by {{.Holder}} <time datetime="{{.Claim.ClaimedAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.Claim.ClaimedAt.Format "2 Jan 2006, 15:04:05"}}">{{ago .Claim.ClaimedAt}} ago</time>.</li>
-  <li>Last activity: {{.Claim.LastActivity}}, <time datetime="{{.Claim.LastActivityAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.Claim.LastActivityAt.Format "2 Jan 2006, 15:04:05"}}">{{ago .Claim.LastActivityAt}} ago</time>.</li>
+  <li>Claimed by {{.Holder}} {{template "time-tag" .Claim.ClaimedAt}}.</li>
+  <li>Last activity: {{.Activity}}, {{template "time-tag" .Claim.LastActivityAt}}.</li>
   {{if .Path}}<li>The working copy is <code>{{.Path}}</code>{{if .Branch}}, on the branch <code>{{.Branch}}</code>{{end}}.</li>{{end}}
   {{if or .SpecURL .PlanURL}}
   <li>Read {{if .SpecURL}}<a href="{{.SpecURL}}">the spec</a>{{end}}{{if and .SpecURL .PlanURL}}, {{end}}{{if .PlanURL}}<a href="{{.PlanURL}}">the plan</a>{{end}} and this task above.</li>

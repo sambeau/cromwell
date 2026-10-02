@@ -150,6 +150,9 @@ type submitted struct {
 	Committed bool   // whether Subutai made a commit (and so records it)
 	Model     string // the code review's model
 	Role      string
+	// ChatReviewer is true when the model was chosen by the project's reviewer
+	// for the chat agent's work and differs from the usual one (FR-8.4).
+	ChatReviewer bool
 }
 
 // released is what prepareRelease did in git.
@@ -160,9 +163,7 @@ type released struct {
 
 // claimable is what differs by kind of claimed item (SPEC-020 FR-2.10). The
 // record, the activity rules, the sweep and the execution record are the
-// claim service's. Compared with the spec's sketch, refusal takes who is
-// asking, onClaim and onSubmit return what the service reports, and
-// onRelease takes who released.
+// claim service's.
 type claimable interface {
 	// load returns the item, the feature whose working copy it holds (or
 	// nil), and the working copy's path.
@@ -279,12 +280,31 @@ func workingCopyDirty(path string) (bool, error) {
 	return strings.TrimSpace(out) != "", err
 }
 
-func headOf(path string) string {
-	out, err := gitIn(path, "rev-parse", "HEAD")
-	if err != nil {
-		return ""
+// specRevisedNotice is what a submit says while the feature's spec is being
+// revised.
+const specRevisedNotice = "The spec is being revised; the reviewer reviews this against the approved spec."
+
+// claimActivityWords says what a claim's last activity was, in words a person
+// reads: the panel, the Inbox and MCP all use it, so a machine word such as
+// sent_back is never printed.
+func claimActivityWords(activity string) string {
+	switch activity {
+	case "claimed":
+		return "claimed"
+	case "renewed":
+		return "renewed"
+	case "resumed":
+		return "resumed"
+	case "submitted":
+		return "submitted"
+	case "sent_back":
+		return "sent back by its code reviewer"
+	case "kept":
+		return "kept by a person"
+	case "worktree":
+		return "a change in the working copy"
 	}
-	return strings.TrimSpace(out)
+	return "something else"
 }
 
 // ---- Resolving what is claimed ----
@@ -296,7 +316,7 @@ const onlyTasksSentence = "Only tasks can be claimed. Verification is always don
 func (s *Server) resolveClaimRef(ctx context.Context, ref string) (claimable, uuid.UUID, error) {
 	r, ok := ident.Parse(ref)
 	if !ok || r.Shape != ident.ShapeTask {
-		return nil, uuid.Nil, &ClaimRefusal{Sentence: onlyTasksSentence}
+		return nil, uuid.Nil, refuse("%s", onlyTasksSentence)
 	}
 	t, err := store.TaskByPublicID(ctx, s.Store.Pool, r.ID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -342,6 +362,12 @@ func (s *Server) ClaimWork(ctx context.Context, ref string, who Claimant) (*Clai
 }
 
 func (s *Server) claimLocked(ctx context.Context, c claimable, t *claimTarget, who Claimant) (*ClaimResult, error) {
+	// The watch comes first, as it does before a completion, a submit and a
+	// release (FR-5.7): a commit made just before this claim is judged as
+	// unclaimed work, and not swallowed because a claim has opened.
+	if t.Worktree != nil {
+		s.watchBranchLogged(ctx, t.Worktree)
+	}
 	// Step 1, outside any transaction: the branch head and the working copy's
 	// fingerprint.
 	var head, seen string
@@ -383,7 +409,7 @@ func (s *Server) claimLocked(ctx context.Context, c claimable, t *claimTarget, w
 			res.Renewed = true
 		case who.holds(cur) && cur.State == lifecycle.ClaimReturned:
 			if r := c.refusal(ctx, tx, fresh, who, true); r != "" {
-				return &ClaimRefusal{Sentence: r}
+				return refuse("%s", r)
 			}
 			if err := store.TransitionClaim(ctx, tx, cur, lifecycle.ClaimEventResume, who.Actor, "resumed", nil); err != nil {
 				return err
@@ -394,7 +420,7 @@ func (s *Server) claimLocked(ctx context.Context, c claimable, t *claimTarget, w
 			res.Resumed = true
 		default:
 			if r := c.refusal(ctx, tx, fresh, who, false); r != "" {
-				return &ClaimRefusal{Sentence: r}
+				return refuse("%s", r)
 			}
 			var fid *uuid.UUID
 			if fresh.Feature != nil {
@@ -545,7 +571,7 @@ func (s *Server) submitLocked(ctx context.Context, c claimable, t *claimTarget, 
 		return nil, err
 	}
 	if cur == nil || !who.holds(cur) || cur.State != lifecycle.ClaimOpen {
-		return nil, &ClaimRefusal{Sentence: s.submitRefusal(ctx, t, who, cur)}
+		return nil, refuse("%s", s.submitRefusal(ctx, t, who, cur))
 	}
 	if t.Path == "" {
 		return nil, refuse("%s's working copy is missing. A person needs to retry creating it from the Inbox.", t.Feature.PublicID)
@@ -583,7 +609,7 @@ func (s *Server) submitLocked(ctx context.Context, c claimable, t *claimTarget, 
 			return err
 		}
 		if err != nil || held.ID != cur.ID || held.State != lifecycle.ClaimOpen {
-			return &ClaimRefusal{Sentence: s.submitRefusal(ctx, t, who, nilIfNotFound(held, err))}
+			return refuse("%s", s.submitRefusal(ctx, t, who, claimOrNil(held, err)))
 		}
 		if sub.Committed {
 			if err := store.RecordWorktreeCommit(ctx, tx, t.Worktree.ID, sub.Commit, "submit"); err != nil {
@@ -591,10 +617,10 @@ func (s *Server) submitLocked(ctx context.Context, c claimable, t *claimTarget, 
 			}
 		}
 		if err := store.TransitionClaim(ctx, tx, held, lifecycle.ClaimEventSubmit, who.Actor, "submitted",
-			map[string]any{"summary": summary, "commit": sub.Commit}); err != nil {
+			map[string]any{"summary": summary, "commit": sub.Commit, "model": sub.Model, "chat_reviewer": sub.ChatReviewer}); err != nil {
 			return err
 		}
-		if err := store.MarkExecutionSubmitted(ctx, tx, struct{ DispatchID, ClaimID *uuid.UUID }{ClaimID: &held.ID}); err != nil {
+		if err := store.MarkClaimExecutionSubmitted(ctx, tx, held.ID); err != nil {
 			return err
 		}
 		res.ReviewRunID, err = c.onSubmit(ctx, tx, t, held, sub)
@@ -610,12 +636,14 @@ func (s *Server) submitLocked(ctx context.Context, c claimable, t *claimTarget, 
 		return nil, err
 	}
 	if stale, _ := s.specBeingRevised(ctx, t.Feature.ID); stale {
-		res.Notice = "The spec is being revised; the reviewer reviews this against the approved spec."
+		res.Notice = specRevisedNotice
 	}
 	return &res, nil
 }
 
-func nilIfNotFound(c *store.Claim, err error) *store.Claim {
+// claimOrNil is the claim a lookup returned, or nil when it returned an error
+// (a claim that is gone reads as no claim).
+func claimOrNil(c *store.Claim, err error) *store.Claim {
 	if err != nil {
 		return nil
 	}
@@ -869,8 +897,6 @@ func (s *Server) executorLine(ctx context.Context, q store.Querier, t *store.Tas
 
 func sameExecutor(a, b store.Execution) bool { return a.Kind == b.Kind && a.Actor == b.Actor }
 
-func execWho(e store.Execution) string { return whoWords(e.Kind, e.Actor, e.Model) }
-
 // executorSentence is executorLine without the reads. It names the latest
 // round's executor, an earlier round's when it differs, and a released claim's
 // whose work an agent finished (FR-1.4). An inferred row adds nothing: before
@@ -880,7 +906,7 @@ func executorSentence(t *store.Task, execs []store.Execution, claim *store.Claim
 		return ExecutorLine{Sentence: "Nobody has started this task yet.", Measured: true}
 	}
 	last := execs[len(execs)-1]
-	out := ExecutorLine{Kind: last.Kind, Who: execWho(last), Model: last.Model, Measured: true}
+	out := ExecutorLine{Kind: last.Kind, Who: whoWords(last.Kind, last.Actor, last.Model), Model: last.Model, Measured: true}
 	if last.DispatchID != nil {
 		out.RunID = last.DispatchID.String()
 	}
@@ -912,12 +938,12 @@ func executorSentence(t *store.Task, execs []store.Execution, claim *store.Claim
 	}
 	switch {
 	case earlierUnfinished != nil:
-		lead = verb + out.Who + ", from work " + execWho(*earlierUnfinished) + " started"
+		lead = verb + out.Who + ", from work " + whoWords(earlierUnfinished.Kind, earlierUnfinished.Actor, earlierUnfinished.Model) + " started"
 	case previous != nil && !sameExecutor(*previous, last):
 		if active {
-			lead = "Being reworked by " + out.Who + ", after " + execWho(*previous) + " implemented it"
+			lead = "Being reworked by " + out.Who + ", after " + whoWords(previous.Kind, previous.Actor, previous.Model) + " implemented it"
 		} else {
-			lead = "Implemented by " + execWho(*previous) + ", then reworked by " + out.Who
+			lead = "Implemented by " + whoWords(previous.Kind, previous.Actor, previous.Model) + ", then reworked by " + out.Who
 		}
 	default:
 		lead = verb + out.Who
@@ -932,24 +958,4 @@ func executorSentence(t *store.Task, execs []store.Execution, claim *store.Claim
 	}
 	out.Sentence = lead + "."
 	return out
-}
-
-// agoWords says how long ago a time was: "3 hours ago".
-func agoWords(t, now time.Time) string {
-	d := now.Sub(t)
-	plural := func(n int, unit string) string {
-		if n == 1 {
-			return fmt.Sprintf("1 %s ago", unit)
-		}
-		return fmt.Sprintf("%d %ss ago", n, unit)
-	}
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return plural(int(d.Minutes()), "minute")
-	case d < 24*time.Hour:
-		return plural(int(d.Hours()), "hour")
-	}
-	return plural(int(d.Hours()/24), "day")
 }

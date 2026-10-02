@@ -307,6 +307,13 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 	default:
 		return false, "worker-cap", nil
 	}
+	// The slot is the worker's once it starts; every other exit gives it back.
+	started := false
+	defer func() {
+		if !started {
+			<-dp.workers
+		}
+	}()
 
 	// Claim, freezing the price snapshot (O-4). An implementer starts through
 	// StartImplementDispatch, which re-checks every refusal under the
@@ -324,15 +331,12 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 			return err
 		})
 		if err != nil {
-			<-dp.workers
 			return false, "claim-lost", err
 		}
 		switch res.Outcome {
 		case store.StartQueued:
-			<-dp.workers
 			return false, res.Reason, nil
 		case store.StartCancelled:
-			<-dp.workers
 			return false, "cancelled", nil
 		case store.StartStarted:
 			claimed = true
@@ -345,10 +349,10 @@ func (dp *Dispatcher) admit(ctx context.Context, cfg *config.Config, d *store.Di
 		})
 	}
 	if err != nil || !claimed {
-		<-dp.workers
 		return false, "claim-lost", err
 	}
 
+	started = true
 	dp.wg.Add(1)
 	go func() {
 		defer dp.wg.Done()

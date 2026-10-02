@@ -270,6 +270,7 @@ func unclaimedQuestion(featureID string, c unclaimedContext) string {
 	return strings.Join(parts, " ") + " " + unclaimedTail
 }
 
+// shortHash is a commit's first seven characters, as git shows it.
 func shortHash(h string) string {
 	if len(h) > 7 {
 		return h[:7]

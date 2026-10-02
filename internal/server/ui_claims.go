@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -55,6 +57,8 @@ type claimPanel struct {
 	SpecURL  string
 	PlanURL  string
 	Comments *ReviewComments
+	// Activity says in words what the claim's last activity was.
+	Activity string
 }
 
 // taskRow is one task in the feature page's list (FR-1.6).
@@ -98,44 +102,36 @@ func (s *Server) taskExecutorView(ctx context.Context, t *store.Task) (executorV
 	return v, nil
 }
 
-// chatReviewedWith is the model of the task's latest code review when that
-// review judged the chat agent's work and ran on the project's reviewer for it
-// (FR-8.4). It is "" whenever any part of that is not so: it names a model
-// only when the review's own run shows it.
+// chatReviewedWith is the model of the task's latest code review when it was
+// chosen because the chat agent did the work: the project's reviewer for that
+// work (FR-8.4). It reads what the submit recorded in its audit row, so it
+// names a model only when the rule was applied then and chose a different one,
+// and a later change to config.yaml doesn't rewrite it. It is "" otherwise.
 func (s *Server) chatReviewedWith(ctx context.Context, t *store.Task) string {
 	execs, err := store.ExecutionsFor(ctx, s.Store.Pool, "task", t.ID)
 	if err != nil || len(execs) == 0 {
 		return ""
 	}
 	last := execs[len(execs)-1]
-	if last.Kind != store.WriterChat {
+	if last.Kind != store.WriterChat || last.ClaimID == nil {
 		return ""
 	}
-	runs, err := store.RunsForRef(ctx, s.Store.Pool, "task", t.ID)
+	var raw []byte
+	err = s.Store.Pool.QueryRow(ctx, `
+		SELECT payload FROM audit_events
+		WHERE kind = 'claim.submitted' AND ref_type = 'task' AND ref_id = $1 AND payload->>'claim_id' = $2
+		ORDER BY occurred_at DESC, id DESC LIMIT 1`, t.ID, last.ClaimID.String()).Scan(&raw)
 	if err != nil {
 		return ""
 	}
-	var review *store.RunSummary
-	for i := range runs {
-		if runs[i].Purpose == "review-code" && !runs[i].QueuedAt.Before(last.StartedAt) {
-			review = &runs[i]
-		}
+	var p struct {
+		ChatReviewer bool   `json:"chat_reviewer"`
+		Model        string `json:"model"`
 	}
-	if review == nil || review.Model == "" {
+	if json.Unmarshal(raw, &p) != nil || !p.ChatReviewer {
 		return ""
 	}
-	cfg, err := s.freshConfig()
-	if err != nil {
-		return ""
-	}
-	usual, err := s.modelForPurpose(cfg, "review-code", review.Role)
-	if err != nil {
-		return ""
-	}
-	if cfg.ChatReviewModel(usual) != review.Model {
-		return ""
-	}
-	return review.Model
+	return p.Model
 }
 
 // taskClaimPanel decides which of FR-4.1's six states the task page is in.
@@ -180,12 +176,15 @@ func (s *Server) taskClaimPanel(ctx context.Context, t *store.Task) (claimPanel,
 	if d, _ := s.contractDoc(ctx, t.FeatureID, "dev_plan"); d != nil {
 		p.PlanURL = "/ui/d/" + d.Path
 	}
-	// The reviewer's comments, in a round after the first (FR-4.1, R20-6).
-	if execs, err := store.ExecutionsFor(ctx, s.Store.Pool, "task", t.ID); err == nil && len(execs) > 0 && execs[len(execs)-1].Round > 1 {
+	// The reviewer's comments, in a round after the first (FR-4.1, R20-6). A
+	// send-back records no execution, so the task's own round decides, not the
+	// latest execution's.
+	if round, err := store.CurrentTaskRound(ctx, s.Store.Pool, t.ID); err == nil && round > 1 {
 		if rc, err := s.reviewComments(ctx, s.Store.Pool, t.ID); err == nil {
 			p.Comments = rc
 		}
 	}
+	p.Activity = claimActivityWords(cur.LastActivity)
 	return p, nil
 }
 
@@ -234,6 +233,12 @@ func (s *Server) featureTaskRows(ctx context.Context, featureID uuid.UUID) ([]ta
 
 // claimTaskFromForm reads the task's public ID from the form and finds it.
 func (s *Server) claimTaskFromForm(w http.ResponseWriter, r *http.Request) (*store.Task, string, bool) {
+	// These routes commit in the working copy and hand work to a paid agent, so
+	// they refuse a post from another site, as the editor does (R16-9).
+	if !sameOrigin(r) {
+		http.Error(w, "Claims are only changed from Subutai's own pages.", http.StatusForbidden)
+		return nil, "", false
+	}
 	if err := r.ParseForm(); err != nil {
 		s.uiError(w, err)
 		return nil, "", false
@@ -261,6 +266,44 @@ func refusalWords(err error) string {
 	return err.Error()
 }
 
+// redirectToTask sends the browser back to the task's page after a claim act
+// that worked, so a refresh doesn't post again. The notice travels as ?done,
+// which taskDoneNotice turns into a fixed sentence; extra carries the few
+// facts the sentence adds.
+func redirectToTask(w http.ResponseWriter, r *http.Request, t *store.Task, done string, extra url.Values) {
+	q := url.Values{"done": {done}}
+	for k, v := range extra {
+		q[k] = v
+	}
+	http.Redirect(w, r, "/ui/t/"+t.ID.String()+"?"+q.Encode(), http.StatusSeeOther)
+}
+
+// taskDoneNotice is the sentence a task page opens with after a claim act
+// (?done), or "" when there is none.
+func taskDoneNotice(t *store.Task, q url.Values) string {
+	label := t.PublicID
+	switch q.Get("done") {
+	case "claimed":
+		return fmt.Sprintf("You claimed %s. This feature's agents wait until you submit it.", label)
+	case "renewed":
+		return fmt.Sprintf("%s is still yours. The claim is renewed.", label)
+	case "resumed":
+		return fmt.Sprintf("You are working on %s again. The reviewer's comments are below.", label)
+	case "submitted":
+		notice := fmt.Sprintf("You submitted %s for code review.", label)
+		if m := q.Get("model"); m != "" {
+			notice += fmt.Sprintf(" The review runs on %s.", m)
+		}
+		if q.Get("revised") != "" {
+			notice += " " + specRevisedNotice
+		}
+		return notice
+	case "released":
+		return fmt.Sprintf("You released %s. An agent can implement it now, and what is in the working copy is kept.", label)
+	}
+	return ""
+}
+
 // handleUITaskClaim claims a task for the person, renews their open claim or
 // resumes one the code reviewer sent back (FR-4.2).
 func (s *Server) handleUITaskClaim(w http.ResponseWriter, r *http.Request) {
@@ -273,14 +316,13 @@ func (s *Server) handleUITaskClaim(w http.ResponseWriter, r *http.Request) {
 		s.renderTaskPage(w, r, t.ID, "", refusalWords(err))
 		return
 	}
-	label := t.PublicID
 	switch {
 	case res.Renewed:
-		s.renderTaskPage(w, r, t.ID, fmt.Sprintf("%s is still yours. The claim is renewed.", label), "")
+		redirectToTask(w, r, t, "renewed", nil)
 	case res.Resumed:
-		s.renderTaskPage(w, r, t.ID, fmt.Sprintf("You are working on %s again. The reviewer's comments are below.", label), "")
+		redirectToTask(w, r, t, "resumed", nil)
 	default:
-		s.renderTaskPage(w, r, t.ID, fmt.Sprintf("You claimed %s. This feature's agents wait until you submit it.", label), "")
+		redirectToTask(w, r, t, "claimed", nil)
 	}
 }
 
@@ -301,14 +343,14 @@ func (s *Server) handleUITaskSubmit(w http.ResponseWriter, r *http.Request) {
 		s.renderTaskPage(w, r, t.ID, "", refusalWords(err))
 		return
 	}
-	notice := fmt.Sprintf("You submitted %s for code review.", t.PublicID)
+	extra := url.Values{}
 	if res.ReviewModel != "" {
-		notice += fmt.Sprintf(" The review runs on %s.", res.ReviewModel)
+		extra.Set("model", res.ReviewModel)
 	}
 	if res.Notice != "" {
-		notice += " " + res.Notice
+		extra.Set("revised", "1")
 	}
-	s.renderTaskPage(w, r, t.ID, notice, "")
+	redirectToTask(w, r, t, "submitted", extra)
 }
 
 // handleUITaskRelease releases the task's claim, the chat agent's or the
@@ -322,6 +364,5 @@ func (s *Server) handleUITaskRelease(w http.ResponseWriter, r *http.Request) {
 		s.renderTaskPage(w, r, t.ID, "", refusalWords(err))
 		return
 	}
-	s.renderTaskPage(w, r, t.ID,
-		fmt.Sprintf("You released %s. An agent can implement it now, and what is in the working copy is kept.", t.PublicID), "")
+	redirectToTask(w, r, t, "released", nil)
 }

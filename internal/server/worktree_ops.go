@@ -198,7 +198,11 @@ func (s *Server) ReconcileWorktrees(ctx context.Context) error {
 		if gerr := s.addWorktree(wt.Path, wt.Branch); gerr != nil {
 			s.Log.Error("worktree reconcile", "feature", wt.FeatureID, "err", gerr)
 		} else {
-			s.startWatching(ctx, &wt) // SPEC-020 FR-5.9
+			// A branch that already has a watched head keeps it, so commits made
+			// elsewhere while the directory was gone are still judged.
+			if wt.WatchedHead == "" {
+				s.startWatching(ctx, &wt) // SPEC-020 FR-5.9
+			}
 			s.Log.Info("worktree re-created on boot", "feature", wt.FeatureID, "branch", wt.Branch)
 		}
 	}

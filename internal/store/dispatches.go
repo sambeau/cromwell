@@ -397,27 +397,66 @@ func (s *Store) RecordToolCall(ctx context.Context, dispatchID uuid.UUID, seq in
 // tasks (SPEC-020 SD-4).
 const QueueReasonClaimOpen = "A person or the chat agent is working in this feature's working copy."
 
+// QueueReasonCompletionPending is why the governor holds a feature's implement
+// dispatches while an implementer's finished work is still to be committed.
+const QueueReasonCompletionPending = "An agent's finished work in this feature's working copy is being committed."
+
+// PendingCompletionWindow is how long after an implementer succeeds its
+// completion may take to commit before the work no longer holds the working
+// copy: a completion that has failed for good mustn't hold the feature for
+// ever, or keep a person from rescuing the task.
+const PendingCompletionWindow = 15 * time.Minute
+
+// ImplementPendingCompletion names the task (its public ID) in the feature
+// whose implementer has succeeded but whose completion hasn't committed yet,
+// or "" when there is none. In that window the working copy holds the
+// implementer's uncommitted work, and nothing else may start in it
+// (SPEC-020 SD-3, SD-4). Only the task's latest implement dispatch counts, so a
+// rework that has been queued doesn't; a task with a claim that hasn't ended
+// doesn't either, as its work is the claimant's.
+func ImplementPendingCompletion(ctx context.Context, q Querier, featureID uuid.UUID) (string, error) {
+	var public string
+	err := q.QueryRow(ctx, `
+		SELECT t.public_id FROM tasks t
+		JOIN LATERAL (
+			SELECT d.state, d.finished_at FROM dispatches d
+			WHERE d.ref_type = 'task' AND d.ref_id = t.id AND d.purpose = 'implement-task'
+			ORDER BY d.queued_at DESC, d.id DESC LIMIT 1) latest ON true
+		WHERE t.feature_id = $1 AND t.state = 'active'
+		  AND latest.state = 'succeeded'
+		  AND latest.finished_at > now() - $2::interval
+		  AND NOT EXISTS (SELECT 1 FROM work_claims c
+		                  WHERE c.ref_type = 'task' AND c.ref_id = t.id AND c.state <> 'ended')
+		ORDER BY latest.finished_at LIMIT 1`, featureID, PendingCompletionWindow.String()).Scan(&public)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return public, err
+}
+
 // ImplementHold says why an implement-task dispatch for the task can't start
 // now, or "" when nothing in its feature stands in the way: another implement
 // dispatch is running on a task of the feature (governor check 3,
-// DESIGN-006 §5), or a claim on the feature is open and holds its working copy
-// (SPEC-020 SD-4). excludeID is the candidate dispatch. It reads without
-// locking, so it is the pool pre-filter; StartImplementDispatch re-checks.
+// DESIGN-006 §5), a claim on the feature is open and holds its working copy
+// (SPEC-020 SD-4), or an implementer has succeeded and its completion hasn't
+// committed (ImplementPendingCompletion). excludeID is the candidate
+// dispatch. It reads without locking, so it is the pool pre-filter;
+// StartImplementDispatch re-checks.
 func ImplementHold(ctx context.Context, q Querier, taskID, excludeID uuid.UUID) (string, error) {
+	var featureID uuid.UUID
 	var running, claimed bool
 	err := q.QueryRow(ctx, `
-		SELECT EXISTS (
+		SELECT t.feature_id, EXISTS (
 			SELECT 1 FROM dispatches d
-			JOIN tasks t ON t.id = d.ref_id AND d.ref_type = 'task'
+			JOIN tasks st ON st.id = d.ref_id AND d.ref_type = 'task'
 			WHERE d.purpose = 'implement-task'
 			  AND d.state = 'running'
 			  AND d.id <> $2
-			  AND t.feature_id = (SELECT feature_id FROM tasks WHERE id = $1)
+			  AND st.feature_id = t.feature_id
 		), EXISTS (
 			SELECT 1 FROM work_claims c
-			WHERE c.state = 'open'
-			  AND c.feature_id = (SELECT feature_id FROM tasks WHERE id = $1)
-		)`, taskID, excludeID).Scan(&running, &claimed)
+			WHERE c.state = 'open' AND c.feature_id = t.feature_id
+		) FROM tasks t WHERE t.id = $1`, taskID, excludeID).Scan(&featureID, &running, &claimed)
 	switch {
 	case err != nil:
 		return "", err
@@ -426,15 +465,14 @@ func ImplementHold(ctx context.Context, q Querier, taskID, excludeID uuid.UUID) 
 	case claimed:
 		return QueueReasonClaimOpen, nil
 	}
+	pending, err := ImplementPendingCompletion(ctx, q, featureID)
+	if err != nil {
+		return "", err
+	}
+	if pending != "" {
+		return QueueReasonCompletionPending, nil
+	}
 	return "", nil
-}
-
-// MutatingDispatchActiveForTask reports whether the task's feature is held
-// against another implement-task dispatch: one is running, or a claim is open
-// (governor check 3, DESIGN-006 §5; SPEC-020 SD-4).
-func MutatingDispatchActiveForTask(ctx context.Context, q Querier, taskID, excludeID uuid.UUID) (bool, error) {
-	reason, err := ImplementHold(ctx, q, taskID, excludeID)
-	return reason != "", err
 }
 
 // Outcomes of StartImplementDispatch.
@@ -604,17 +642,6 @@ func RecentImplementActivity(ctx context.Context, q Querier, taskID uuid.UUID, w
 	return b, err
 }
 
-// RunningImplementInFeature reports whether an implement dispatch is running
-// on any task of the feature.
-func RunningImplementInFeature(ctx context.Context, q Querier, featureID uuid.UUID) (bool, error) {
-	var b bool
-	err := q.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM dispatches d JOIN tasks t ON t.id = d.ref_id AND d.ref_type = 'task'
-		WHERE d.purpose = 'implement-task' AND d.state = 'running' AND t.feature_id = $1)`,
-		featureID).Scan(&b)
-	return b, err
-}
-
 // RequeueUnlessClaimed is RequeueDispatch for the retry sweep and a Retry
 // answer (SPEC-020 FR-2.7): an implement dispatch whose task has a claim that
 // hasn't ended isn't revived but cancelled, with an audit row; a dispatch
@@ -652,8 +679,8 @@ func RequeueUnlessClaimed(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor st
 }
 
 // CancelIfTaskClaimed cancels a failed implement dispatch whose task has a
-// claim that hasn't ended, in the lock order of FR-2.7, and reports whether it
-// did. The retry sweep uses it for a dispatch that has run out of attempts,
+// claim that hasn't ended, in the lock order of FR-2.7, and reports whether the
+// task is claimed (whether or not this call was the one to cancel it). The retry sweep uses it for a dispatch that has run out of attempts,
 // which would otherwise raise a dispatch-failure checkpoint about a task a
 // person or the chat agent is working on.
 func CancelIfTaskClaimed(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor string) (bool, error) {
@@ -677,7 +704,10 @@ func CancelIfTaskClaimed(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor str
 		}
 		return false, err
 	}
-	return d.State == "failed", cancelDispatchTx(ctx, tx, d, actor, "the task is claimed, so no agent works on it")
+	// Claimed is claimed, whatever state the dispatch is in: a claim that
+	// cancelled it since the sweep listed it leaves it cancelled, and the sweep
+	// must still raise nothing.
+	return true, cancelDispatchTx(ctx, tx, d, actor, "the task is claimed, so no agent works on it")
 }
 
 func ignoredRetry(ctx context.Context, tx pgx.Tx, d *Dispatch, actor string) error {

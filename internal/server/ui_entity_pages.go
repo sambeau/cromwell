@@ -244,7 +244,14 @@ func (s *Server) handleUITaskPage(w http.ResponseWriter, r *http.Request) {
 		s.uiNotFound(w, r, "task", r.PathValue("id"))
 		return
 	}
-	s.renderTaskPage(w, r, id, "", "")
+	// A claim act that worked redirects here with ?done (SPEC-020 FR-4.2).
+	notice := ""
+	if r.URL.Query().Get("done") != "" {
+		if t, err := store.GetTask(r.Context(), s.Store.Pool, id); err == nil {
+			notice = taskDoneNotice(t, r.URL.Query())
+		}
+	}
+	s.renderTaskPage(w, r, id, notice, "")
 }
 
 // renderTaskPage renders a task's page, with a notice or an error banner when
