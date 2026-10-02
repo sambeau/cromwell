@@ -86,6 +86,16 @@ type Spike struct {
 	UpdatedAt         time.Time
 }
 
+// Owner is what the spike hangs off (SD-3): its feature when it has one, else
+// its initiative. refType is the ref type of that owner, "feature" or
+// "initiative".
+func (s *Spike) Owner() (refType string, id uuid.UUID) {
+	if s.FeatureID != nil {
+		return "feature", *s.FeatureID
+	}
+	return "initiative", s.InitiativeID
+}
+
 // NewSpike is what CreateSpike needs.
 type NewSpike struct {
 	InitiativeID   uuid.UUID

@@ -148,11 +148,7 @@ func (s *Server) CreateSpike(ctx context.Context, ownerType string, ownerID uuid
 // lists it, after the commit that changed it (presentation only).
 func (s *Server) notifySpikeChanged(sp *store.Spike) {
 	s.notifyEntityChanged("spike", sp.ID)
-	if sp.FeatureID != nil {
-		s.notifyEntityChanged("feature", *sp.FeatureID)
-	} else {
-		s.notifyEntityChanged("initiative", sp.InitiativeID)
-	}
+	s.notifyEntityChanged(sp.Owner())
 }
 
 // ---- Starting (FR-3.3) ----
@@ -312,10 +308,7 @@ func (s *Server) CloseSpike(ctx context.Context, id uuid.UUID, as string, budget
 		if budget == nil {
 			budget = closed.BudgetOverride
 		}
-		ownerType, ownerID := "initiative", closed.InitiativeID
-		if closed.FeatureID != nil {
-			ownerType, ownerID = "feature", *closed.FeatureID
-		}
+		ownerType, ownerID := closed.Owner()
 		follows := closed.ID
 		result, err = s.createSpikeIn(ctx, tx, ownerType, ownerID, closed.Question, budget, &follows, actor, "ui")
 		return err
@@ -639,8 +632,8 @@ func (s *Server) validateFindings(text string) error {
 
 // spikeOwnerPath is the owner's path, for the findings' front matter.
 func (s *Server) spikeOwnerPath(ctx context.Context, sp *store.Spike) string {
-	if sp.FeatureID != nil {
-		if f, err := store.GetFeature(ctx, s.Store.Pool, *sp.FeatureID); err == nil {
+	if ownerType, ownerID := sp.Owner(); ownerType == "feature" {
+		if f, err := store.GetFeature(ctx, s.Store.Pool, ownerID); err == nil {
 			if p, err := s.featurePath(ctx, f); err == nil {
 				return p
 			}

@@ -37,10 +37,7 @@ const spikeWorkingCopy = "This is a throwaway copy of the project's main line. N
 // committed (FR-4.1).
 func (s *Server) spikeOwnerSection(ctx context.Context, sp *store.Spike, worktree string) string {
 	var b strings.Builder
-	ownerType, ownerID := "initiative", sp.InitiativeID
-	if sp.FeatureID != nil {
-		ownerType, ownerID = "feature", *sp.FeatureID
-	}
+	ownerType, ownerID := sp.Owner()
 	if ownerType == "feature" {
 		if f, err := store.GetFeature(ctx, s.Store.Pool, ownerID); err == nil {
 			fmt.Fprintf(&b, "This spike was written down on the %s %s, %s.\n", bugOrFeature(f), f.PublicID, f.Name)
