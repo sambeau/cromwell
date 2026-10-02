@@ -49,6 +49,10 @@ func answerOptions(kind string) []string {
 		return nil
 	case "budget":
 		return []string{"proceed"}
+	case "spike-code-kept":
+		// Nothing to run: the branch is the person's to delete or keep
+		// (SPEC-021 FR-6.3), so the one answer says they have looked.
+		return []string{"dealt_with"}
 	default:
 		// worktree-failure, merge-conflict, config-error, document-integrity:
 		// manual-fix checkpoints the engine takes no follow-up action on;

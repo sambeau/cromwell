@@ -1,0 +1,388 @@
+{{/* Spikes (SPEC-021): the spike's page, the Spikes section and New spike
+     dialog on an initiative's or feature's page, the start screen and the
+     list. A spike is a question with a budget. A person writes it down and
+     starts it here; nothing else starts one. */}}
+
+{{/* A spike's state as a mark and a word. */}}
+{{define "spike-badge"}}<span class="badge" data-state="{{.Key}}"><svg class="icon icon-xs" aria-hidden="true"><use href="#i-state-{{.Icon}}"/></svg><span class="badge-text">{{.Label}}</span></span>{{end}}
+
+{{/* ---------- A list of spikes: on an owner's page and on /ui/spikes ---------- */}}
+
+{{define "spike-rows"}}
+<div class="rows">
+  {{range .}}
+  <a class="row row--edge" data-state="{{.Badge.Key}}" href="{{.URL}}">
+    <svg class="icon icon-sm icon-entity" data-entity="spike" aria-hidden="true"><use href="#i-spike"/></svg>
+    <span class="row-main">
+      <span class="row-title">{{template "ident" .PublicID}}{{.Question}}</span>
+      <span class="row-sub">{{.Tokens}}{{if .Owner}}. On {{.Owner}}.{{end}}</span>
+    </span>
+    <span class="row-end">{{template "spike-badge" .Badge}}</span>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{/* ---------- On an initiative's or feature's page (FR-8.2) ---------- */}}
+
+{{define "spike-list"}}
+{{if or .Spikes .CanCreateSpike}}
+<details class="section" id="spikes" open>
+  <summary>
+    <svg class="icon icon-sm disclosure-twisty" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+    <svg class="icon icon-sm icon-entity" data-entity="spike" aria-hidden="true"><use href="#i-spike"/></svg>
+    <span class="section-title">Spikes</span>
+    <span class="section-summary"><span class="count-pill">{{len .Spikes}}</span></span>
+  </summary>
+  <div class="section-body section-body--flush">
+    {{if .Spikes}}{{template "spike-rows" .Spikes}}
+    {{else}}<p class="t-meta spike-empty">No spikes yet. A spike is a question with a budget, which an agent works on in a throwaway copy of the code.</p>{{end}}
+    {{if .CanCreateSpike}}
+    <div class="spike-new">
+      <button class="btn btn--sm" type="button" data-open-dialog="dlg-new-spike">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg>New spike…</button>
+    </div>
+    {{end}}
+  </div>
+</details>
+{{end}}
+{{if .CanCreateSpike}}
+<dialog class="modal" id="dlg-new-spike" aria-labelledby="t-new-spike">
+  <div class="modal-head">
+    <h2 class="modal-title" id="t-new-spike"><svg class="icon icon-md icon-entity" data-entity="spike" aria-hidden="true"><use href="#i-spike"/></svg> New spike</h2>
+    <button class="btn btn--ghost btn--sm modal-close" type="button" data-close-dialog aria-label="Close">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <form method="post" action="/ui/spikes">
+    <div class="modal-body">
+      <div class="form">
+        <p class="t-meta">A spike on {{.Title}} writes down a question to find out. Nothing runs until you start it, and you see its budget first.</p>
+        <div class="field">
+          <label class="field-label" for="spike-question">The question</label>
+          <textarea class="textarea" id="spike-question" name="question" rows="3" maxlength="500" required placeholder="Does the payments API accept a refund after settlement?"></textarea>
+          <p class="field-hint">One sentence saying what it should find out, at most 500 characters. It can't be edited afterwards: a different question is a different spike.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="spike-budget">Budget in tokens <span class="t-meta">(optional)</span></label>
+          <input class="input" id="spike-budget" name="budget" inputmode="numeric" placeholder="Leave empty for the project's default">
+          <p class="field-hint">The run stops when it reaches this many tokens. You can change it when you start the spike.</p>
+        </div>
+      </div>
+      <input type="hidden" name="owner_type" value="{{.RefType}}">
+      <input type="hidden" name="owner_id" value="{{.ID}}">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn--primary" type="submit">Write the spike down</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+{{end}}
+
+{{/* ---------- /ui/spikes (FR-8.5) ---------- */}}
+
+{{define "page-spikes"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md icon-entity" data-entity="spike" aria-hidden="true"><use href="#i-spike"/></svg></span>
+    <div class="page-head-titles">
+      <h1 class="t-page">Spikes</h1>
+      <div class="page-head-meta"><span class="count-pill">{{.Open}}</span> <span class="t-meta">open</span></div>
+    </div>
+  </div>
+  <p class="page-lede">Every spike in the project, open ones first. A spike is a question with a budget: an agent works on it in a throwaway copy of the code, and its findings wait here for you to read.</p>
+</div>
+<div class="u-mt-4">
+{{if .Rows}}
+  <section class="panel"><div class="panel-body panel-body--flush">{{template "spike-rows" .Rows}}</div></section>
+{{else}}
+  <section class="panel"><div class="panel-body">
+    <div class="empty">
+      <span class="empty-mark"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-spike"/></svg></span>
+      <p class="empty-title">There are no spikes yet</p>
+      <p class="empty-text">Write one down from an initiative's or a feature's page, with the question you want answered.</p>
+    </div>
+  </div></section>
+{{end}}
+</div>
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+{{define "frag-spikes-line"}}{{if .}}
+<div class="banner banner--info" role="status">
+  <svg class="icon icon-md icon-entity" data-entity="spike" aria-hidden="true"><use href="#i-spike"/></svg>
+  <div>{{.}} <a href="/ui/spikes">Open the spikes</a>.</div>
+</div>
+{{end}}{{end}}
+
+{{/* ---------- The spike's page (FR-8.1) ---------- */}}
+
+{{define "page-spike"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md icon-entity" data-entity="spike" aria-hidden="true"><use href="#i-spike"/></svg></span>
+    <div class="page-head-titles">
+      <h1 class="t-page">{{template "ident" .PublicID}}{{.Question}}</h1>
+      <div class="page-head-meta">{{template "spike-badge" .Badge}}
+        {{if .OwnerURL}}<span class="t-meta">On <a href="{{.OwnerURL}}">{{.OwnerName}}</a></span>{{end}}</div>
+    </div>
+  </div>
+</div>
+
+{{if .Notice}}
+<div class="banner banner--success" role="status">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-check"/></svg><div>{{.Notice}}</div></div>
+{{end}}
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
+
+<section class="panel u-mt-4" id="spike-state">
+  <div class="panel-body">
+    <p id="spike-state-sentence">{{.StateSentence}}</p>
+    {{if .Follows}}<p class="t-meta u-mt-2">It asks again after <a href="{{.Follows.URL}}">{{.Follows.PublicID}}</a>.</p>{{end}}
+    {{if .FollowBy}}<p class="t-meta u-mt-2">It was asked again as <a href="{{.FollowBy.URL}}">{{.FollowBy.PublicID}}</a>.</p>{{end}}
+    {{if .SD12}}<p class="u-mt-2">{{.SD12}}</p>{{end}}
+  </div>
+</section>
+
+<section class="panel u-mt-4" id="spike-tokens">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-tokens"/></svg> Tokens</h2>
+  </div>
+  <div class="panel-body">
+    {{if .HasBudget}}
+    <div class="bar"><div class="bar-fill{{if .Running}} bar-fill--running{{end}}" style="width:{{.Pct}}%"></div></div>
+    <p class="u-mt-2" id="spike-tokens-line">{{.TokensLine}}</p>
+    {{if .OverLine}}<p class="t-meta">{{.OverLine}}</p>{{end}}
+    <p class="t-meta">{{.TokensNote}}</p>
+    {{else}}
+    <p id="spike-budget-line">{{.BudgetLine}}</p>
+    {{end}}
+  </div>
+</section>
+
+{{if .Running}}
+<section class="panel u-mt-4" id="spike-draft">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-edit"/></svg> The findings so far</h2>
+  </div>
+  <div class="panel-body">
+    {{if .Draft}}
+    <p class="t-meta">The agent last saved this on {{.DraftWhen}}. If the run stops now, this is what is kept.</p>
+    <pre class="transcript-pre u-mt-2">{{.Draft}}</pre>
+    {{else}}
+    <p>The agent hasn't saved any findings yet.</p>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+{{if .FindingsURL}}
+<section class="panel u-mt-4" id="spike-findings">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-document"/></svg> Findings</h2>
+  </div>
+  <div class="panel-body">
+    <p><a href="{{.FindingsURL}}">{{.FindingsTitle}}</a> {{template "state-badge" .FindingsState}}</p>
+    <p class="t-meta">Read them on their page. Closing the spike doesn't approve them; they keep their own lifecycle.</p>
+  </div>
+</section>
+{{end}}
+
+{{if .WorktreeLine}}<p class="t-meta u-mt-4" id="spike-worktree">{{.WorktreeLine}}</p>{{end}}
+
+{{/* The actions for the state (FR-1.4, FR-3.1, FR-7). */}}
+{{if .CanStart}}
+<section class="panel u-mt-4" id="spike-actions">
+  <div class="panel-body">
+    <div class="action-row">
+      <a class="btn btn--primary" href="/ui/spikes/start?spike={{.ID}}">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Start this spike…</a>
+      <form method="post" action="/ui/spikes/close">
+        <input type="hidden" name="spike" value="{{.ID}}">
+        <input type="hidden" name="as" value="unanswered">
+        <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Close without running</button>
+      </form>
+    </div>
+    <p class="t-meta u-mt-2">Starting shows you who will run it and its budget first. Closing without running records that nobody needs the answer, and keeps the question.</p>
+  </div>
+</section>
+{{end}}
+{{if .CanCloseRun}}
+<section class="panel u-mt-4" id="spike-actions">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-approve"/></svg> What happens now</h2>
+  </div>
+  <div class="panel-body">
+    <p class="t-meta">Read the findings, then say whether they answer the question.</p>
+    <div class="action-row u-mt-2">
+      <form method="post" action="/ui/spikes/close">
+        <input type="hidden" name="spike" value="{{.ID}}">
+        <input type="hidden" name="as" value="answered">
+        <button class="btn btn--primary" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-approve"/></svg>The question is answered</button>
+      </form>
+      <form method="post" action="/ui/spikes/close">
+        <input type="hidden" name="spike" value="{{.ID}}">
+        <input type="hidden" name="as" value="unanswered">
+        <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg>Close without an answer</button>
+      </form>
+    </div>
+    <form method="post" action="/ui/spikes/close" class="u-mt-4 triage-with-field">
+      <input type="hidden" name="spike" value="{{.ID}}">
+      <input type="hidden" name="as" value="again">
+      <label class="field-label" for="again-budget">A new budget, in tokens</label>
+      <input class="input" id="again-budget" name="budget" inputmode="numeric"{{if .AgainBudget}} value="{{.AgainBudget}}"{{end}}>
+      <button class="btn" type="submit"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-refresh"/></svg>Ask again with a new budget</button>
+      <p class="field-hint">This closes the spike without an answer and writes down a new one with the same question and the budget you give. Nothing starts until you press Start on its screen. The new run is shown what this one found.</p>
+    </form>
+  </div>
+</section>
+{{end}}
+
+{{if .RunURL}}
+<section class="panel u-mt-4" id="spike-run">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg> The run</h2>
+  </div>
+  <div class="panel-body">
+    <p><a href="{{.RunURL}}">Open the run and its transcript.</a> {{.RunNote}}</p>
+  </div>
+</section>
+{{end}}
+
+<section class="panel u-mt-4" id="spike-timeline">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-activity"/></svg> Its timeline</h2>
+  </div>
+  <div class="panel-body">
+    <ul class="activity">
+      {{range .Timeline}}
+      <li class="activity-row">
+        <span class="activity-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-{{.Icon}}"/></svg></span>
+        <span class="activity-text">{{if .URL}}<a href="{{.URL}}">{{.Label}}</a>{{else}}{{.Label}}{{end}} <span class="u-dim">{{ago .At}} ago</span></span>
+      </li>
+      {{end}}
+    </ul>
+  </div>
+</section>
+{{end}}
+{{template "pagebottom" .}}{{end}}
+
+{{/* ---------- The start screen (FR-3.2) ---------- */}}
+
+{{define "page-spike-start"}}{{template "pagetop" .}}
+{{with .Data}}
+<div class="page-head">
+  <div class="page-head-top">
+    <span class="page-head-icon"><svg class="icon icon-md" aria-hidden="true"><use href="#i-run"/></svg></span>
+    <div class="page-head-titles">
+      <h1 class="t-page">Start {{.PublicID}}</h1>
+      <div class="page-head-meta"><span class="t-meta">Starting spends tokens. Check who will run it, what it will be given and its budget before you commit.</span></div>
+    </div>
+  </div>
+</div>
+
+{{if .Error}}
+<div class="banner banner--error" role="alert">
+  <svg class="icon icon-md" aria-hidden="true"><use href="#i-x-circle"/></svg><div>{{.Error}}</div></div>
+{{end}}
+
+<section class="panel u-mt-4">
+  <div class="panel-head">
+    <h2 class="panel-title"><svg class="icon icon-md icon-entity" data-entity="spike" aria-hidden="true"><use href="#i-spike"/></svg> The question</h2>
+  </div>
+  <div class="panel-body">
+    <p id="start-question">{{.Question}}</p>
+    {{if .OwnerURL}}<p class="t-meta u-mt-2">On <a href="{{.OwnerURL}}">{{.OwnerName}}</a>. <a href="{{.SpikePath}}">Back to the spike.</a></p>{{end}}
+  </div>
+</section>
+
+{{if .Started}}
+<section class="panel u-mt-4"><div class="panel-body">
+  <p id="start-already">This spike has already been started. <a href="{{.SpikePath}}">Open its page.</a></p>
+</div></section>
+{{else}}
+<form method="post" action="/ui/spikes/start">
+  <input type="hidden" name="spike" value="{{.ID}}">
+
+  <section class="panel u-mt-4">
+    <div class="panel-head">
+      <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-agent"/></svg> Who will run it</h2>
+    </div>
+    <div class="panel-body">
+      {{if .Refusal}}
+      <p class="action-reason" id="start-runner"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg><span>{{.Refusal}}</span></p>
+      {{else}}
+      <p id="start-runner">{{.Runner}}</p>
+      {{end}}
+      <p class="t-meta u-mt-2" id="start-slots">{{.Free}} of {{.Workers}} agent slots are free now ({{.Running}} running). It waits in the queue if none is free.</p>
+      <p class="t-meta" id="start-forecast">{{.Forecast}}</p>
+    </div>
+  </section>
+
+  <section class="panel u-mt-4">
+    <div class="panel-head">
+      <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-tokens"/></svg> The budget</h2>
+    </div>
+    <div class="panel-body">
+      <div class="field">
+        <label class="field-label" for="start-budget">Budget in tokens</label>
+        <input class="input" id="start-budget" name="budget" inputmode="numeric" value="{{.Budget}}" required>
+        {{if .BudgetNote}}<p class="field-hint" id="start-budget-note">{{.BudgetNote}}</p>{{end}}
+      </div>
+      <p class="t-meta">The run stops when it reaches this many tokens. Whatever findings it has saved by then are written up, and you decide whether to ask again.</p>
+    </div>
+  </section>
+
+  <section class="panel u-mt-4">
+    <div class="panel-head">
+      <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-document"/></svg> What the agent will be given</h2>
+    </div>
+    <div class="panel-body">
+      <p class="t-eyebrow">The question</p>
+      <p>{{.Question}}</p>
+      <p class="t-eyebrow u-mt-4">The decisions and conventions that apply</p>
+      {{if .Block}}
+      <pre class="transcript-pre" id="start-decisions">{{.Block}}</pre>
+      {{else}}
+      <p id="start-decisions">No decisions apply here.</p>
+      {{end}}
+      {{if .PrevBody}}
+      <p class="t-eyebrow u-mt-4">What the last spike found</p>
+      <p class="t-meta">This spike asks again after {{.PrevID}}, so its agent starts from these findings.</p>
+      <pre class="transcript-pre" id="start-previous">{{.PrevBody}}</pre>
+      {{end}}
+      {{if .Tools}}
+      <p class="t-eyebrow u-mt-4">Its tools</p>
+      <p id="start-tools">{{range $i, $t := .Tools}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</p>
+      {{end}}
+    </div>
+  </section>
+
+  <section class="panel u-mt-4">
+    <div class="panel-head">
+      <h2 class="panel-title"><svg class="icon icon-md" aria-hidden="true"><use href="#i-code"/></svg> Where it works</h2>
+    </div>
+    <div class="panel-body">
+      <p id="start-worktree">It works in a throwaway copy of the code, made from the current main line. Nothing it writes there is kept: the copy is discarded when the run ends, and Subutai never merges it.</p>
+    </div>
+  </section>
+
+  <section class="panel u-mt-4">
+    <div class="panel-body">
+      <div class="action-row">
+        <a class="btn" href="{{.SpikePath}}">Cancel</a>
+        <button class="btn btn--primary" type="submit" {{if not .CanStart}}disabled aria-describedby="start-runner"{{end}}>
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-run"/></svg>Start this spike</button>
+      </div>
+    </div>
+  </section>
+</form>
+{{end}}
+{{end}}
+{{template "pagebottom" .}}{{end}}

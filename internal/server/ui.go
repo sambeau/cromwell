@@ -438,6 +438,8 @@ func verbLabel(v any) string {
 		return "Carry on"
 	case "pause":
 		return "Pause"
+	case "dealt_with":
+		return "I've dealt with it"
 	default:
 		return stateLabel(v)
 	}
@@ -482,6 +484,8 @@ func verbConsequence(v any) string {
 		return "The run picks up where it left off."
 	case "pause":
 		return "The work is held where it is until you come back to it."
+	case "dealt_with":
+		return "The question is cleared. Subutai doesn't delete the branch itself, so check it before you answer."
 	default:
 		return "The agent resumes with your answer."
 	}
@@ -697,6 +701,16 @@ func (s *Server) uiRoutes(mux *http.ServeMux) {
 	// triage it from the queue or its own page.
 	mux.HandleFunc("POST /ui/bugs", s.handleUIReportBug)
 	mux.HandleFunc("POST /ui/bugs/triage", s.handleUITriageDecide)
+	// Spikes (SPEC-021): the page, the list, the start screen and the three
+	// acts. Starting and closing are web UI only (SD-5, SD-10); no /api route
+	// does either.
+	mux.HandleFunc("GET /ui/s/{id}", s.handleUISpike)
+	mux.HandleFunc("GET /ui/spikes", s.handleUISpikes)
+	mux.HandleFunc("GET /ui/spikes/start", s.handleUISpikeStart)
+	mux.HandleFunc("POST /ui/spikes/start", s.handleUISpikeStartPost)
+	mux.HandleFunc("POST /ui/spikes", s.handleUISpikeCreate)
+	mux.HandleFunc("POST /ui/spikes/close", s.handleUISpikeClose)
+	mux.HandleFunc("GET /ui/frag/spikes-line", s.handleFragSpikesLine)
 	mux.HandleFunc("POST /ui/feature/new", s.handleEntityFeatureCreate)
 	mux.HandleFunc("POST /ui/initiative/new", s.handleEntityInitiativeCreate)
 	mux.HandleFunc("POST /ui/initiative/archive", s.handleEntityInitiativeArchive)

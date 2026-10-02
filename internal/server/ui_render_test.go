@@ -224,6 +224,13 @@ func TestRenderedTemplatesCarryNoCurrency(t *testing.T) {
 			t.Fatal(err)
 		}
 		src := comments.ReplaceAllString(string(body), "")
+		if e.Name() == "spike.html" {
+			// A spike's budget is a number of tokens (SPEC-021 SD-6), the
+			// one budget the human surface has. Its page says so in the
+			// spec's own words, so the word is allowed there; the currency
+			// symbol and money helpers still aren't.
+			src = regexp.MustCompile(`(?i)\bbudget\b`).ReplaceAllString(src, "")
+		}
 		for _, re := range banned {
 			if m := re.FindString(src); m != "" {
 				t.Errorf("template %s contains %q; money must not appear on the human surface (D-4)", e.Name(), m)
