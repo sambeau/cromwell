@@ -126,8 +126,8 @@ func StopOutcome(reason string) json.RawMessage {
 // the budget enforces.
 func BudgetTokens(u provider.Usage) int64 { return u.Input + u.Output + u.CacheRead + u.CacheWrite }
 
-// commas formats n with thousands separators: 40,000.
-func commas(n int64) string {
+// Thousands formats n with thousands separators: 40,000.
+func Thousands(n int64) string {
 	s := fmt.Sprint(n)
 	for i := len(s) - 3; i > 0 && s[i-1] != '-'; i -= 3 {
 		s = s[:i] + "," + s[i:]
@@ -559,6 +559,11 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 			provider.Message{Role: "user", Blocks: results})
 	}
 	if b != nil {
+		// A nudge on the last turn skips the check after the tools, so a call
+		// that crossed the budget there is still a budget stop.
+		if spent >= b.Limit {
+			return dp.stopRun(ctx, rec, plan.TurnCap, StopBudget, b.Limit, total)
+		}
 		return dp.stopRun(ctx, rec, plan.TurnCap, StopTurnLimit, int64(plan.TurnCap), total)
 	}
 	return nil, total, fmt.Errorf("turn cap %d reached without %s", plan.TurnCap, plan.OutcomeTool)
@@ -567,9 +572,9 @@ func (dp *Dispatcher) runLoop(ctx context.Context, d *store.Dispatch) (json.RawM
 // stopRun ends a budgeted run that hit a limit: it records why in the
 // transcript and returns a successful attempt whose outcome says so.
 func (dp *Dispatcher) stopRun(ctx context.Context, rec *recorder, n int, reason string, limit int64, total provider.Usage) (json.RawMessage, provider.Usage, error) {
-	text := "The run stopped here because it reached its budget of " + commas(limit) + " tokens."
+	text := "The run stopped here because it reached its budget of " + Thousands(limit) + " tokens."
 	if reason == StopTurnLimit {
-		text = "The run stopped here because it reached its turn limit of " + commas(limit) + " turns."
+		text = "The run stopped here because it reached its turn limit of " + Thousands(limit) + " turns."
 	}
 	rec.stop(ctx, n, text)
 	return StopOutcome(reason), total, nil

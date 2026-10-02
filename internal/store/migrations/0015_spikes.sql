@@ -61,6 +61,7 @@ CREATE TABLE spikes (
   closed_as           text,
   follows_id          uuid REFERENCES spikes(id),
   base_commit         text,
+  refs_at_start       jsonb,
   worktree_path       text,
   worktree_removed_at timestamptz,
   created_by          text NOT NULL,

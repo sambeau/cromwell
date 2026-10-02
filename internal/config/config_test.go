@@ -542,9 +542,9 @@ func TestSpikeConfig(t *testing.T) {
 
 const spikeRole = "model: claude-sonnet-5\nskill: review-spec\nidentity: x\ntools: [read_file, list_files, edit_file, write_file, run_command, save_findings]\n"
 
-// SPEC-021 FR-10.3: save_findings only on the role assigned run-spike
-// (checked on every role file), report_bug never on it, and the spike runner
-// with the worktree tools passes.
+// SPEC-021 FR-10.3: save_findings is refused on a role assigned a purpose
+// other than run-spike, and loads on one assigned nothing; report_bug is never
+// on the spike runner, and the spike runner with the worktree tools passes.
 func TestSpikeToolsLoaderChecks(t *testing.T) {
 	cfgBase, assigned := "", "assignments:\n  run-spike: spike-runner\n"
 	root := validCompartment(t)
@@ -558,17 +558,25 @@ func TestSpikeToolsLoaderChecks(t *testing.T) {
 		t.Fatalf("spike runner should load: %v", err)
 	}
 
-	// save_findings on an unassigned role (even one assigned to nothing).
+	// save_findings on a role nobody is assigned: the upgrade path, FR-10.4.
 	write(t, root, "config.yaml", cfgBase)
-	_, err := Load(root, testRuleKinds)
-	if err == nil || !strings.Contains(err.Error(), "save_findings is for the spike runner, so role spike-runner can't be offered it.") {
-		t.Errorf("unassigned save_findings: %v", err)
+	if _, err := Load(root, testRuleKinds); err != nil {
+		t.Errorf("an unassigned spike runner should load: %v", err)
+	}
+
+	// save_findings on a role assigned another purpose, alone or beside run-spike.
+	for _, extra := range []string{"  implement-task: spike-runner\n", "  implement-task: spike-runner\n  run-spike: spike-runner\n"} {
+		write(t, root, "config.yaml", cfgBase+"assignments:\n"+extra)
+		_, err := Load(root, testRuleKinds)
+		if err == nil || !strings.Contains(err.Error(), "save_findings is for the spike runner, so role spike-runner can't be offered it while it is assigned implement-task.") {
+			t.Errorf("save_findings on a role with another purpose (%q): %v", extra, err)
+		}
 	}
 
 	// report_bug on the spike runner.
 	write(t, root, "config.yaml", cfgBase+assigned)
 	write(t, root, "roles/spike-runner.yaml", strings.Replace(spikeRole, "save_findings]", "save_findings, report_bug]", 1))
-	_, err = Load(root, testRuleKinds)
+	_, err := Load(root, testRuleKinds)
 	if err == nil || !strings.Contains(err.Error(), "A spike's agent puts what it finds in its findings, so role spike-runner can't be offered report_bug.") {
 		t.Errorf("report_bug on spike runner: %v", err)
 	}

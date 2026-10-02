@@ -27,6 +27,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"subutai/internal/config"
+	"subutai/internal/content"
 	"subutai/internal/lifecycle"
 	"subutai/internal/store"
 	"subutai/internal/toolhost"
@@ -176,9 +177,9 @@ func (s *Server) spikeRunnerFor(cfg *config.Config) (role, model, refusal string
 // the spike's override, else the project's default (SD-6).
 func spikeBudgetFor(cfg *config.Config, sp *store.Spike) (budget int64, source string) {
 	if sp.BudgetOverride != nil {
-		return *sp.BudgetOverride, "override"
+		return *sp.BudgetOverride, store.BudgetFromOverride
 	}
-	return cfg.SpikeDefaultTokenBudget(), "default"
+	return cfg.SpikeDefaultTokenBudget(), store.BudgetFromDefault
 }
 
 // spikeWorktreeRel is where a spike's worktree lives, relative to the
@@ -193,6 +194,12 @@ func (s *Server) spikeWorktreeRel(id uuid.UUID) string {
 // does, and the planner makes the worktree before the run's first call.
 // Starting is a person's act in the web UI; no other caller exists (SD-5).
 func (s *Server) StartSpike(ctx context.Context, spikeID uuid.UUID, budget int64, actor string) (*store.Spike, error) {
+	return s.startSpike(ctx, spikeID, budget, actor, true)
+}
+
+// startSpike is StartSpike, with the dispatcher kicked only when kick is set,
+// so a test can look at a started spike before its run begins.
+func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, budget int64, actor string, kick bool) (*store.Spike, error) {
 	sp, err := store.GetSpike(ctx, s.Store.Pool, spikeID)
 	if err != nil {
 		return nil, err
@@ -214,27 +221,35 @@ func (s *Server) StartSpike(ctx context.Context, spikeID uuid.UUID, budget int64
 	if _, err := config.LoadManifest(s.CompartmentRoot, lifecycle.DocTypeFindings); err != nil {
 		return nil, errors.New("This project's findings template has no manifest, so a spike can't start. Copy templates/findings from a fresh subutai init.")
 	}
-	source := "start screen"
-	switch {
-	case budget < 0:
-		return nil, errors.New("A spike's budget is a positive whole number of tokens.")
-	case budget == 0:
-		budget, source = spikeBudgetFor(cfg, sp)
-	default:
-		if want, from := spikeBudgetFor(cfg, sp); want == budget {
-			source = from
+	if budget != 0 {
+		if err := checkSpikeBudget(&budget); err != nil {
+			return nil, err
 		}
+	}
+	source := store.BudgetFromStartScreen
+	if budget == 0 {
+		budget, source = spikeBudgetFor(cfg, sp)
+	} else if want, from := spikeBudgetFor(cfg, sp); want == budget {
+		source = from
 	}
 	head, err := gitIn(s.RepoRoot, "rev-parse", "HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("The main checkout's current commit couldn't be read, so this spike can't start: %v", err)
 	}
-	base := strings.TrimSpace(head)
+	// The refs as they stand, so the leak check can tell what the run changed
+	// (FR-6.3).
+	refs, err := s.snapshotRefs()
+	if err != nil {
+		return nil, fmt.Errorf("The repository's branches and tags couldn't be read, so this spike can't start: %v", err)
+	}
 
 	var started *store.Spike
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		started, err = store.StartSpike(ctx, tx, sp.ID, budget, source, base, s.spikeWorktreeRel(sp.ID), actor)
+		started, err = store.StartSpike(ctx, tx, sp.ID, store.SpikeStart{
+			Budget: budget, BudgetSource: source, BaseCommit: strings.TrimSpace(head),
+			WorktreePath: s.spikeWorktreeRel(sp.ID), RefsAtStart: refs, Actor: actor,
+		})
 		if err != nil {
 			return err
 		}
@@ -247,15 +262,18 @@ func (s *Server) StartSpike(ctx context.Context, spikeID uuid.UUID, budget int64
 	if err != nil {
 		return nil, err
 	}
-	s.Dispatcher.Kick()
+	if kick {
+		s.Dispatcher.Kick()
+	}
 	s.notifySpikeChanged(started)
 	return started, nil
 }
 
 // ---- Closing (FR-7) ----
 
-// Ways a person closes an ended spike (FR-7.1): the two closings the store
-// knows, and asking again.
+// SpikeCloseAgain is the third way a person closes an ended spike (FR-7.1),
+// after store.SpikeAnswered and store.SpikeUnanswered: closing it without an
+// answer and asking the same question again.
 const SpikeCloseAgain = "again"
 
 // CloseSpike closes a spike as a person has read it: as "answered" or
@@ -332,8 +350,10 @@ type findingsEnd struct {
 	Used    int64
 	Budget  int64
 	TurnCap int
-	// Refs are the refs that kept the run's code (FR-6.3).
-	Refs []string
+	// Refs are the refs that kept the run's code (FR-6.3); CheckFailed is why
+	// the leak check couldn't run, when it couldn't.
+	Refs        []string
+	CheckFailed string
 }
 
 const (
@@ -404,6 +424,20 @@ func endedSentence(e findingsEnd) string {
 	return b.String()
 }
 
+// keptParagraph is what follows the How this spike ended sentence when the
+// leak check found code kept, or couldn't run (FR-2.3, FR-6.3); "" otherwise.
+func keptParagraph(e findingsEnd) string {
+	var b strings.Builder
+	if len(e.Refs) > 0 {
+		fmt.Fprintf(&b, "\n\nCode from this spike was kept on %s, outside its working copy. Subutai hasn't deleted it; the Inbox asks what to do.",
+			backtickJoin(e.Refs))
+	}
+	if e.CheckFailed != "" {
+		fmt.Fprintf(&b, "\n\nSubutai couldn't check whether code from this spike was kept: %s.", strings.TrimRight(oneLine(e.CheckFailed), ". "))
+	}
+	return b.String()
+}
+
 // findingsTitle is "SPK-003: <the question, shortened to 80 characters>".
 func findingsTitle(publicID, question string) string {
 	return publicID + ": " + shortQuestion(question)
@@ -454,12 +488,17 @@ func splitFindings(body string) (preamble string, secs []findingsSection) {
 	return strings.TrimSpace(pre.String()), secs
 }
 
-// dropTitle removes a leading level-1 heading, which the document supplies.
+// dropTitle removes level-1 headings from the text before a draft's first
+// section, because the document supplies its own. A "# " line in fenced code
+// is a shell comment, not a heading, and stays.
 func dropTitle(s string) string {
-	lines := strings.Split(s, "\n")
 	var kept []string
-	for _, l := range lines {
-		if strings.HasPrefix(l, "# ") {
+	inFence := false
+	for _, l := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "```") {
+			inFence = !inFence
+		}
+		if !inFence && strings.HasPrefix(l, "# ") {
 			continue
 		}
 		kept = append(kept, l)
@@ -467,9 +506,10 @@ func dropTitle(s string) string {
 	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
-// isPlaceholderAnswer says an Answer is a template's blank rather than a
-// reader's: empty, an unfilled placeholder, or a to-do.
-func isPlaceholderAnswer(s string) bool {
+// needsFill says an Answer or What we found is a template's blank rather than
+// a reader's: empty, an unfilled placeholder, or a to-do. The one rule that
+// finish_spike's check and the findings' fill-ins (SD-8) share.
+func needsFill(s string) bool {
 	t := strings.ToLower(strings.TrimSpace(s))
 	switch strings.Trim(t, ".…-_ ") {
 	case "", "todo", "tbd", "tba", "n/a", "none yet":
@@ -514,30 +554,38 @@ func defuse(s string) string {
 	return strings.Join(out, "\n")
 }
 
+// findingsFrontFallback is the front matter a project without the template
+// gets.
+const findingsFrontFallback = "---\ntitle: {{title}}\ntype: findings\nowner: {{owner}}\n---\n"
+
 // findingsFront is the template's front matter, filled in. A project whose
 // template has gone missing still gets its findings: the run has ended and
 // can't be run again, so the document falls back on the shape the starter
 // pack ships.
 func (s *Server) findingsFront(title, owner string) string {
-	fallback := "---\ntitle: {{title}}\ntype: findings\nowner: {{owner}}\n---\n"
-	front := fallback
+	front := findingsFrontFallback
 	if raw, err := os.ReadFile(filepath.Join(s.CompartmentRoot, "templates", "findings", "template.md")); err == nil {
 		norm := strings.ReplaceAll(string(raw), "\r\n", "\n")
 		if fm, _, err := config.SplitFrontMatter(norm); err == nil {
 			front = "---\n" + fm + "\n---\n"
 		}
 	}
-	front = strings.NewReplacer(`"{{title}}"`, "{{title}}", `"{{owner}}"`, "{{owner}}").Replace(front)
-	return strings.NewReplacer("{{title}}", yamlQuote(title), "{{owner}}", yamlQuote(owner)).Replace(front)
+	// The template may quote its placeholders; the quoted forms come first so
+	// they win, and the value brings its own quotes.
+	return strings.NewReplacer(
+		`"{{title}}"`, yamlQuote(title), "{{title}}", yamlQuote(title),
+		`"{{owner}}"`, yamlQuote(owner), "{{owner}}", yamlQuote(owner)).Replace(front)
 }
 
 // buildFindings builds the findings file's text from the template's front
 // matter, the question on the row, the draft (or finish_spike's body), SD-8's
 // fill-ins, and the server's How this spike ended, which comes last and
 // replaces any in the draft (FR-2.2, FR-2.3). Sections are written in the
-// template's order, whatever order the draft had them in. With defuse set,
-// text that validation would take for an unfinished template is rewritten
-// (a run that has stopped can't be sent back to fix it).
+// template's order, whatever order the draft had them in. With defuseText
+// set, the run's own text that validation would take for an unfinished
+// template is rewritten (a run that has stopped can't be sent back to fix it).
+// The title and the Question section are the person's words and are never
+// rewritten: they say the question as it is on the row (FR-2.1).
 func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e findingsEnd, defuseText bool) string {
 	clean := func(t string) string {
 		t = closeFences(strings.TrimSpace(t))
@@ -547,9 +595,6 @@ func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e fi
 		return t
 	}
 	title := findingsTitle(publicID, question)
-	if defuseText {
-		title = defuse(title)
-	}
 	pre, secs := splitFindings(draft)
 	got := map[string]string{}
 	var extras []findingsSection
@@ -577,11 +622,11 @@ func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e fi
 		got[k] = pre + got[k]
 	}
 	answer := strings.TrimSpace(got[strings.ToLower(headingAnswer)])
-	if isPlaceholderAnswer(answer) {
+	if needsFill(answer) {
 		answer = notAnswered(e.How)
 	}
 	found := strings.TrimSpace(got[strings.ToLower(headingFound)])
-	if found == "" || isPlaceholderAnswer(found) {
+	if needsFill(found) {
 		found = nothingSaved
 	}
 
@@ -591,7 +636,7 @@ func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e fi
 	section := func(heading, body string) {
 		fmt.Fprintf(&b, "\n## %s\n\n%s\n", heading, body)
 	}
-	section(headingQuestion, clean(oneLineKeep(question)))
+	section(headingQuestion, closeFences(strings.TrimSpace(oneLineKeep(question))))
 	section(headingAnswer, clean(answer))
 	section(headingFound, clean(found))
 	for _, h := range []string{headingHow, headingNext} {
@@ -604,7 +649,10 @@ func (s *Server) buildFindings(publicID, question, ownerPath, draft string, e fi
 			section(x.Heading, clean(x.Body))
 		}
 	}
-	section(headingEnded, clean(endedSentence(e)))
+	// endedSentence names no refs: they are written once, with a failed check.
+	sentence := e
+	sentence.Refs = nil
+	section(headingEnded, clean(endedSentence(sentence)+keptParagraph(e)))
 	return b.String()
 }
 
@@ -615,6 +663,18 @@ func oneLineKeep(q string) string {
 		return q
 	}
 	return oneLine(q)
+}
+
+// findingsCheckQuestion stands in for the question when findings are checked:
+// the question is the person's, so a TODO or {{ in it must not fail findings
+// that the run can't change.
+const findingsCheckQuestion = "The question."
+
+// checkFindings builds a spike's findings as writeFindings would, with the
+// question left out, and validates them: it is the run's own text that is
+// checked.
+func (s *Server) checkFindings(sp *store.Spike, ownerPath, draft string, e findingsEnd) error {
+	return s.validateFindings(s.buildFindings(sp.PublicID, findingsCheckQuestion, ownerPath, draft, e, false))
 }
 
 // validateFindings checks findings text as validation of the document would,
@@ -652,10 +712,10 @@ func (s *Server) spikeOwnerPath(ctx context.Context, sp *store.Spike) string {
 func (s *Server) writeFindings(ctx context.Context, tx pgx.Tx, sp *store.Spike, draft string, e findingsEnd) (doc *store.Document, undo func(), err error) {
 	undo = func() {}
 	ownerPath := s.spikeOwnerPath(ctx, sp)
-	text := s.buildFindings(sp.PublicID, sp.Question, ownerPath, draft, e, false)
-	if s.validateFindings(text) != nil {
-		text = s.buildFindings(sp.PublicID, sp.Question, ownerPath, draft, e, true)
-		if verr := s.validateFindings(text); verr != nil {
+	defuseText := s.checkFindings(sp, ownerPath, draft, e) != nil
+	text := s.buildFindings(sp.PublicID, sp.Question, ownerPath, draft, e, defuseText)
+	if defuseText {
+		if verr := s.validateFindings(s.buildFindings(sp.PublicID, findingsCheckQuestion, ownerPath, draft, e, true)); verr != nil {
 			s.Log.Warn("findings don't validate; written as they are", "spike", sp.PublicID, "err", verr)
 		}
 	}
@@ -668,7 +728,10 @@ func (s *Server) writeFindings(ctx context.Context, tx pgx.Tx, sp *store.Spike, 
 	if err != nil {
 		return nil, undo, err
 	}
-	path := s.freePath(filepath.Join(home, id))
+	path := filepath.Join(home, id) + ".md"
+	if !s.isOrphanFindings(path, id) {
+		path = s.freePath(filepath.Join(home, id))
+	}
 	abs := filepath.Join(s.RepoRoot, path)
 	body, err := stampIdentity(text, id, revision)
 	if err != nil {
@@ -690,6 +753,22 @@ func (s *Server) writeFindings(ctx context.Context, tx pgx.Tx, sp *store.Spike, 
 		return nil, undo, err
 	}
 	return doc, undo, nil
+}
+
+// isOrphanFindings says the file at path is what an earlier ending wrote and
+// then stopped before registering and committing: it carries the findings ID
+// this ending is about to use, and git has never seen it. It is written again
+// rather than left beside a copy.
+func (s *Server) isOrphanFindings(path, id string) bool {
+	raw, err := os.ReadFile(filepath.Join(s.RepoRoot, path))
+	if err != nil {
+		return false
+	}
+	if got, _, ok := content.ReadIdentity(string(raw)); !ok || got != id {
+		return false
+	}
+	out, err := gitIn(s.RepoRoot, "ls-files", "--", path)
+	return err == nil && strings.TrimSpace(out) == ""
 }
 
 // ---- save_findings (FR-4.3) ----

@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 
 	"subutai/internal/bus"
+	"subutai/internal/dispatch"
+	"subutai/internal/store"
 )
 
 // EndSpike ends a spike's run: the findings are written up from the draft
@@ -46,8 +48,8 @@ func SpikeEnding(raw json.RawMessage) (how, findings string, err error) {
 	}
 	switch {
 	case strings.TrimSpace(o.Findings) != "":
-		return "concluded", o.Findings, nil
-	case o.Ended == "budget" || o.Ended == "turn_limit":
+		return store.SpikeConcluded, o.Findings, nil
+	case o.Ended == dispatch.StopBudget || o.Ended == dispatch.StopTurnLimit:
 		return o.Ended, "", nil
 	}
 	return "", "", fmt.Errorf("spike outcome: neither findings nor a reason the run stopped")
@@ -62,7 +64,7 @@ func decideSpikeSucceeded(e bus.DispatchSucceeded) []Action {
 	a := EndSpike{SpikeID: e.RefID, DispatchID: e.DispatchID}
 	how, findings, err := SpikeEnding(e.Outcome)
 	if err != nil {
-		a.How, a.Note = "failed", "The run's outcome couldn't be read."
+		a.How, a.Note = store.SpikeFailed, "The run's outcome couldn't be read."
 		return []Action{a}
 	}
 	a.How, a.Findings = how, findings
@@ -75,6 +77,6 @@ func decideSpikeExhausted(e bus.DispatchExhausted) []Action {
 		return nil
 	}
 	return []Action{EndSpike{
-		SpikeID: e.RefID, DispatchID: e.DispatchID, How: "failed", Note: e.Error, Exhausted: true,
+		SpikeID: e.RefID, DispatchID: e.DispatchID, How: store.SpikeFailed, Note: e.Error, Exhausted: true,
 	}}
 }
