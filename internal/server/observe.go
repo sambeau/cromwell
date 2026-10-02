@@ -283,8 +283,9 @@ func (s *Server) featureTimeline(ctx context.Context, featureID uuid.UUID) (*tim
 	// setting was unset (SPEC-017 FR-2.7).
 	moments := timeline.Build(events, truns, timeline.Options{Progress: progress, ChatActor: s.mcpActor()})
 	view := &timelineView{FeatureID: featureID, Line: timeline.Line(moments)}
+	current := timeline.CurrentIndex(moments) // never a spike's aside
 	for i, m := range moments {
-		mv := momentView{Moment: m, Index: i, Current: i == len(moments)-1}
+		mv := momentView{Moment: m, Index: i, Current: i == current}
 		if m.Cause != nil {
 			label := byID[m.Cause.ID].Label
 			if m.Cause.RefType == "feature" {

@@ -35,3 +35,44 @@ func TestTimelineSpikeMoments(t *testing.T) {
 		}
 	}
 }
+
+// TestSpikeMomentsAreAsides is SPEC-021 FR-8.3 as the first review found it
+// wanting: a spike beside a feature takes none of the feature's runs or
+// events and is never where the feature is now.
+func TestSpikeMomentsAreAsides(t *testing.T) {
+	spike := uuid.New()
+	started := ev(2, "spike.started", map[string]any{"budget": 40000})
+	started.RefType, started.RefID, started.Label = "spike", spike, "SPK-003"
+	ended := ev(6, "spike.ended", map[string]any{"how": "concluded"})
+	ended.RefType, ended.RefID, ended.Label = "spike", spike, "SPK-003"
+	impl := Run{ID: uuid.New(), Purpose: "implement-task", QueuedAt: at(4)}
+	queued := ev(4, "dispatch.queued", map[string]any{"dispatch_id": impl.ID.String()})
+	note := ev(5, "task.created", nil)
+	events := []Event{
+		ev(0, "feature.created", nil),
+		ev(1, "feature.transition", map[string]any{"event": "start"}),
+		started, queued, note, ended,
+	}
+	ms := Build(events, []Run{impl}, Options{})
+	if got, want := labels(ms), "Created · Building (0 of 0 tasks done) · Spike SPK-003 started · Spike SPK-003 ended: it reached a conclusion"; got != want {
+		t.Fatalf("moments = %q, want %q", got, want)
+	}
+	if len(ms[1].Runs) != 1 || len(ms[2].Runs) != 0 || len(ms[3].Runs) != 0 {
+		t.Errorf("runs under the feature's own moment: %d, under the spike's: %d, %d", len(ms[1].Runs), len(ms[2].Runs), len(ms[3].Runs))
+	}
+	if len(ms[2].Events) != 1 || len(ms[3].Events) != 1 {
+		t.Errorf("an aside holds only its own event: %d, %d", len(ms[2].Events), len(ms[3].Events))
+	}
+	if !ms[2].Aside || !ms[3].Aside || ms[1].Aside || ms[2].State != "idea" {
+		t.Errorf("aside = %v %v %v, state %q", ms[1].Aside, ms[2].Aside, ms[3].Aside, ms[2].State)
+	}
+	if got := CurrentIndex(ms); got != 1 {
+		t.Errorf("current = %d, want the feature's own moment, 1", got)
+	}
+	line := Line(ms)
+	for i, s := range line {
+		if s.Current != (i == 1) || s.Aside != (i >= 2) {
+			t.Errorf("strip %d (%s): current %v, aside %v", i, s.Label, s.Current, s.Aside)
+		}
+	}
+}

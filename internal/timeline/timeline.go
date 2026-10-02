@@ -89,6 +89,9 @@ type Moment struct {
 	// Fold is what the one-line view shows when several moments of the same
 	// kind come in a row ("Code review sent back ×3").
 	Fold string
+	// Aside is set for a moment beside the journey, not on it (a spike): the
+	// feature's later runs and events are not grouped under it.
+	Aside bool
 
 	// By says who caused the moment (DESIGN-010 §8, "everything is
 	// attributed"): ByAgent, with Cause naming the run; ByPerson or ByChat,
@@ -147,6 +150,10 @@ type Rule struct {
 	// actor ran no run on this feature: a bug an agent filed while working
 	// on another (SPEC-019 FR-5.3).
 	Agentive func(Event) bool
+	// Aside marks a moment that is told beside the feature's journey and
+	// does not become part of it: it groups no runs or events and is never
+	// where the feature is now (a spike, SPEC-021 FR-8.3).
+	Aside bool
 }
 
 func reportedByAgent(e Event) bool {
@@ -236,13 +243,14 @@ var Rules = []Rule{
 
 	// A spike on the feature (SPEC-021 FR-8.3): when it starts and when its
 	// run ends. The event's label is the spike's ID. The feature's own
-	// pipeline goes on as it was, so these moments say what happened and no
-	// more; a spike's tokens are its own and never join the feature's.
-	{Kind: "spike.started", Make: func(e Event, _ *Context) (string, string, string) {
-		return "Spike " + e.Label + " started", "active", "spike"
+	// pipeline goes on as it was, so these moments are asides: they say what
+	// happened, in a neutral state, and take no runs or events from the
+	// feature; a spike's tokens are its own and never join the feature's.
+	{Kind: "spike.started", Aside: true, Make: func(e Event, _ *Context) (string, string, string) {
+		return "Spike " + e.Label + " started", "idea", "spike"
 	}},
-	{Kind: "spike.ended", Make: func(e Event, _ *Context) (string, string, string) {
-		return "Spike " + e.Label + " ended: " + spikeEndWords(e.Str("how")), "review", "spike"
+	{Kind: "spike.ended", Aside: true, Make: func(e Event, _ *Context) (string, string, string) {
+		return "Spike " + e.Label + " ended: " + spikeEndWords(e.Str("how")), "idea", "spike"
 	}},
 
 	// M3's "sent to development" event (DEC-006). Nothing emits it yet; a
@@ -434,6 +442,7 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 
 	var moments []Moment
 	momentAt := []int{}             // the event index of each moment
+	lastMain := -1                  // the last moment that is not an aside
 	queuedAt := map[uuid.UUID]int{} // a run's first dispatch.queued event index
 	var before []Event
 	for i, e := range events {
@@ -446,16 +455,16 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 		}
 		rule, ok := match(e)
 		if !ok {
-			if len(moments) == 0 {
+			if lastMain < 0 {
 				before = append(before, e)
 			} else {
-				m := &moments[len(moments)-1]
+				m := &moments[lastMain]
 				m.Events = append(m.Events, e)
 			}
 			continue
 		}
 		label, state, icon := rule.Make(e, ctx)
-		m := Moment{Label: label, State: state, Icon: icon, At: e.At, Fold: rule.Fold,
+		m := Moment{Label: label, State: state, Icon: icon, At: e.At, Fold: rule.Fold, Aside: rule.Aside,
 			RefType: e.RefType, RefID: e.RefID, RefName: e.Label}
 		m.Fold = strings.ReplaceAll(m.Fold, "{doc}", docNoun(e.DocType))
 		if m.Fold == "" {
@@ -480,6 +489,9 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 		m.Events = append(m.Events, e)
 		moments = append(moments, m)
 		momentAt = append(momentAt, i)
+		if !rule.Aside {
+			lastMain = len(moments) - 1
+		}
 	}
 	if len(moments) == 0 {
 		if len(events) == 0 && len(runs) == 0 {
@@ -493,7 +505,11 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 		moments = append(moments, Moment{Label: "Started", Fold: "Started", State: "idea", Icon: "feature", At: at, By: BySystem})
 		momentAt = append(momentAt, -1)
 	}
-	moments[0].Events = append(before, moments[0].Events...)
+	first := 0 // events before the first moment on the journey belong to it
+	for first < len(moments)-1 && moments[first].Aside {
+		first++
+	}
+	moments[first].Events = append(before, moments[first].Events...)
 
 	sorted := append([]Run(nil), runs...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].QueuedAt.Before(sorted[j].QueuedAt) })
@@ -501,21 +517,35 @@ func Build(events []Event, runs []Run, opt Options) []Moment {
 		k := 0
 		if qi, ok := queuedAt[r.ID]; ok {
 			for j, mi := range momentAt {
-				if mi <= qi {
+				if mi <= qi && !moments[j].Aside {
 					k = j
 				}
 			}
 		} else {
 			// No queue row in the stream (an older run): fall back to time.
 			for j := range moments {
-				if !moments[j].At.After(r.QueuedAt) {
+				if !moments[j].At.After(r.QueuedAt) && !moments[j].Aside {
 					k = j
 				}
 			}
 		}
+		if moments[k].Aside {
+			k = first // queued before any moment on the journey
+		}
 		moments[k].Runs = append(moments[k].Runs, r)
 	}
 	return moments
+}
+
+// CurrentIndex is the moment that says where the feature is now: the last one
+// on the journey, not an aside. When every moment is an aside it is the last.
+func CurrentIndex(moments []Moment) int {
+	for i := len(moments) - 1; i >= 0; i-- {
+		if !moments[i].Aside {
+			return i
+		}
+	}
+	return len(moments) - 1
 }
 
 func match(e Event) (Rule, bool) {
@@ -583,10 +613,14 @@ type Strip struct {
 	Count   int
 	Index   int // the first moment it stands for, for the anchor
 	Current bool
+	// Aside is set for a mark beside the journey, shown more quietly.
+	Aside bool
+	last  int // the last moment it stands for
 }
 
 // Line folds the moments into the one-line view. The last mark is where the
-// feature is now.
+// feature is now, unless asides follow it: the mark of the last moment on the
+// journey is.
 func Line(moments []Moment) []Strip {
 	var out []Strip
 	for i, m := range moments {
@@ -597,12 +631,14 @@ func Line(moments []Moment) []Strip {
 		if n := len(out); n > 0 && moments[out[n-1].Index].Fold == fold && fold != m.Label {
 			out[n-1].Count++
 			out[n-1].Label = fold
+			out[n-1].last = i
 			continue
 		}
-		out = append(out, Strip{Label: m.Label, State: m.State, Icon: m.Icon, Count: 1, Index: i})
+		out = append(out, Strip{Label: m.Label, State: m.State, Icon: m.Icon, Count: 1, Index: i, Aside: m.Aside, last: i})
 	}
-	if len(out) > 0 {
-		out[len(out)-1].Current = true
+	cur := CurrentIndex(moments)
+	for i := range out {
+		out[i].Current = out[i].last == cur
 	}
 	return out
 }
