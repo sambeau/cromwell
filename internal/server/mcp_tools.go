@@ -445,9 +445,15 @@ func (s *Server) mcpGetFeature(r *http.Request, args map[string]any) (any, error
 	if err != nil {
 		return nil, err
 	}
+	// The tasks, in plan order (SPEC-020 FR-3.6): how the chat agent finds one
+	// to claim, and follows one it submitted without renewing the claim (SD-8).
+	tasks, err := s.mcpFeatureTasks(ctx, f.ID)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"id": f.PublicID, "path": path, "name": f.Name, "description": f.Description,
-		"state": string(f.State), "documents": s.mcpDocs(ctx, docs), "url": "/ui/f/" + path,
+		"state": string(f.State), "documents": s.mcpDocs(ctx, docs), "tasks": tasks, "url": "/ui/f/" + path,
 	}, nil
 }
 
