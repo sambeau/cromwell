@@ -141,6 +141,8 @@ type claimTarget struct {
 	Worktree *store.Worktree
 	Path     string // the working copy, absolute; "" when there is none
 	Task     *store.Task
+	// Spike is the spike, for a spike's claim (SPEC-021 FR-13.1); nil for a task.
+	Spike *store.Spike
 }
 
 // submitted is what prepareSubmit did in git.
@@ -187,12 +189,30 @@ type claimable interface {
 	deadlineQuestion(t *claimTarget, c *store.Claim) (question, releaseLabel string)
 	// contract is what the claimant is given.
 	contract(ctx context.Context, t *claimTarget, c *store.Claim) (map[string]any, error)
+	// lock takes the item's row locks, first in the claim's transaction
+	// (SPEC-021 FR-13.2): a task's are its feature's and its own, a spike's its
+	// own.
+	lock(ctx context.Context, tx pgx.Tx, t *claimTarget) error
+	// rules are the claimant's rules, said once in Go so the chat skills can be
+	// checked against them: the claim's own sentences, then the commands the
+	// project allows.
+	rules() []string
+	// releaseConsequence is what the release answer does, for the Inbox, beside
+	// the label the stale and deadline questions return (FR-14.2).
+	releaseConsequence() string
+}
+
+// renewalRefuser is the optional hook for a claimable whose renewal is judged
+// too (SPEC-021 FR-13.2): a spike's is refused after its deadline. A task's
+// renewal is never refused.
+type renewalRefuser interface {
+	renewalRefusal(ctx context.Context, tx pgx.Tx, t *claimTarget, who Claimant) string
 }
 
 // claimables is the registry by ref_type. M13 registers task; M14 registers
 // spike.
 func (s *Server) claimables() map[string]claimable {
-	return map[string]claimable{"task": taskClaims{s: s}}
+	return map[string]claimable{"task": taskClaims{s: s}, "spike": spikeClaims{s: s}}
 }
 
 // ---- The per-working-copy lock (FR-2.8) ----
@@ -303,6 +323,8 @@ func claimActivityWords(activity string) string {
 		return "kept by a person"
 	case "worktree":
 		return "a change in the working copy"
+	case "findings":
+		return "findings saved"
 	}
 	return "something else"
 }
@@ -315,6 +337,9 @@ const onlyTasksSentence = "Only tasks can be claimed. Verification is always don
 // bug's ID included, is refused with FR-6.3's sentence.
 func (s *Server) resolveClaimRef(ctx context.Context, ref string) (claimable, uuid.UUID, error) {
 	r, ok := ident.Parse(ref)
+	if ok && r.Shape == ident.ShapeEntity && r.Kind.Name == "spike" {
+		return nil, uuid.Nil, refuse("%s is a spike, not a task. Use claim_spike to run it.", r.ID)
+	}
 	if !ok || r.Shape != ident.ShapeTask {
 		return nil, uuid.Nil, refuse("%s", onlyTasksSentence)
 	}
@@ -354,11 +379,22 @@ func (s *Server) ClaimWork(ctx context.Context, ref string, who Claimant) (*Clai
 	if err != nil {
 		return nil, err
 	}
-	s.notifyEntityChanged("task", t.RefID)
+	s.notifyClaimTarget(t)
+	return res, nil
+}
+
+// notifyClaimTarget signals the pages of the claimed item after the commit
+// that changed its claim: a task's and its feature's, or a spike's and its
+// owner's. It assumes neither.
+func (s *Server) notifyClaimTarget(t *claimTarget) {
+	if t.Spike != nil {
+		s.notifySpikeChanged(t.Spike)
+		return
+	}
+	s.notifyEntityChanged(t.RefType, t.RefID)
 	if t.Feature != nil {
 		s.notifyEntityChanged("feature", t.Feature.ID)
 	}
-	return res, nil
 }
 
 func (s *Server) claimLocked(ctx context.Context, c claimable, t *claimTarget, who Claimant) (*ClaimResult, error) {
@@ -381,12 +417,8 @@ func (s *Server) claimLocked(ctx context.Context, c claimable, t *claimTarget, w
 	res := &ClaimResult{}
 	err := s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		*res = ClaimResult{}
-		var featureID uuid.UUID
-		if t.Feature != nil {
-			featureID = t.Feature.ID
-			if err := store.LockFeatureAndTask(ctx, tx, featureID, t.RefID); err != nil {
-				return err
-			}
+		if err := c.lock(ctx, tx, t); err != nil {
+			return err
 		}
 		// Look again under the locks: the item may have moved on.
 		fresh, err := c.load(ctx, tx, t.RefID)
@@ -402,7 +434,13 @@ func (s *Server) claimLocked(ctx context.Context, c claimable, t *claimTarget, w
 
 		switch {
 		case who.holds(cur) && cur.State == lifecycle.ClaimOpen:
-			// A renewal: the claimant says it is still on it (SD-8).
+			// A renewal: the claimant says it is still on it (SD-8). A spike's
+			// is refused after its deadline (SPEC-021 FR-13.2).
+			if rr, ok := c.(renewalRefuser); ok {
+				if r := rr.renewalRefusal(ctx, tx, fresh, who); r != "" {
+					return refuse("%s", r)
+				}
+			}
 			if err := store.TransitionClaim(ctx, tx, cur, lifecycle.ClaimEventRenew, who.Actor, "renewed", nil); err != nil {
 				return err
 			}
@@ -453,7 +491,11 @@ func (s *Server) claimLocked(ctx context.Context, c claimable, t *claimTarget, w
 		return nil
 	})
 	if errors.Is(err, store.ErrStaleState) {
-		return nil, refuse("%s changed while you were claiming it. Look at it again with get_feature, then try once more.", t.Label)
+		look := "get_feature"
+		if t.Spike != nil {
+			look = "get_spike"
+		}
+		return nil, refuse("%s changed while you were claiming it. Look at it again with %s, then try once more.", t.Label, look)
 	}
 	if err != nil {
 		return nil, err
@@ -484,13 +526,16 @@ func (s *Server) claimResult(ctx context.Context, c claimable, t *claimTarget, r
 	if res.Contract, err = c.contract(ctx, fresh, res.Claim); err != nil {
 		return nil, err
 	}
-	if res.ReviewComments, err = s.reviewComments(ctx, s.Store.Pool, t.RefID); err != nil {
-		return nil, err
+	// The round and the reviewer's comments are a task's (SPEC-021 FR-13.2).
+	if fresh.Task != nil {
+		if res.ReviewComments, err = s.reviewComments(ctx, s.Store.Pool, t.RefID); err != nil {
+			return nil, err
+		}
+		if res.Round, err = store.CurrentTaskRound(ctx, s.Store.Pool, t.RefID); err != nil {
+			return nil, err
+		}
 	}
-	if res.Round, err = store.CurrentTaskRound(ctx, s.Store.Pool, t.RefID); err != nil {
-		return nil, err
-	}
-	res.Rules = s.claimRules()
+	res.Rules = c.rules()
 	return res, nil
 }
 
@@ -498,7 +543,13 @@ func (s *Server) claimResult(ctx context.Context, c claimable, t *claimTarget, r
 // commands the project allows its implementers (FR-3.2). They are said once,
 // here, so the chat skill can be checked against them (FR-9.2).
 func (s *Server) claimRules() []string {
-	rules := append([]string(nil), claimRuleSentences...)
+	return s.withCommandRules(claimRuleSentences)
+}
+
+// withCommandRules is the sentences, then one for each command the project
+// allows its implementers, in name order.
+func (s *Server) withCommandRules(sentences []string) []string {
+	rules := append([]string(nil), sentences...)
 	cfg, err := s.freshConfig()
 	if err != nil {
 		return rules
