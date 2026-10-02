@@ -22,8 +22,8 @@ type Claim struct {
 	Actor     string
 	Via       string // mcp | ui
 	State     lifecycle.ClaimState
-	EndReason string // done | released | abandoned, once ended
-	EndedBy   string // who ended it, for released and abandoned
+	EndReason string // done | released | abandoned | expired, once ended
+	EndedBy   string // who ended it, for released and abandoned; empty for expired
 	ClaimedAt time.Time
 	// LastActivityAt and LastActivity say when activity was last seen, and
 	// what it was (SD-8).
@@ -77,6 +77,7 @@ var claimAuditKind = map[lifecycle.ClaimEvent]string{
 	lifecycle.ClaimEventRelease:  "claim.released",
 	lifecycle.ClaimEventDone:     "claim.ended",
 	lifecycle.ClaimEventAbandon:  "claim.ended",
+	lifecycle.ClaimEventExpire:   "claim.expired",
 }
 
 // claimEndReason is the end_reason an ending event gives (SPEC-020 FR-2.1).
@@ -84,6 +85,7 @@ var claimEndReason = map[lifecycle.ClaimEvent]string{
 	lifecycle.ClaimEventDone:    "done",
 	lifecycle.ClaimEventRelease: "released",
 	lifecycle.ClaimEventAbandon: "abandoned",
+	lifecycle.ClaimEventExpire:  "expired",
 }
 
 func auditClaim(ctx context.Context, tx pgx.Tx, actor string, e lifecycle.ClaimEvent, c *Claim, payload map[string]any) error {
@@ -303,4 +305,43 @@ func KeepClaim(ctx context.Context, tx pgx.Tx, id uuid.UUID, actor string, clear
 	}
 	return true, Audit(ctx, tx, actor, "claim.activity", c.RefType, &c.RefID,
 		map[string]any{"claim_id": c.ID.String(), "kind": c.Kind, "via": c.Via, "activity": "kept", "by": actor})
+}
+
+// SetClaimDeadline sets the claim's hard deadline (SPEC-021 SD-20), which for
+// a spike is the spike's own, fixed at the start.
+func SetClaimDeadline(ctx context.Context, tx pgx.Tx, claimID uuid.UUID, at time.Time) error {
+	tag, err := tx.Exec(ctx, `UPDATE work_claims SET deadline_at = $2 WHERE id = $1`, claimID, at)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RecordSpikeFindingsActivity notes that the claimant saved findings: activity
+// `findings` on an open claim, a claim.activity audit row on the claimed item
+// (as the claim sweep writes for a changed working copy), and a pending
+// claim-stale withdrawn, since someone is plainly still working (SPEC-021
+// FR-13.6). It reports whether the claim was open; a claim that wasn't is left
+// as it is and nothing is audited.
+func RecordSpikeFindingsActivity(ctx context.Context, tx pgx.Tx, claimID uuid.UUID, actor string) (bool, error) {
+	changed, err := RecordClaimActivity(ctx, tx, claimID, "findings", "")
+	if err != nil || !changed {
+		return false, err
+	}
+	c, err := GetClaim(ctx, tx, claimID)
+	if err != nil {
+		return false, err
+	}
+	if err := Audit(ctx, tx, actor, "claim.activity", c.RefType, &c.RefID,
+		map[string]any{"claim_id": c.ID.String(), "kind": c.Kind, "via": c.Via, "activity": "findings"}); err != nil {
+		return false, err
+	}
+	if _, err := WithdrawCheckpoints(ctx, tx, "claim-stale", c.RefType, c.RefID, actor,
+		"findings were saved"); err != nil {
+		return false, err
+	}
+	return true, nil
 }

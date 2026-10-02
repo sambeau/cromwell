@@ -188,18 +188,37 @@ func (s *Server) spikeWorktreeRel(id uuid.UUID) string {
 	return filepath.Join(filepath.Base(s.CompartmentRoot), "worktrees", store.ShortID("spk", id))
 }
 
-// StartSpike moves an idea to running and queues its run (FR-3.3). budget is
-// the figure entered on the start screen; 0 means the spike's own override, or
-// else the project default. The database commits first, as StartFeature's
-// does, and the planner makes the worktree before the run's first call.
-// Starting is a person's act in the web UI; no other caller exists (SD-5).
-func (s *Server) StartSpike(ctx context.Context, spikeID uuid.UUID, budget int64, actor string) (*store.Spike, error) {
-	return s.startSpike(ctx, spikeID, budget, actor, true)
+// SpikeStartRequest is what a person chose on the start screen (SPEC-021
+// FR-12.2): who runs the spike, and its limit.
+type SpikeStartRequest struct {
+	// Executor is store.ExecutorAgent, ExecutorChat or ExecutorPerson.
+	Executor string
+	// Budget is an agent spike's token budget: 0 means the spike's own
+	// override, else the project default. A chat or person spike has none.
+	Budget int64
+	// TimeBoxHours is a chat or person spike's time box: 0 means the
+	// project default. An agent spike has none.
+	TimeBoxHours int
+}
+
+// ErrSpikeTimeBox is what a time box outside 1 to 168 hours says (FR-12.2).
+var ErrSpikeTimeBox = errors.New("A spike's time box is a whole number of hours, from 1 to 168.")
+
+// StartSpike moves an idea to running (FR-3.3, SPEC-021 FR-12.2). An agent
+// spike queues its run, as stage 1 does; budget 0 means the spike's own
+// override, or else the project default. A chat or person spike queues
+// nothing: it is held to a time box, and its worktree is made after the
+// commit, for the one who claims it. The database commits first, as
+// StartFeature's does, and for an agent spike the planner makes the worktree
+// before the run's first call. Starting is a person's act in the web UI; no
+// other caller exists (SD-5).
+func (s *Server) StartSpike(ctx context.Context, spikeID uuid.UUID, req SpikeStartRequest, actor string) (*store.Spike, error) {
+	return s.startSpike(ctx, spikeID, req, actor, true)
 }
 
 // startSpike is StartSpike, with the dispatcher kicked only when kick is set,
 // so a test can look at a started spike before its run begins.
-func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, budget int64, actor string, kick bool) (*store.Spike, error) {
+func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, req SpikeStartRequest, actor string, kick bool) (*store.Spike, error) {
 	sp, err := store.GetSpike(ctx, s.Store.Pool, spikeID)
 	if err != nil {
 		return nil, err
@@ -207,13 +226,24 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, budget int64
 	if sp.State != store.SpikeIdea {
 		return nil, ErrSpikeStarted
 	}
+	switch req.Executor {
+	case store.ExecutorAgent, store.ExecutorChat, store.ExecutorPerson:
+	default:
+		return nil, errors.New("A spike is run by the spike runner, the chat agent or a person.")
+	}
 	cfg, err := s.freshConfig()
 	if err != nil {
 		return nil, err
 	}
-	role, model, refusal := s.spikeRunnerFor(cfg)
-	if refusal != "" {
-		return nil, errors.New(refusal)
+	// Only the spike runner's run needs a role and a model: a chat or person
+	// spike starts when nobody is assigned to run spikes (FR-12.2).
+	var role, model string
+	if req.Executor == store.ExecutorAgent {
+		var refusal string
+		role, model, refusal = s.spikeRunnerFor(cfg)
+		if refusal != "" {
+			return nil, errors.New(refusal)
+		}
 	}
 	if _, err := os.ReadFile(filepath.Join(s.CompartmentRoot, "templates", "findings", "template.md")); err != nil {
 		return nil, errors.New("This project has no findings template yet (templates/findings in its .subutai folder), so a spike can't start. Copy it from a fresh subutai init.")
@@ -221,16 +251,30 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, budget int64
 	if _, err := config.LoadManifest(s.CompartmentRoot, lifecycle.DocTypeFindings); err != nil {
 		return nil, errors.New("This project's findings template has no manifest, so a spike can't start. Copy templates/findings from a fresh subutai init.")
 	}
-	if budget != 0 {
-		if err := checkSpikeBudget(&budget); err != nil {
-			return nil, err
+	st := store.SpikeStart{Executor: req.Executor, Actor: actor}
+	if req.Executor == store.ExecutorAgent {
+		budget := req.Budget
+		if budget != 0 {
+			if err := checkSpikeBudget(&budget); err != nil {
+				return nil, err
+			}
 		}
-	}
-	source := store.BudgetFromStartScreen
-	if budget == 0 {
-		budget, source = spikeBudgetFor(cfg, sp)
-	} else if want, from := spikeBudgetFor(cfg, sp); want == budget {
-		source = from
+		source := store.BudgetFromStartScreen
+		if budget == 0 {
+			budget, source = spikeBudgetFor(cfg, sp)
+		} else if want, from := spikeBudgetFor(cfg, sp); want == budget {
+			source = from
+		}
+		st.Budget, st.BudgetSource = budget, source
+	} else {
+		hours := req.TimeBoxHours
+		if hours == 0 {
+			hours = cfg.SpikeDefaultTimeBoxHours()
+		}
+		if hours < 1 || hours > config.MaxSpikeTimeBoxHours {
+			return nil, ErrSpikeTimeBox
+		}
+		st.TimeBoxHours = hours
 	}
 	head, err := gitIn(s.RepoRoot, "rev-parse", "HEAD")
 	if err != nil {
@@ -242,16 +286,17 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, budget int64
 	if err != nil {
 		return nil, fmt.Errorf("The repository's branches and tags couldn't be read, so this spike can't start: %v", err)
 	}
+	st.BaseCommit, st.WorktreePath, st.RefsAtStart = strings.TrimSpace(head), s.spikeWorktreeRel(sp.ID), refs
 
 	var started *store.Spike
 	err = s.Store.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		started, err = store.StartSpike(ctx, tx, sp.ID, store.SpikeStart{
-			Budget: budget, BudgetSource: source, BaseCommit: strings.TrimSpace(head),
-			WorktreePath: s.spikeWorktreeRel(sp.ID), RefsAtStart: refs, Actor: actor,
-		})
+		started, err = store.StartSpike(ctx, tx, sp.ID, st)
 		if err != nil {
 			return err
+		}
+		if req.Executor != store.ExecutorAgent {
+			return nil // nothing is queued: the executor claims it (FR-12.2)
 		}
 		_, err = store.EnqueueDispatch(ctx, tx, "run-spike", role, model, "spike", sp.ID, "run-spike:"+sp.ID.String())
 		return err
@@ -262,11 +307,31 @@ func (s *Server) startSpike(ctx context.Context, spikeID uuid.UUID, budget int64
 	if err != nil {
 		return nil, err
 	}
-	if kick {
-		s.Dispatcher.Kick()
+	if req.Executor == store.ExecutorAgent {
+		if kick {
+			s.Dispatcher.Kick()
+		}
+	} else {
+		// No git in a transaction (NFR-11): the worktree is made after the
+		// commit, under its own lock (SD-27). The start stands if it can't be
+		// made; the first claim makes it (FR-13.3).
+		if err := s.makeStartedSpikeWorktree(ctx, started); err != nil {
+			s.Log.Warn("a started spike's working copy couldn't be made; its first claim will make it",
+				"spike", started.PublicID, "err", err)
+		}
 	}
 	s.notifySpikeChanged(started)
 	return started, nil
+}
+
+// makeStartedSpikeWorktree makes a chat or person spike's worktree at its
+// base commit, holding the worktree's lock. Nothing was ever there, so the
+// leak check that a remake runs first has nothing to read.
+func (s *Server) makeStartedSpikeWorktree(ctx context.Context, sp *store.Spike) error {
+	return s.withWorkingCopy(s.worktreeAbs(sp.WorktreePath), func() error {
+		_, err := s.makeSpikeWorktree(ctx, sp, false)
+		return err
+	})
 }
 
 // ---- Closing (FR-7) ----

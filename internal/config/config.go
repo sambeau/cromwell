@@ -92,6 +92,27 @@ type SpikeConfig struct {
 	// DefaultTokenBudget is nil when the file leaves it out, so an explicit 0
 	// can be refused while an absent value takes the default.
 	DefaultTokenBudget *int64 `yaml:"default_token_budget"`
+	// DefaultTimeBoxHours is the time box, in whole hours, of a spike the chat
+	// agent or a person runs (SPEC-021 SD-18, FR-12.3). Nil when the file
+	// leaves it out.
+	DefaultTimeBoxHours *int `yaml:"default_time_box_hours"`
+}
+
+// DefaultSpikeTimeBoxHours is the time box a chat or person spike gets when
+// the project says nothing, and MaxSpikeTimeBoxHours the longest one allowed
+// (a week), whoever sets it (SPEC-021 SD-18, FR-12.3).
+const (
+	DefaultSpikeTimeBoxHours = 4
+	MaxSpikeTimeBoxHours     = 168
+)
+
+// SpikeDefaultTimeBoxHours is the configured default time box for a chat or
+// person spike, or the built-in default. It is read fresh at each use.
+func (c *Config) SpikeDefaultTimeBoxHours() int {
+	if p := c.Spikes.DefaultTimeBoxHours; p != nil {
+		return *p
+	}
+	return DefaultSpikeTimeBoxHours
 }
 
 // DefaultSpikeTokenBudget is the budget a spike gets when the project says
@@ -378,6 +399,9 @@ func (c *Config) validate() error {
 	}
 	if p := c.Spikes.DefaultTokenBudget; p != nil && *p <= 0 {
 		add("spikes.default_token_budget", "%d isn't a budget; use a number of tokens above 0, or leave it out for the default of %d", *p, DefaultSpikeTokenBudget)
+	}
+	if p := c.Spikes.DefaultTimeBoxHours; p != nil && (*p < 1 || *p > MaxSpikeTimeBoxHours) {
+		add("spikes.default_time_box_hours", "%d isn't a time box; use a whole number of hours from 1 to %d, or leave it out for the default of %d", *p, MaxSpikeTimeBoxHours, DefaultSpikeTimeBoxHours)
 	}
 	if c.Server.MCPActor == "" {
 		c.Server.MCPActor = "chat-agent"

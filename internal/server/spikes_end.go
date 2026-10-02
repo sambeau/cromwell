@@ -58,16 +58,50 @@ func (s *Server) cancelSpikeRun(ctx context.Context, dispatchID uuid.UUID) {
 // safe to run again: a spike that is no longer running skips to the last two,
 // and one that already has findings isn't given a second set.
 func (s *Server) EndSpike(ctx context.Context, spikeID uuid.UUID, how, note string) error {
+	if err := checkSpikeHow(how); err != nil {
+		return err
+	}
+	sp, err := store.GetSpike(ctx, s.Store.Pool, spikeID)
+	if err != nil {
+		return err
+	}
+	return s.withSpikeEndLocks(sp, func() error { return s.endSpikeLocked(ctx, spikeID, how, note) })
+}
+
+func checkSpikeHow(how string) error {
 	switch how {
 	case store.SpikeConcluded, store.SpikeBudget, store.SpikeTurnLimit, store.SpikeFailed:
-	default:
-		return fmt.Errorf("a run ends as concluded, budget, turn_limit or failed, not %q", how)
+		return nil
 	}
-	// One ending at a time, so the heartbeat and the rules can't both write
-	// the findings.
-	s.spikeEndMu.Lock()
-	defer s.spikeEndMu.Unlock()
+	return fmt.Errorf("a run ends as concluded, budget, turn_limit or failed, not %q", how)
+}
 
+// withSpikeEndLocks runs fn holding the spike's worktree's lock, then
+// spikeEndMu: the first two of SPEC-021 SD-27's three locks, in its order
+// (row locks come inside fn). One ending at a time, so the heartbeat and the
+// rules can't both write the findings; and the worktree's lock, so a discard
+// can't interleave with a claim's remake. A spike with no worktree path takes
+// no working-copy lock. Neither lock is re-entrant: fn must not call
+// withSpikeEndLocks, withWorkingCopy on the same path, or take spikeEndMu.
+func (s *Server) withSpikeEndLocks(sp *store.Spike, fn func() error) error {
+	path := ""
+	if sp != nil && sp.WorktreePath != "" {
+		path = s.worktreeAbs(sp.WorktreePath)
+	}
+	return s.withWorkingCopy(path, func() error {
+		s.spikeEndMu.Lock()
+		defer s.spikeEndMu.Unlock()
+		return fn()
+	})
+}
+
+// endSpikeLocked is EndSpike's body, for a caller that already holds both
+// locks (withSpikeEndLocks): a submit that has ended the claim ends the spike
+// through it.
+func (s *Server) endSpikeLocked(ctx context.Context, spikeID uuid.UUID, how, note string) error {
+	if err := checkSpikeHow(how); err != nil {
+		return err
+	}
 	sp, err := store.GetSpike(ctx, s.Store.Pool, spikeID)
 	if err != nil {
 		return err
@@ -229,14 +263,37 @@ func (s *Server) discardSpikeWorktree(ctx context.Context, sp *store.Spike) erro
 	})
 }
 
+// spikeHadWorkingCopy says whether a spike has had a working copy whose
+// contents might have kept code (SPEC-021 FR-13.3): an agent spike that has
+// used tokens (the planner makes its worktree before the first call), and every
+// started chat or person spike, whose worktree is made at the start. It decides
+// whether a remake must check what was kept first, and whether the leak check
+// failing to find the directory is a failure to check.
+func spikeHadWorkingCopy(sp *store.Spike) bool {
+	switch sp.Executor {
+	case store.ExecutorChat, store.ExecutorPerson:
+		return sp.StartedAt != nil
+	}
+	return sp.TokensUsed > 0
+}
+
 // ensureSpikeWorktree makes sure the spike's worktree exists before the run's
 // first call (FR-4.2): if the path has no .git, anything there is removed and
 // a detached worktree is made at the base commit. A detached worktree has no
-// branch, so there is nothing to merge (SD-2). A spike that has used tokens had
-// a working copy, and the remake would prune the reflog the leak check reads,
-// so what it kept is checked and recorded first; the end of the run then finds
-// that record and doesn't raise it again.
+// branch, so there is nothing to merge (SD-2). A spike that had a working copy
+// (spikeHadWorkingCopy) would have the remake prune the reflog the leak check
+// reads, so what it kept is checked and recorded first; the end of the run then
+// finds that record and doesn't raise it again. The caller holds the worktree's
+// lock (SD-27) when more than one path can reach it; this takes spikeEndMu for
+// the check, so the caller must not hold that.
 func (s *Server) ensureSpikeWorktree(ctx context.Context, sp *store.Spike) (string, error) {
+	return s.makeSpikeWorktree(ctx, sp, true)
+}
+
+// makeSpikeWorktree is ensureSpikeWorktree, with the check of what an earlier
+// working copy kept made only when check is set. The start passes false: it
+// makes the first working copy, so there is nothing to check.
+func (s *Server) makeSpikeWorktree(ctx context.Context, sp *store.Spike, check bool) (string, error) {
 	abs := s.worktreeAbs(sp.WorktreePath)
 	if !spikeWorktreeOK(abs) {
 		return "", fmt.Errorf("the spike's working copy path %q isn't one Subutai makes", sp.WorktreePath)
@@ -244,7 +301,7 @@ func (s *Server) ensureSpikeWorktree(ctx context.Context, sp *store.Spike) (stri
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
 		return abs, nil
 	}
-	if sp.TokensUsed > 0 {
+	if check && spikeHadWorkingCopy(sp) {
 		s.spikeEndMu.Lock()
 		_, err := s.spikeKept(ctx, sp)
 		s.spikeEndMu.Unlock()
@@ -309,9 +366,8 @@ func (s *Server) ReconcileSpikes(ctx context.Context) {
 				continue
 			}
 			seen[sp.ID] = true
-			s.spikeEndMu.Lock()
-			err := s.finishSpikeEnding(ctx, &sp)
-			s.spikeEndMu.Unlock()
+			// The worktree's lock, then spikeEndMu (SD-27).
+			err := s.withSpikeEndLocks(&sp, func() error { return s.finishSpikeEnding(ctx, &sp) })
 			if err != nil {
 				s.Log.Error("spike reconciliation: finish", "spike", sp.PublicID, "err", err)
 			}

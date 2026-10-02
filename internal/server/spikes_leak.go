@@ -129,11 +129,12 @@ func (s *Server) leakedRefs(sp *store.Spike) ([]string, error) {
 		return nil, err
 	}
 	if admin == "" {
-		// The planner makes the working copy before the run's first call, so a
-		// spike that has used tokens had one. Only one that never did, and has
-		// no directory, was never made.
+		// The planner makes an agent spike's working copy before the run's
+		// first call, and a chat or person spike's is made at the start, so a
+		// spike that had one (spikeHadWorkingCopy) lost it. Only one that
+		// never did, and has no directory, was never made.
 		if _, err := os.Stat(abs); errors.Is(err, fs.ErrNotExist) {
-			if sp.TokensUsed > 0 {
+			if spikeHadWorkingCopy(sp) {
 				return nil, errors.New("the working copy was removed, so git's record of it is gone")
 			}
 			return nil, nil

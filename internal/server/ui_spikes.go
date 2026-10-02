@@ -686,7 +686,7 @@ func (s *Server) handleUISpikeStartPost(w http.ResponseWriter, r *http.Request) 
 	if budget != nil {
 		want = *budget
 	}
-	started, err := s.StartSpike(ctx, id, want, s.uiActor())
+	started, err := s.StartSpike(ctx, id, SpikeStartRequest{Executor: store.ExecutorAgent, Budget: want}, s.uiActor())
 	if err != nil {
 		s.renderStartScreen(w, r, sp, err.Error())
 		return

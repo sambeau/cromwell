@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -593,6 +594,34 @@ func TestSpikeConfig(t *testing.T) {
 	write(t, root, "config.yaml", string(cfg)+"spikes:\n  default_token_budget: 250000\n")
 	if c, err = LoadConfig(root); err != nil || c.SpikeDefaultTokenBudget() != 250000 {
 		t.Errorf("explicit budget not kept: %v %+v", err, c)
+	}
+}
+
+// SPEC-021 FR-12.3: the time box defaults to 4 hours when absent, and anything
+// outside 1 to 168 is refused with a sentence naming the field.
+func TestSpikeTimeBoxConfig(t *testing.T) {
+	root := validCompartment(t)
+	c, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if c.SpikeDefaultTimeBoxHours() != 4 || DefaultSpikeTimeBoxHours != 4 || MaxSpikeTimeBoxHours != 168 {
+		t.Errorf("default: %d", c.SpikeDefaultTimeBoxHours())
+	}
+	cfg, _ := os.ReadFile(filepath.Join(root, "config.yaml"))
+	for _, v := range []string{"0", "-1", "169"} {
+		write(t, root, "config.yaml", string(cfg)+"spikes:\n  default_time_box_hours: "+v+"\n")
+		_, err = LoadConfig(root)
+		if err == nil || !strings.Contains(err.Error(), "spikes.default_time_box_hours") ||
+			!strings.Contains(err.Error(), "a whole number of hours from 1 to 168") {
+			t.Errorf("%s should be refused, naming the field: %v", v, err)
+		}
+	}
+	for _, v := range []int{1, 24, 168} {
+		write(t, root, "config.yaml", string(cfg)+"spikes:\n  default_time_box_hours: "+strconv.Itoa(v)+"\n")
+		if c, err = LoadConfig(root); err != nil || c.SpikeDefaultTimeBoxHours() != v {
+			t.Errorf("%d not kept: %v", v, err)
+		}
 	}
 }
 

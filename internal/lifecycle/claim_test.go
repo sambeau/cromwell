@@ -6,11 +6,11 @@ import (
 )
 
 // TestClaimTransitionMatrix checks every (state, event) pair against
-// SPEC-020 FR-2.2's table.
+// SPEC-020 FR-2.2's table, with SPEC-021 SD-21's expire.
 func TestClaimTransitionMatrix(t *testing.T) {
 	states := []ClaimState{"", ClaimOpen, ClaimSubmitted, ClaimReturned, ClaimEnded}
 	events := []ClaimEvent{ClaimEventClaim, ClaimEventRenew, ClaimEventSubmit, ClaimEventSendBack,
-		ClaimEventResume, ClaimEventDone, ClaimEventRelease, ClaimEventAbandon}
+		ClaimEventResume, ClaimEventDone, ClaimEventRelease, ClaimEventAbandon, ClaimEventExpire}
 
 	legal := map[ClaimState]map[ClaimEvent]ClaimState{
 		"": {ClaimEventClaim: ClaimOpen},
@@ -19,16 +19,19 @@ func TestClaimTransitionMatrix(t *testing.T) {
 			ClaimEventSubmit:  ClaimSubmitted,
 			ClaimEventRelease: ClaimEnded,
 			ClaimEventAbandon: ClaimEnded,
+			ClaimEventExpire:  ClaimEnded,
 		},
 		ClaimSubmitted: {
 			ClaimEventSendBack: ClaimReturned,
 			ClaimEventDone:     ClaimEnded,
 			ClaimEventAbandon:  ClaimEnded,
+			ClaimEventExpire:   ClaimEnded,
 		},
 		ClaimReturned: {
 			ClaimEventResume:  ClaimOpen,
 			ClaimEventRelease: ClaimEnded,
 			ClaimEventAbandon: ClaimEnded,
+			ClaimEventExpire:  ClaimEnded,
 		},
 		ClaimEnded: {},
 	}

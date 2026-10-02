@@ -33,6 +33,17 @@ const (
 	SpikeBudget    = "budget"
 	SpikeTurnLimit = "turn_limit"
 	SpikeFailed    = "failed"
+	// SpikeTimeBox is a chat or person spike that reached its deadline
+	// (SPEC-021 SD-20, FR-15).
+	SpikeTimeBox = "time_box"
+)
+
+// Who may run a spike (SPEC-021 SD-17), chosen at the start. The chat and
+// person words are the ones a claim's kind and an execution's kind use.
+const (
+	ExecutorAgent  = "agent"
+	ExecutorChat   = "chat"   // == WriterChat
+	ExecutorPerson = "person" // == WriterPerson
 )
 
 // How a person closed a spike (FR-7.2).
@@ -71,11 +82,18 @@ type Spike struct {
 	BudgetOverride *int64
 	TokenBudget    *int64
 	TokensUsed     int64
-	Draft          string
-	DraftSavedAt   *time.Time
-	EndedHow       string
-	EndNote        string
-	ClosedAs       string
+	// Executor is who may run the spike: ExecutorAgent, ExecutorChat or
+	// ExecutorPerson. It is empty before the start (SPEC-021 SD-17).
+	Executor string
+	// TimeBoxHours and DeadlineAt are a chat or person spike's limit, set at
+	// the start; an agent spike has a token budget instead (SD-18).
+	TimeBoxHours *int
+	DeadlineAt   *time.Time
+	Draft        string
+	DraftSavedAt *time.Time
+	EndedHow     string
+	EndNote      string
+	ClosedAs     string
 	// FollowsID is the spike this one asks again for.
 	FollowsID *uuid.UUID
 	// BaseCommit and WorktreePath are set at the start; WorktreeRemovedAt
@@ -124,7 +142,8 @@ const spikeCols = `s.id, s.public_id, s.initiative_id, s.feature_id, s.question,
 	coalesce(s.ended_how, ''), coalesce(s.end_note, ''), coalesce(s.closed_as, ''), s.follows_id,
 	coalesce(s.base_commit, ''), s.refs_at_start, coalesce(s.worktree_path, ''), s.worktree_removed_at,
 	s.created_by, s.created_via, coalesce(s.started_by, ''), s.started_at, s.ended_at,
-	coalesce(s.closed_by, ''), s.closed_at, s.created_at, s.updated_at`
+	coalesce(s.closed_by, ''), s.closed_at, s.created_at, s.updated_at,
+	coalesce(s.executor, ''), s.time_box_hours, s.deadline_at`
 
 // scanSpike scans a row of spikeCols, then any extra columns the query adds.
 func scanSpike(row pgx.Row, extra ...any) (*Spike, error) {
@@ -135,7 +154,8 @@ func scanSpike(row pgx.Row, extra ...any) (*Spike, error) {
 		&s.EndedHow, &s.EndNote, &s.ClosedAs, &s.FollowsID,
 		&s.BaseCommit, &refs, &s.WorktreePath, &s.WorktreeRemovedAt,
 		&s.CreatedBy, &s.CreatedVia, &s.StartedBy, &s.StartedAt, &s.EndedAt,
-		&s.ClosedBy, &s.ClosedAt, &s.CreatedAt, &s.UpdatedAt}, extra...)
+		&s.ClosedBy, &s.ClosedAt, &s.CreatedAt, &s.UpdatedAt,
+		&s.Executor, &s.TimeBoxHours, &s.DeadlineAt}, extra...)
 	err := row.Scan(dest...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -250,10 +270,17 @@ func ListSpikes(ctx context.Context, q Querier, f SpikeFilter) ([]Spike, error) 
 
 // SpikeStart is what StartSpike records about a run's beginning.
 type SpikeStart struct {
-	Budget int64
-	// BudgetSource is where Budget came from: BudgetFromOverride,
-	// BudgetFromDefault or BudgetFromStartScreen. It is audited.
+	// Executor is who runs the spike: ExecutorAgent, ExecutorChat or
+	// ExecutorPerson (SPEC-021 SD-17).
+	Executor string
+	// Budget and BudgetSource are an agent spike's token budget and where it
+	// came from (BudgetFromOverride, BudgetFromDefault or
+	// BudgetFromStartScreen, audited). A chat or person spike has neither.
+	Budget       int64
 	BudgetSource string
+	// TimeBoxHours is a chat or person spike's time box, in whole hours; the
+	// deadline is the start plus this (SD-18).
+	TimeBoxHours int
 	BaseCommit   string
 	WorktreePath string
 	// RefsAtStart is every ref and its commit, for the leak check (FR-6.3).
@@ -261,34 +288,71 @@ type SpikeStart struct {
 	Actor       string
 }
 
-// StartSpike moves an idea to running, recording the budget it was given, the
-// commit and path of its worktree, the refs as they stood, and a spike.started
-// audit row (FR-3). The update is conditional on the state, so two starts
-// can't both win; the loser gets ErrSpikeNotIdea.
+// StartSpike moves an idea to running, recording the executor, the budget or
+// the time box it was given, the commit and path of its worktree, the refs as
+// they stood, and a spike.started audit row (FR-3, SPEC-021 FR-11.2). An
+// agent spike gets a token budget and no deadline; a chat or person spike gets
+// a time box and a deadline of the start plus the time box, and no budget
+// (SD-18). The update is conditional on the state, so two starts can't both
+// win; the loser gets ErrSpikeNotIdea.
 func StartSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID, st SpikeStart) (*Spike, error) {
 	refs, err := json.Marshal(st.RefsAtStart)
 	if err != nil {
 		return nil, err
 	}
+	var budget *int64
+	var hours *int
+	switch st.Executor {
+	case ExecutorAgent:
+		budget = &st.Budget
+	case ExecutorChat, ExecutorPerson:
+		hours = &st.TimeBoxHours
+	default:
+		return nil, errors.New("a spike is run by the agent, the chat agent or a person, not " + strconv.Quote(st.Executor))
+	}
+	// The deadline is computed from the same now() as started_at, so it is
+	// the start plus the time box to the microsecond.
 	s, err := scanSpike(tx.QueryRow(ctx, `
 		WITH upd AS (
-			UPDATE spikes SET state = 'running', token_budget = $2, base_commit = $3, worktree_path = $4,
-			       refs_at_start = $5, started_by = $6, started_at = now()
+			UPDATE spikes SET state = 'running', executor = $2, token_budget = $3, time_box_hours = $4,
+			       deadline_at = CASE WHEN $4::int IS NULL THEN NULL ELSE now() + make_interval(hours => $4::int) END,
+			       base_commit = $5, worktree_path = $6, refs_at_start = $7, started_by = $8, started_at = now()
 			WHERE id = $1 AND state = 'idea'
 			RETURNING *)
 		SELECT `+spikeCols+` FROM upd s`,
-		id, st.Budget, st.BaseCommit, st.WorktreePath, refs, st.Actor))
+		id, st.Executor, budget, hours, st.BaseCommit, st.WorktreePath, refs, st.Actor))
 	if errors.Is(err, ErrNotFound) {
 		return nil, ErrSpikeNotIdea
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := Audit(ctx, tx, st.Actor, "spike.started", "spike", &id,
-		map[string]any{"budget": st.Budget, "source": st.BudgetSource}); err != nil {
+	payload := map[string]any{"executor": st.Executor}
+	if budget != nil {
+		payload["budget"] = st.Budget
+		payload["source"] = st.BudgetSource
+	} else {
+		payload["time_box_hours"] = st.TimeBoxHours
+	}
+	if err := Audit(ctx, tx, st.Actor, "spike.started", "spike", &id, payload); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// LockSpike reads a spike with FOR UPDATE, for a path that must see the row
+// as it stands and keep it until the transaction ends. In the lock order of
+// SPEC-021 SD-27 the spike's row comes before its claim's.
+func LockSpike(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*Spike, error) {
+	return scanSpike(tx.QueryRow(ctx, `SELECT `+spikeCols+` FROM spikes s WHERE s.id = $1 FOR UPDATE OF s`, id))
+}
+
+// SpikesPastDeadline lists the running chat and person spikes whose deadline
+// has passed, oldest deadline first, for the heartbeat to end (SPEC-021
+// FR-15.1).
+func SpikesPastDeadline(ctx context.Context, q Querier) ([]Spike, error) {
+	return querySpikes(ctx, q, `s.state = 'running' AND s.executor IN ('chat', 'person')
+		AND s.deadline_at IS NOT NULL AND s.deadline_at <= now()`, `s.deadline_at, s.id`)
 }
 
 // AddSpikeTokens adds one model call's usage to the spike's total and returns
@@ -327,8 +391,10 @@ func SaveSpikeDraft(ctx context.Context, q Querier, id uuid.UUID, draft string) 
 	return err
 }
 
-// EndSpikeState moves a running spike to ended, with how the run ended and, for
-// a failure, its last error as a note (FR-6.2 step 3). changed is false when
+// EndSpikeState moves a running spike to ended, with how the run ended (one of
+// the Spike* constants, SpikeTimeBox included; the table's checks refuse a
+// pairing the executor can't have) and, for a failure, its last error as a
+// note (FR-6.2 step 3). changed is false when
 // the spike wasn't running, which leaves it as it is and writes nothing.
 func EndSpikeState(ctx context.Context, tx pgx.Tx, id uuid.UUID, how, note string) (changed bool, err error) {
 	var used int64

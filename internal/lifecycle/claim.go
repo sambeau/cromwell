@@ -31,6 +31,9 @@ const (
 	ClaimEventDone     ClaimEvent = "done"
 	ClaimEventRelease  ClaimEvent = "release"
 	ClaimEventAbandon  ClaimEvent = "abandon"
+	// ClaimEventExpire ends a claim at its hard deadline (SPEC-021 SD-21):
+	// the work wasn't abandoned and wasn't handed in; the time box ran out.
+	ClaimEventExpire ClaimEvent = "expire"
 )
 
 // claimStart is the "state" a claim has before it exists.
@@ -45,16 +48,19 @@ var claimTransitions = map[ClaimState]map[ClaimEvent]ClaimState{
 		ClaimEventSubmit:  ClaimSubmitted,
 		ClaimEventRelease: ClaimEnded,
 		ClaimEventAbandon: ClaimEnded,
+		ClaimEventExpire:  ClaimEnded,
 	},
 	ClaimSubmitted: {
 		ClaimEventSendBack: ClaimReturned,
 		ClaimEventDone:     ClaimEnded,
 		ClaimEventAbandon:  ClaimEnded,
+		ClaimEventExpire:   ClaimEnded,
 	},
 	ClaimReturned: {
 		ClaimEventResume:  ClaimOpen,
 		ClaimEventRelease: ClaimEnded,
 		ClaimEventAbandon: ClaimEnded,
+		ClaimEventExpire:  ClaimEnded,
 	},
 }
 

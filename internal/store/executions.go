@@ -59,19 +59,24 @@ func CurrentTaskRound(ctx context.Context, q Querier, taskID uuid.UUID) (int, er
 	return n, err
 }
 
-// RecordAgentExecution records an implement dispatch's start as an agent
-// execution of the task's current round. A dispatch that has a row already
-// (a retried attempt) records nothing new (FR-1.2).
-func RecordAgentExecution(ctx context.Context, tx pgx.Tx, taskID, dispatchID uuid.UUID, role, model, startHead string) error {
-	round, err := CurrentTaskRound(ctx, tx, taskID)
-	if err != nil {
-		return err
+// RecordAgentExecution records a dispatch's start as an agent execution of the
+// item's current round: an implement dispatch's for a task (its round counts
+// the request_changes transitions, FR-1.2), a run-spike dispatch's for a spike
+// (always round 1, SPEC-021 FR-12.2). A dispatch that has a row already (a
+// retried attempt) records nothing new.
+func RecordAgentExecution(ctx context.Context, tx pgx.Tx, refType string, refID, dispatchID uuid.UUID, role, model, startHead string) error {
+	round := 1
+	if refType == "task" {
+		var err error
+		if round, err = CurrentTaskRound(ctx, tx, refID); err != nil {
+			return err
+		}
 	}
-	_, err = tx.Exec(ctx, `
+	_, err := tx.Exec(ctx, `
 		INSERT INTO executions (id, ref_type, ref_id, round, kind, actor, model, dispatch_id, via, measured, start_head)
-		VALUES ($1, 'task', $2, $3, 'agent', $4, $5, $6, 'agent', true, $7)
+		VALUES ($1, $2, $3, $4, 'agent', $5, $6, $7, 'agent', true, $8)
 		ON CONFLICT (dispatch_id) WHERE kind = 'agent' DO NOTHING`,
-		NewID(), taskID, round, role, model, dispatchID, startHead)
+		NewID(), refType, refID, round, role, model, dispatchID, startHead)
 	return err
 }
 
