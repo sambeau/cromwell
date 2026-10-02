@@ -300,6 +300,8 @@ func (s *Server) featureTimeline(ctx context.Context, featureID uuid.UUID) (*tim
 			}
 		case "task":
 			mv.RefURL = "/ui/t/" + m.RefID.String()
+		case "spike":
+			mv.RefURL = "/ui/s/" + m.RefName // the label is the spike's ID (FR-8.3)
 		}
 		for _, r := range m.Runs {
 			label := byID[r.ID].Label
@@ -414,6 +416,9 @@ type runPage struct {
 	Turns         []turnView
 	Conclusion    conclusion
 	Ledger        []store.ToolCallRow
+	// SpikeHow is how the spike a run-spike run belongs to ended, so the
+	// conclusion can say it in a sentence (SPEC-021 FR-8.4).
+	SpikeHow string
 }
 
 func (p runPage) headTitle() string   { return p.Heading }
@@ -554,6 +559,11 @@ func (s *Server) buildRunPage(ctx context.Context, d *store.Dispatch, attemptPar
 			p.TokensOut += t.Out
 		}
 	}
+	if d.RefType == "spike" {
+		if sp, err := store.GetSpike(ctx, s.Store.Pool, d.RefID); err == nil {
+			p.SpikeHow = sp.EndedHow
+		}
+	}
 	p.Conclusion = p.conclude(d, entries)
 	return p, nil
 }
@@ -684,6 +694,11 @@ func (p *runPage) buildTurns(entries []store.TranscriptEntry) {
 		case store.EntryError:
 			t := ensure(e.Turn)
 			t.Items = append(t.Items, turnItem{Kind: "error", Entry: e})
+		case store.EntryStop:
+			// A spike run that stopped at its budget or turn limit (SPEC-021
+			// FR-5.1): shown as a notice, since it isn't a failure.
+			t := ensure(e.Turn)
+			t.Items = append(t.Items, turnItem{Kind: "stop", Entry: e})
 		}
 	}
 }
@@ -727,6 +742,18 @@ func (p *runPage) conclude(d *store.Dispatch, entries []store.TranscriptEntry) c
 			msg = *d.Error
 		}
 		return conclusion{Kind: "error", Error: msg, Plain: failureWords(msg)}
+	}
+	if d.Purpose == "run-spike" {
+		// A spike's run is judged by how the spike ended, in a sentence
+		// (SPEC-021 FR-8.4), not by its outcome's JSON.
+		switch p.SpikeHow {
+		case store.SpikeConcluded:
+			return conclusion{Kind: "spike", Plain: "It concluded."}
+		case store.SpikeBudget:
+			return conclusion{Kind: "spike", Plain: "It stopped at its budget."}
+		case store.SpikeTurnLimit:
+			return conclusion{Kind: "spike", Plain: "It stopped at its turn limit."}
+		}
 	}
 	if len(d.Outcome) == 0 {
 		return conclusion{Kind: "other", Raw: "The run finished without an outcome."}
