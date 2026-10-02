@@ -315,9 +315,10 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				"done (relay_tick_job), always quoting their words; " +
 				"you can report bugs and read them (report_bug, list_bugs, get_bug), and carry a person's " +
 				"decision to accept or reject one (relay_triage), quoting them — whether a bug is fixed is theirs; " +
-				"you hold no verdict of your own. You may write down a spike's question with `create_spike`; only a person can start or close one. You cannot send work to development, start " +
+				"you hold no verdict of your own. You cannot send work to development, start " +
 				"building, override a gate or answer the Inbox — a person does " +
-				"those from the command centre.",
+				"those from the command centre. You may write down a spike's question with " +
+				"create_spike; only a person can start or close one.",
 		})
 	case "ping":
 		writeRPCResult(w, req.ID, map[string]any{})

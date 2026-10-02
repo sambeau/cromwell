@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -159,8 +160,8 @@ func TestSpikeStartsFromTheWebUIOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 			_ = resp.Body.Close()
-			if resp.StatusCode != 404 && resp.StatusCode != 405 {
-				t.Errorf("%s %s = %d, want 404 or 405", method, path, resp.StatusCode)
+			if resp.StatusCode != http.StatusNotFound {
+				t.Errorf("%s %s = %d, want 404", method, path, resp.StatusCode)
 			}
 		}
 	}
@@ -329,6 +330,9 @@ func TestSpikePagesShowTheWork(t *testing.T) {
 	// The Inbox: the count of ended spikes, linking to the list, while the
 	// badge still counts checkpoints only.
 	wants(t, "the inbox", h.uiText("/ui/inbox"), "/ui/frag/spikes-line")
+	if _, badge := h.getUI("/ui/frag/inbox-badge"); strings.TrimSpace(badge) != "" {
+		t.Errorf("the inbox badge = %q while only spikes wait, want it to count checkpoints alone", strings.TrimSpace(badge))
+	}
 	line := h.uiText("/ui/frag/spikes-line")
 	wants(t, "the inbox line", line, "3 spikes have ended and are waiting for you to read their findings.", `href="/ui/spikes"`)
 
@@ -505,5 +509,56 @@ func TestSpikeUICreateCloseAndAgain(t *testing.T) {
 	wants(t, "a bad ask-again budget", body, "A spike's budget is a positive whole number of tokens.")
 	if got := h.getSpike(other.ID); got.State != store.SpikeEnded {
 		t.Errorf("a refused ask-again left the spike %s", got.State)
+	}
+}
+
+// TestSpikeStartScreenForecast is FR-3.2: with three or more earlier spike
+// runs the start screen forecasts from their median, and with fewer it says
+// there aren't enough.
+func TestSpikeStartScreenForecast(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	in := h.spikeInitiative("pf")
+	sp := h.newSpike(in, "How slow is the export?", nil)
+
+	seed := func(input int) {
+		t.Helper()
+		finished := time.Now().Add(-time.Hour)
+		if _, err := h.srv.Store.Pool.Exec(ctx, `
+			INSERT INTO dispatches (id, state, purpose, role, model, ref_type, ref_id, idempotency_key,
+				started_at, finished_at, input_tokens, output_tokens, outcome)
+			VALUES ($1, 'succeeded', 'run-spike', 'spike-runner', 'claude-sonnet-5', 'spike', $2, $3, $4, $5, $6, 2000, '{}')`,
+			store.NewID(), uuid.New(), uuid.NewString(), finished.Add(-time.Minute), finished, input); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(10_000)
+	seed(12_000)
+	wants(t, "the screen with two earlier runs", h.uiText(startURL(sp)), "There aren't enough earlier spikes to forecast this one yet.")
+
+	seed(14_000) // runs of 12,000, 14,000 and 16,000 tokens: the median is 14,000
+	screen := h.uiText(startURL(sp))
+	wants(t, "the screen with three earlier runs", screen,
+		"Rough forecast: about "+humanTokens(14_000)+" tokens, from the median of this project's earlier spike runs.")
+	lacks(t, "the screen with three earlier runs", screen, "There aren't enough earlier spikes")
+}
+
+// TestSpikeBadIDsAnswerAlike: a spike id that isn't one is a 400 and one that
+// names nothing is a 404, on the start screen and on both POSTs.
+func TestSpikeBadIDsAnswerAlike(t *testing.T) {
+	h := newHarness(t)
+	if code, _ := h.getUI("/ui/spikes/start?spike=nonsense"); code != http.StatusBadRequest {
+		t.Errorf("GET start with a malformed id = %d, want 400", code)
+	}
+	if code, _ := h.getUI("/ui/spikes/start?spike=" + uuid.NewString()); code != http.StatusNotFound {
+		t.Errorf("GET start with an unknown id = %d, want 404", code)
+	}
+	for _, path := range []string{"/ui/spikes/start", "/ui/spikes/close"} {
+		if code, _ := h.postValues(path, url.Values{"spike": {"nonsense"}, "as": {"answered"}}); code != http.StatusBadRequest {
+			t.Errorf("POST %s with a malformed id = %d, want 400", path, code)
+		}
+		if code, _ := h.postValues(path, url.Values{"spike": {uuid.NewString()}, "as": {"answered"}}); code != http.StatusNotFound {
+			t.Errorf("POST %s with an unknown id = %d, want 404", path, code)
+		}
 	}
 }

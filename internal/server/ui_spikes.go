@@ -67,6 +67,14 @@ func tokensOfBudget(sp *store.Spike) string {
 	return groupThousands(sp.TokensUsed) + " of " + groupThousands(*sp.TokenBudget) + " tokens"
 }
 
+// spikeCloseForm is what the page's one close-button form is given.
+type spikeCloseForm struct {
+	Spike       uuid.UUID
+	As          string
+	Label, Icon string
+	Primary     bool
+}
+
 // codeSpans shows a sentence with its `backticked` words as code: the text is
 // escaped first, so only the marks the sentence carried become markup. A
 // sentence with an unmatched backtick is shown as it is.
@@ -87,7 +95,7 @@ func codeSpans(s string) template.HTML {
 }
 
 // spikeWhen is a moment in words: "2 October at 14:05".
-func spikeWhen(t time.Time) string { return t.Local().Format("2 January at 15:04") }
+func spikeWhen(t time.Time) string { return t.Format("2 January at 15:04") }
 
 // spikeOwnerInfo is the entity a spike hangs on. Path is empty when it can't be
 // found, and every field is empty when the owner itself can't be read.

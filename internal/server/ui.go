@@ -51,6 +51,9 @@ var uiFuncs = template.FuncMap{
 	"shortID": func(id uuid.UUID) string { return id.String()[:8] },
 	"ago":     ago,
 	"code":    codeSpans,
+	"closeForm": func(spike uuid.UUID, as, label, icon string, primary bool) spikeCloseForm {
+		return spikeCloseForm{Spike: spike, As: as, Label: label, Icon: icon, Primary: primary}
+	},
 	"signed": func(v int64) string {
 		if v >= 0 {
 			return fmt.Sprintf("+%d", v)

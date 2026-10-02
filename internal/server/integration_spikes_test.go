@@ -1379,6 +1379,9 @@ func TestSpikeHasNoMergePath(t *testing.T) {
 	for _, outcome := range []string{`{"ended":"budget"}`, `{"ended":"turn_limit"}`, findingsJSON(goodFindings), `{"merge":true}`} {
 		actions := rules.Decide(bus.DispatchSucceeded{DispatchID: uuid.New(), Purpose: "run-spike", Role: "spike-runner",
 			RefType: "spike", RefID: clean.ID, Outcome: json.RawMessage(outcome)}, rules.Snapshot{})
+		if len(actions) != 1 {
+			t.Errorf("a run-spike success with %s led to %d actions, want one EndSpike", outcome, len(actions))
+		}
 		for _, a := range actions {
 			if _, ok := a.(rules.EndSpike); !ok {
 				t.Errorf("a run-spike success led to %T", a)
@@ -1387,10 +1390,16 @@ func TestSpikeHasNoMergePath(t *testing.T) {
 	}
 	// No route, API or UI, merges, promotes or lands a spike; and a spike's
 	// ID isn't a feature to start.
-	for _, path := range []string{"/api/spikes/merge", "/api/spikes/promote", "/api/spikes/land", "/api/spike/merge",
-		"/ui/spikes/merge", "/ui/spikes/promote", "/ui/spikes/land", "/api/spikes/" + clean.ID.String() + "/merge"} {
-		if code, _ := h.call("POST", path, map[string]string{"spike": clean.ID.String()}); code != 404 && code != 405 {
-			t.Errorf("POST %s = %d, want 404 or 405", path, code)
+	// The API has no such route (404). Under /ui/spikes the mux knows the
+	// path from the page's GET routes, so a POST there is refused as the
+	// wrong method (405): either way nothing is merged.
+	for path, want := range map[string]int{
+		"/api/spikes/merge": 404, "/api/spikes/promote": 404, "/api/spikes/land": 404, "/api/spike/merge": 404,
+		"/api/spikes/" + clean.ID.String() + "/merge": 404,
+		"/ui/spikes/merge":                            405, "/ui/spikes/promote": 405, "/ui/spikes/land": 405,
+	} {
+		if code, _ := h.call("POST", path, map[string]string{"spike": clean.ID.String()}); code != want {
+			t.Errorf("POST %s = %d, want %d", path, code, want)
 		}
 	}
 	for _, path := range []string{clean.PublicID, "pf/" + clean.PublicID, clean.ID.String()} {
