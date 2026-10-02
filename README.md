@@ -29,6 +29,11 @@ The design ([DESIGN-010](docs/design/DESIGN-010-subutai.md)) is approved, and
 - M9: editing in the browser;
 - M10: the chat agent's seat, and who wrote every document.
 
+Phase C has begun. **M11** (decisions and conventions pushed into every
+agent's prompt) and **M12** (bugs: report, triage, and the normal pipeline)
+are merged, with SPEC-018 and SPEC-019 approved. M13 (executors) and M14
+(spikes) are next.
+
 What stands between this and "Subutai usable" is the live smoke runs against a
 real provider. Their checklists are in the M0, M3 and M6 handoffs.
 
@@ -71,14 +76,32 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [SPEC-007](docs/specs/SPEC-007-workflow-surface-stage-a.md) | The workflow surface, Stage A: document-led browsing (**binding**) |
 | [SPEC-008](docs/specs/SPEC-008-mcp-facet-planning-authoring.md) | The MCP facet, slice 1: planning authoring (**binding**) |
 | [SPEC-009](docs/specs/SPEC-009-the-authoring-chain.md) | The authoring chain, Stage 1 (**binding**) |
+| [SPEC-010](docs/specs/SPEC-010-milestones-and-roadmaps-editing.md) | Milestones and roadmaps you can edit, in the browser and from chat (M4) (**binding**) |
+| [SPEC-011](docs/specs/SPEC-011-send-to-development.md) | Send to development: a human starts the agents (M3) (**binding**) |
+| [SPEC-012](docs/specs/SPEC-012-see-the-work.md) | Transcripts, the feature timeline and review health (M6) (**binding**) |
 | [SPEC-013](docs/specs/SPEC-013-rename-to-subutai.md) | The rename to Subutai, and what stays compatible (**binding**) |
+| [SPEC-014](docs/specs/SPEC-014-checklists-and-jobs.md) | Checklists and jobs (M5) (**binding**) |
+| [SPEC-015](docs/specs/SPEC-015-documents-with-identity.md) | An ID for everything; documents adopted where they sit (M8) (**binding**) |
+| [SPEC-016](docs/specs/SPEC-016-edit-in-the-browser.md) | Editing documents in the browser (M9) (**binding**) |
+| [SPEC-017](docs/specs/SPEC-017-chat-as-a-proper-seat.md) | The chat agent's seat, and who wrote every document (M10) (**binding**) |
+| [SPEC-018](docs/specs/SPEC-018-decisions.md) | Decisions and conventions, pushed into every agent's prompt (M11) (**binding**) |
+| [SPEC-019](docs/specs/SPEC-019-bugs.md) | Bugs: report, triage, and the normal pipeline (M12) (**binding**) |
 | [REVIEW-001](docs/reviews/REVIEW-001-phase-1-package.md) | Approval review of the phase-1 package: findings, fixes, verdict |
 | [REVIEW-002](docs/reviews/REVIEW-002-phase-2-package.md) | Consistency review of the phase-2 package: findings, fixes, recommendation |
 | [REVIEW-003](docs/reviews/REVIEW-003-phase-3-planning-package.md) | Consistency review + approval of SPEC-003 |
 | [REVIEW-004](docs/reviews/REVIEW-004-phase-4-web-command-centre-package.md) | Consistency review + approval of DESIGN-007 and SPEC-004 |
 | [REVIEW-006](docs/reviews/REVIEW-006-command-centre-mutations-package.md) | Consistency review + approval of SPEC-006 |
 | [REVIEW-009](docs/reviews/REVIEW-009-authoring-chain-package.md) | Consistency review + approval of SPEC-009 |
+| [REVIEW-010](docs/reviews/REVIEW-010-milestones-and-roadmaps-editing.md) | Independent review of SPEC-010 |
+| [REVIEW-011](docs/reviews/REVIEW-011-send-to-development.md) | Independent review of SPEC-011 |
+| [REVIEW-012](docs/reviews/REVIEW-012-see-the-work.md) | Independent review of SPEC-012 |
 | [REVIEW-013](docs/reviews/REVIEW-013-rename-to-subutai.md) | Independent check of SPEC-013 and the rename for missed surfaces |
+| [REVIEW-014](docs/reviews/REVIEW-014-checklists-and-jobs.md) | Independent review of SPEC-014 |
+| [REVIEW-015](docs/reviews/REVIEW-015-documents-with-identity.md) | Independent review of SPEC-015 |
+| [REVIEW-016](docs/reviews/REVIEW-016-edit-in-the-browser.md) | Independent review of SPEC-016 |
+| [REVIEW-017](docs/reviews/REVIEW-017-chat-as-a-proper-seat.md) | Independent review of SPEC-017 |
+| [REVIEW-018](docs/reviews/REVIEW-018-decisions.md) | Independent review of SPEC-018 |
+| [REVIEW-019](docs/reviews/REVIEW-019-bugs.md) | Independent review of SPEC-019 |
 | [walkthrough](docs/walkthrough.md) | Phase-1 live smoke-test session: commands, audit trail, cost |
 | [walkthrough-phase-2](docs/walkthrough-phase-2.md) | Phase-2 live smoke test: a task implemented, reviewed, verified, merged |
 | [walkthrough-phase-3](docs/walkthrough-phase-3.md) | Phase 3: sizing, calibration and milestones |
@@ -86,7 +109,16 @@ Authority runs top to bottom (spec binds, design explains, decisions record):
 | [walkthrough-spec-006](docs/walkthrough-spec-006.md) | SPEC-006: the command centre's mutation slice |
 | [walkthrough-spec-007-008](docs/walkthrough-spec-007-008.md) | SPEC-007 and SPEC-008: the workflow surface and the MCP facet |
 | [walkthrough-spec-009-stage1](docs/walkthrough-spec-009-stage1.md) | SPEC-009 Stage 1: approval to gate 2, live, for 15,976 tokens |
+| [walkthrough-spec-010](docs/walkthrough-spec-010.md) | SPEC-010: the demo, with screenshots |
+| [walkthrough-spec-011](docs/walkthrough-spec-011.md) | SPEC-011: the demo, with screenshots |
+| [walkthrough-spec-012](docs/walkthrough-spec-012.md) | SPEC-012: the demo, with screenshots |
 | [walkthrough-spec-013](docs/walkthrough-spec-013.md) | SPEC-013: a fresh Subutai project, and a Cromwell project carried across |
+| [walkthrough-spec-014](docs/walkthrough-spec-014.md) | SPEC-014: the demo, with screenshots |
+| [walkthrough-spec-015](docs/walkthrough-spec-015.md) | SPEC-015: the demo, with screenshots |
+| [walkthrough-spec-016](docs/walkthrough-spec-016.md) | SPEC-016: the demo, with screenshots |
+| [walkthrough-spec-017](docs/walkthrough-spec-017.md) | SPEC-017: the demo, with screenshots |
+| [walkthrough-spec-018](docs/walkthrough-spec-018.md) | SPEC-018: the demo, with screenshots |
+| [walkthrough-spec-019](docs/walkthrough-spec-019.md) | SPEC-019: the demo, with screenshots |
 | [manual testing](docs/manual-testing.md) | Running Subutai by hand, and rebuilding the smoke project |
 | [phase-2 entry criteria](docs/notes/phase-2-entry-criteria.md) | What had to be true before phase 2 started |
 | [phase-3 entry criteria](docs/notes/phase-3-entry-criteria.md) | What must be true before phase 3 starts; phase-2 audit summary |

@@ -105,8 +105,8 @@ func TagLines(content string) string {
 
 // AnchorError describes a drifted edit anchor so the agent knows to re-read.
 type AnchorError struct {
-	Ref      string
-	Detail   string
+	Ref    string
+	Detail string
 }
 
 func (e *AnchorError) Error() string { return fmt.Sprintf("anchor %q: %s", e.Ref, e.Detail) }

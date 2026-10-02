@@ -69,11 +69,11 @@ func TestG2(t *testing.T) {
 		stale                 bool
 		pass                  bool
 	}{
-		{3, 2, 3, false, true},    // all terminal, some done
-		{3, 0, 3, false, false},   // all abandoned, none done
-		{3, 1, 2, false, false},   // one still open
-		{0, 0, 0, false, false},   // no tasks
-		{3, 3, 3, true, false},    // stale contract blocks even when complete
+		{3, 2, 3, false, true},  // all terminal, some done
+		{3, 0, 3, false, false}, // all abandoned, none done
+		{3, 1, 2, false, false}, // one still open
+		{0, 0, 0, false, false}, // no tasks
+		{3, 3, 3, true, false},  // stale contract blocks even when complete
 	}
 	for _, c := range cases {
 		got := G2(c.total, c.done, c.terminal, c.stale)

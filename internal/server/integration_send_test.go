@@ -302,8 +302,12 @@ func TestAgentReviewOffHoldsEverySpec(t *testing.T) {
 // pauseAuthor unassigns write-spec so a test can learn an issue's id before
 // scripting the author and reviewer who will answer it; resumeAuthor restores
 // it and lets the heartbeat sweep pick the waiting draft up (FR-2.4).
-func (h *harness) pauseAuthor()  { h.editConfig("  write-spec: spec-author", "  # write-spec: spec-author") }
-func (h *harness) resumeAuthor() { h.editConfig("  # write-spec: spec-author", "  write-spec: spec-author") }
+func (h *harness) pauseAuthor() {
+	h.editConfig("  write-spec: spec-author", "  # write-spec: spec-author")
+}
+func (h *harness) resumeAuthor() {
+	h.editConfig("  # write-spec: spec-author", "  write-spec: spec-author")
+}
 
 func (h *harness) openIssues(path string) []store.Comment {
 	h.t.Helper()
